@@ -1,6 +1,13 @@
 # Clash Meta 🚀
 > 家用路由器 Clash (Mihomo) 网页端设备分流与游戏加速管理器
 
+<div align="center">
+  <img src="docs/images/web_preview.png" width="800" alt="Web Preview" />
+  <br />
+  <br />
+  <img src="docs/images/mobile_preview.jpg" width="280" alt="Mobile Preview" />
+</div>
+
 **Clash Meta** 是一款专为家用/软路由环境打造的 Clash (Mihomo) 辅助控制台。它通过一个极简、直观的 Web 界面，让你免去繁琐的命令行操作，即可远程管理局域网内每个设备的上网状态，并针对主机游戏（如 Switch）联机体验提供了深度优化。
 
 本项目后端基于 Node.js 运行，通过 SSH 协议与路由器上的 **ShellCrash (Mihomo 内核)** 插件进行安全联动，操控防火墙设备白名单与 Clash 策略组。
