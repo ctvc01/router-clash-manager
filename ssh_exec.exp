@@ -1,0 +1,36 @@
+#!/usr/bin/expect -f
+
+set timeout 30
+set ip "192.168.31.1"
+set user "root"
+set password "YOUR_ROUTER_PASSWORD"
+
+if {[info exists ::env(ROUTER_IP)]} {
+    set ip $::env(ROUTER_IP)
+}
+if {[info exists ::env(ROUTER_USER)]} {
+    set user $::env(ROUTER_USER)
+}
+if {[info exists ::env(ROUTER_PASSWORD)]} {
+    set password $::env(ROUTER_PASSWORD)
+}
+
+if { [llength $argv] < 1 } {
+    send_user "Usage: ssh_exec.exp <command>\n"
+    exit 1
+}
+
+set cmd [lindex $argv 0]
+
+# 允许使用 ssh-rsa 算法连接较老路由器系统
+spawn ssh -o StrictHostKeyChecking=no -o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedKeyTypes=+ssh-rsa $user@$ip $cmd
+
+expect {
+    "password:" {
+        send "$password\r"
+        exp_continue
+    }
+    eof {
+        exit 0
+    }
+}

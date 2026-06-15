@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clash Meta</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="main-wrapper">
+        <!-- Header - Top Bar -->
+        <header class="header-top-bar">
+            <div class="header-logo-section">
+                <!-- Meta Logo SVG -->
+                <div class="meta-logo">
+                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M2 17L12 22L22 17" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M2 12L12 17L22 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </div>
+                <span class="brand-title">Clash Meta</span>
+            </div>
+        </header>
+
+        <!-- Main Content Container -->
+        <main class="main-container">
+            
+            <!-- Section 1. Status Overview -->
+            <section class="section-status-overview">
+                
+                <!-- 卡片 1: 网关状态 -->
+                <div class="status-card border-glow-green">
+                    <div class="card-meta">
+                        <span class="card-label">网关状态</span>
+                        <span class="card-icon status-green">
+                            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M20 6L9 17L4 12" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                        </span>
+                    </div>
+                    <div class="card-value-group">
+                        <h2 class="card-value text-green" id="status-text">运行中</h2>
+                        <p class="card-sub-value" id="status-mode">模式: 白名单</p>
+                    </div>
+                </div>
+
+                <!-- 卡片 2: 当前节点 -->
+                <div class="status-card border-glow-blue">
+                    <div class="card-meta">
+                        <span class="card-label">当前节点</span>
+                        <span class="card-icon status-blue">
+                            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M13 2L3 14H12L11 22L21 10H12L13 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                        </span>
+                    </div>
+                    <div class="card-value-group">
+                        <h2 class="card-value text-blue truncate-text" id="current-node">🇭🇰 香港 01 - 专线</h2>
+                        <p class="card-sub-value" id="node-latency">延迟: 32ms</p>
+                    </div>
+                </div>
+
+                <!-- 卡片 3: 设备状态 -->
+                <div class="status-card border-glow-orange">
+                    <div class="card-meta">
+                        <span class="card-label">设备状态</span>
+                        <span class="card-icon status-orange">
+                            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 7a4 4 0 1 0 0-8 4 4 0 0 0 0 8zm14 14v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                        </span>
+                    </div>
+                    <div class="card-value-group">
+                        <h2 class="card-value text-white">
+                            <span id="devices-total">36</span><span class="value-unit"> / 总数</span>
+                            <span class="space-split"></span>
+                            <span id="devices-proxy" class="text-green">15</span><span class="value-unit"> / 代理</span>
+                        </h2>
+                        <p class="card-sub-value">局域网客户端监控中</p>
+                    </div>
+                </div>
+
+                <!-- 卡片 4: 内存占用 -->
+                <div class="status-card">
+                    <div class="card-meta">
+                        <span class="card-label">内存占用</span>
+                        <span class="card-icon status-gray">
+                            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                        </span>
+                    </div>
+                    <div class="card-value-group">
+                        <h2 class="card-value text-green">
+                            <span id="memory-used">256MB</span><span class="value-unit"> / <span id="memory-total">1024MB</span></span>
+                        </h2>
+                        <!-- Progress Bar -->
+                        <div class="progress-bar-container">
+                            <div class="progress-bar-fill" id="memory-progress" style="width: 25%;"></div>
+                        </div>
+                    </div>
+                </div>
+
+            </section>
+
+            <!-- Section 2. Filters & Search -->
+            <section class="section-filters-search">
+                <div class="filters-top-row">
+                    <div class="heading-traffic-group">
+                        <h2 class="section-title">联网设备</h2>
+                        <div class="divider-vertical"></div>
+                        <div class="traffic-stats-pill">
+                            <div class="traffic-item text-orange">
+                                <span class="traffic-icon">
+                                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                        <path d="M12 5v14M19 12l-7 7-7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                    </svg>
+                                </span>
+                                <span id="total-down-speed">7.1 KB/s</span>
+                            </div>
+                            <div class="traffic-item text-green">
+                                <span class="traffic-icon">
+                                    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                        <path d="M12 19V5M5 12l7-7 7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                    </svg>
+                                </span>
+                                <span id="total-up-speed">81.5 KB/s</span>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+
+                <!-- Category Row (包含分类按钮和搜索框) -->
+                <div class="filters-bottom-row">
+                    <!-- Category Buttons -->
+                    <div class="filter-buttons-container" id="filter-buttons">
+                        <button class="filter-btn active" data-category="all">全部</button>
+                        <button class="filter-btn" data-category="pc">电脑</button>
+                        <button class="filter-btn" data-category="phone">手机</button>
+                        <button class="filter-btn" data-category="game">游戏主机</button>
+                        <button class="filter-btn" data-category="iot">智能家居</button>
+                        <button class="filter-btn" data-category="other">其他</button>
+                    </div>
+
+                    <!-- Search Input Box -->
+                    <div class="search-input-wrapper">
+                        <span class="search-icon">
+                            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <circle cx="11" cy="11" r="8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                <path d="M21 21l-4.35-4.35" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                        </span>
+                        <input type="text" id="search-input" placeholder="搜索设备、IP或MAC..." />
+                    </div>
+                </div>
+            </section>
+
+            <!-- Section 3. Device Grid -->
+            <section class="section-device-grid-wrapper">
+                <div class="device-grid" id="device-grid">
+                    <!-- Device Cards will be dynamically inserted here via app.js -->
+                    <div class="device-card-loading">正在读取局域网设备...</div>
+                </div>
+            </section>
+
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer-bar">
+            <div class="footer-container">
+                <div class="footer-group-left">
+                    <div class="footer-meta-item">
+                        <span class="footer-icon">ℹ️</span>
+                        <span id="footer-clash-version">版本: v1.17.2-meta</span>
+                    </div>
+                    <div class="footer-meta-item">
+                        <span class="footer-icon">⏱️</span>
+                        <span id="footer-uptime">运行时间: --天 --时 --分</span>
+                    </div>
+                </div>
+                <div class="footer-group-center">
+                    <div class="footer-meta-item">
+                        <span class="footer-icon">⚡</span>
+                        <span id="footer-cpu">CPU: 12.4%</span>
+                    </div>
+                    <div class="footer-meta-item">
+                        <span class="footer-icon">💾</span>
+                        <span id="footer-memory">内存: 256MB / 1024MB</span>
+                    </div>
+                </div>
+                <div class="footer-group-right">
+                    <a href="#" class="footer-link">技术支持</a>
+                    <a href="#" class="footer-link">关于我们</a>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <!-- UI Overlay: Loading -->
+    <div id="loading-overlay" class="loading-overlay">
+        <div class="loading-box">
+            <div class="loading-spinner"></div>
+            <p id="loading-text">正在加载设备列表与服务状态...</p>
+        </div>
+    </div>
+
+    <!-- UI Overlay: Toast -->
+    <div id="toast" class="toast-popup">操作成功</div>
+
+    <!-- UI Overlay: Edit Device Modal -->
+    <div id="edit-device-modal" class="modal-overlay">
+        <div class="modal-box">
+            <div class="modal-header">
+                <span class="modal-title">编辑设备属性</span>
+                <button id="btn-close-modal" class="btn-close-modal" title="关闭">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label">物理地址 (MAC)</label>
+                    <div id="modal-device-mac" class="form-info-text">--:--:--:--:--:--</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">网络地址 (IP)</label>
+                    <div id="modal-device-ip" class="form-info-text">---.---.---.---</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">设备自定义名称</label>
+                    <input type="text" id="modal-device-name" class="form-input" placeholder="请输入设备自定义别名..." />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">设备类型分类</label>
+                    <select id="modal-device-category" class="form-select">
+                        <option value="phone">手机</option>
+                        <option value="pc">电脑</option>
+                        <option value="tablet">平板</option>
+                        <option value="game">游戏主机</option>
+                        <option value="tv">电视盒子</option>
+                        <option value="iot">智能家居</option>
+                        <option value="other">其它</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="btn-modal-cancel" class="btn-modal btn-modal-cancel">取消</button>
+                <button id="btn-modal-save" class="btn-modal btn-modal-save">保存配置</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

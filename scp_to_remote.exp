@@ -1,0 +1,36 @@
+#!/usr/bin/expect -f
+
+set timeout 180
+set ip "192.168.31.1"
+set user "root"
+set password "YOUR_ROUTER_PASSWORD"
+
+if {[info exists ::env(ROUTER_IP)]} {
+    set ip $::env(ROUTER_IP)
+}
+if {[info exists ::env(ROUTER_USER)]} {
+    set user $::env(ROUTER_USER)
+}
+if {[info exists ::env(ROUTER_PASSWORD)]} {
+    set password $::env(ROUTER_PASSWORD)
+}
+
+if { [llength $argv] < 2 } {
+    send_user "Usage: scp_to_remote.exp <local_file> <remote_path>\n"
+    exit 1
+}
+
+set local_file [lindex $argv 0]
+set remote_path [lindex $argv 1]
+
+spawn scp -O -o StrictHostKeyChecking=no -o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedKeyTypes=+ssh-rsa $local_file $user@$ip:$remote_path
+
+expect {
+    "password:" {
+        send "$password\r"
+        exp_continue
+    }
+    eof {
+        exit 0
+    }
+}

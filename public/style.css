@@ -1,0 +1,1617 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap');
+
+:root {
+    /* Colors from Figma */
+    --bg-main: #10131a;
+    --bg-container: #0b0e14;
+    --card-bg: #161b22;
+    --card-border: #30363d;
+    --text-primary: #e1e2eb;
+    --text-secondary: #8b929c;
+    --text-muted: #6b7280;
+    
+    /* Neon Status Colors */
+    --success: #4ae176;
+    --success-bg: rgba(74, 225, 118, 0.1);
+    --primary: #4d8eff;
+    --primary-bg: rgba(77, 142, 255, 0.1);
+    --warning: #ffb786;
+    --warning-bg: rgba(255, 183, 134, 0.1);
+    --danger: #ff6b6b;
+    --game-purple: #7c4dff;
+    --game-purple-bg: rgba(124, 77, 255, 0.1);
+    
+    /* Layout & Fonts */
+    --font-sans: 'Plus Jakarta Sans', 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --transition-smooth: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Reset */
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: var(--font-sans);
+    background-color: var(--bg-main);
+    color: var(--text-primary);
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    -webkit-font-smoothing: antialiased;
+}
+
+/* Scrollbar Customization */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+::-webkit-scrollbar-track {
+    background: var(--bg-main);
+}
+::-webkit-scrollbar-thumb {
+    background: #21262d;
+    border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: #30363d;
+}
+
+/* Main Layout Wrapper */
+.main-wrapper {
+    width: 100%;
+    max-width: 1280px;
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+}
+
+/* Header Top Bar */
+.header-top-bar {
+    height: 65px;
+    padding: 0 48px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background-color: var(--bg-main);
+    border-bottom: 1px solid var(--card-border);
+}
+
+.header-status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background-color: rgba(29, 32, 38, 0.8);
+    border: 1px solid rgba(48, 54, 61, 0.6);
+    padding: 6px 14px;
+    border-radius: 16px;
+    height: 28px;
+    transition: var(--transition-smooth);
+}
+
+.header-status-pill:hover {
+    border-color: var(--primary);
+    box-shadow: 0 0 10px rgba(77, 142, 255, 0.15);
+}
+
+.header-status-pill .status-dot {
+    width: 8px;
+    height: 8px;
+    background-color: var(--success);
+    border-radius: 50%;
+    box-shadow: 0 0 6px var(--success);
+    animation: pulse 2s infinite;
+}
+
+.header-status-pill .status-text {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--success);
+    letter-spacing: 0.3px;
+}
+
+.header-logo-section {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.meta-logo {
+    width: 20px;
+    height: 25px;
+    color: var(--primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.meta-logo svg {
+    width: 100%;
+    height: 100%;
+}
+
+.brand-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text-primary);
+    letter-spacing: -0.3px;
+}
+
+/* Manual Add Section */
+.manual-add-section {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.manual-add-section input {
+    height: 32px;
+    width: 200px;
+    padding: 0 12px;
+    background-color: var(--bg-container);
+    border: 1px solid var(--card-border);
+    border-radius: 6px;
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    font-size: 12px;
+    transition: var(--transition-smooth);
+}
+
+.manual-add-section input:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 2px rgba(77, 142, 255, 0.2);
+}
+
+.btn-add {
+    height: 32px;
+    padding: 0 14px;
+    background-color: var(--primary);
+    border: none;
+    border-radius: 6px;
+    color: #00285d;
+    font-family: var(--font-sans);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: var(--transition-smooth);
+}
+
+.btn-add:hover {
+    background-color: #70a6ff;
+    transform: translateY(-1px);
+}
+
+/* Main Container */
+.main-container {
+    flex: 1;
+    padding: 32px 48px;
+    background-color: var(--bg-main);
+    display: flex;
+    flex-direction: column;
+    gap: 32px;
+}
+
+/* Section 1: Status Overview Grid */
+.section-status-overview {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 24px;
+}
+
+@media (max-width: 1024px) {
+    .section-status-overview {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+@media (max-width: 640px) {
+    .section-status-overview {
+        grid-template-columns: 1fr;
+    }
+}
+
+.status-card {
+    background-color: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 8px;
+    padding: 16px 20px;
+    min-height: 104px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    transition: var(--transition-smooth);
+    position: relative;
+    overflow: hidden;
+}
+
+.status-card:hover {
+    transform: translateY(-2px);
+    border-color: #444c56;
+}
+
+/* Figma-style Border Glow effects */
+.border-glow-green:hover {
+    box-shadow: 0 0 12px rgba(74, 225, 118, 0.15);
+    border-color: var(--success);
+}
+.border-glow-blue:hover {
+    box-shadow: 0 0 12px rgba(77, 142, 255, 0.15);
+    border-color: var(--primary);
+}
+.border-glow-orange:hover {
+    box-shadow: 0 0 12px rgba(255, 183, 134, 0.15);
+    border-color: var(--warning);
+}
+
+.card-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+}
+
+.card-label {
+    font-size: 13px;
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+.card-icon {
+    width: 18px;
+    height: 18px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.card-icon svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+.status-green { color: var(--success); }
+.status-blue { color: var(--primary); }
+.status-orange { color: var(--warning); }
+.status-gray { color: var(--text-secondary); }
+
+.card-value-group {
+    margin-top: 12px;
+}
+
+.card-value {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text-primary);
+    letter-spacing: -0.3px;
+    display: flex;
+    align-items: baseline;
+}
+
+.value-unit {
+    font-size: 11px;
+    color: var(--text-secondary);
+    font-weight: 400;
+    margin-left: 2px;
+}
+
+.space-split {
+    width: 16px;
+    display: inline-block;
+}
+
+.card-sub-value {
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin-top: 4px;
+}
+
+.truncate-text {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 180px;
+}
+
+/* 节点名称跑马灯滚动容器 */
+.node-name-wrapper {
+    width: 250px; /* 增加默认展示宽度，防止空间浪费 */
+    overflow: hidden;
+    white-space: nowrap;
+    position: relative;
+    mask-image: linear-gradient(to right, rgba(0,0,0,1) 90%, rgba(0,0,0,0) 100%);
+    -webkit-mask-image: linear-gradient(to right, rgba(0,0,0,1) 90%, rgba(0,0,0,0) 100%);
+}
+
+.node-name-text-scroll {
+    display: inline-block;
+    font-size: 15px; /* 稍微缩小字号 */
+    font-weight: 700;
+    color: var(--primary);
+    padding-right: 20px;
+    transition: transform 0.3s ease;
+}
+
+/* 当文字过长时，在 hover 卡片时触发丝滑来回滚动 */
+.status-card:hover .node-name-text-scroll.long-text {
+    animation: scrollNodeName 6s linear infinite alternate;
+}
+
+@keyframes scrollNodeName {
+    0% { transform: translateX(0); }
+    100% { transform: translateX(calc(-100% + 230px)); } /* 滚动距离为超长部分 */
+}
+
+/* Colors from values */
+.text-green { color: var(--success); }
+.text-blue { color: var(--primary); }
+.text-white { color: var(--text-primary); }
+.text-orange { color: var(--warning); }
+.text-yellow { color: var(--warning) !important; }
+.text-red { color: var(--danger) !important; }
+
+/* Progress bar in Card 4 */
+.progress-bar-container {
+    width: 100%;
+    height: 4px;
+    background-color: #32353c;
+    border-radius: 2px;
+    margin-top: 10px;
+    overflow: hidden;
+}
+
+.progress-bar-fill {
+    height: 100%;
+    background-color: var(--success);
+    border-radius: 2px;
+    transition: width 0.5s ease-out;
+}
+
+/* 内存占用率高时的警示进度条 */
+.progress-bar-fill.warning-bar {
+    background-color: var(--warning) !important;
+}
+
+.progress-bar-fill.danger-bar {
+    background-color: var(--danger) !important;
+}
+
+/* Section 2: Filters & Search bar */
+.section-filters-search {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    border-bottom: 1px solid var(--card-border);
+    padding-bottom: 24px;
+}
+
+.filters-top-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    flex-wrap: wrap;
+    gap: 16px;
+}
+
+.filters-bottom-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    flex-wrap: wrap;
+    gap: 16px;
+}
+
+.heading-traffic-group {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.section-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.divider-vertical {
+    width: 1px;
+    height: 24px;
+    background-color: var(--card-border);
+}
+
+.traffic-stats-pill {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    background-color: rgba(33, 38, 45, 0.4);
+    border: 1px solid var(--card-border);
+    padding: 6px 14px;
+    border-radius: 20px;
+}
+
+.traffic-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.traffic-icon {
+    width: 10px;
+    height: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.traffic-icon svg {
+    width: 100%;
+    height: 100%;
+}
+
+/* Search bar styling */
+.search-input-wrapper {
+    position: relative;
+    width: 320px;
+}
+
+@media (max-width: 640px) {
+    .search-input-wrapper {
+        width: 100%;
+    }
+}
+
+.search-input-wrapper input {
+    width: 100%;
+    height: 28px;
+    background-color: var(--bg-container);
+    border: 1px solid var(--card-border);
+    border-radius: 6px;
+    padding: 0 16px 0 36px;
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    font-size: 13px;
+    transition: var(--transition-smooth);
+}
+
+.search-input-wrapper input:focus {
+    outline: none;
+    border-color: var(--primary);
+    background-color: rgba(11, 14, 20, 0.8);
+}
+
+.search-icon {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 14px;
+    height: 14px;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.search-icon svg {
+    width: 100%;
+    height: 100%;
+}
+
+/* Category Filter Buttons */
+.filter-buttons-container {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.filter-btn {
+    height: 28px;
+    padding: 0 16px;
+    background-color: #191c22;
+    border: none;
+    border-radius: 4px;
+    color: #c2c6d6;
+    font-family: var(--font-sans);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: var(--transition-smooth);
+}
+
+.filter-btn:hover {
+    background-color: #262c36;
+    color: var(--text-primary);
+}
+
+.filter-btn.active {
+    background-color: var(--primary);
+    color: #00285d;
+    font-weight: 600;
+}
+
+/* Section 3: Device Grid Wrapper */
+.section-device-grid-wrapper {
+    width: 100%;
+}
+
+.device-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(278px, 1fr));
+    gap: 24px;
+}
+
+.device-card-loading {
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: 48px;
+    color: var(--text-secondary);
+    font-size: 14px;
+}
+
+/* Device Card Style (Figma-spec: 278px x 123px) */
+.device-card {
+    background-color: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    height: 123px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    transition: var(--transition-smooth);
+    position: relative;
+}
+
+.device-card:hover {
+    border-color: #444c56;
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+}
+
+/* Offline state styling */
+.device-card.offline {
+    opacity: 0.65;
+}
+
+.card-top-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+}
+
+.device-avatar-name {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    max-width: 85%;
+}
+
+.device-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    background-color: #272a31; /* rgba(39, 42, 49, 1.00) */
+    color: #adc6ff;            /* rgba(173, 198, 255, 1.00) */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: var(--transition-smooth);
+}
+
+.device-avatar svg {
+    width: 16px;
+    height: 16px;
+    display: block;
+}
+
+.device-title-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    overflow: hidden;
+}
+
+.device-name-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 100%;
+    width: 100%;
+    overflow: hidden;
+}
+
+.device-name-text {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: 0 1 auto;
+    min-width: 0;
+}
+
+.device-card.offline .device-name-text {
+    color: var(--text-secondary);
+}
+
+/* Edit icon button */
+.btn-edit-device {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-muted);
+    width: 12px;
+    height: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: var(--transition-smooth);
+    flex-shrink: 0;
+}
+
+.btn-edit-device:hover {
+    color: var(--text-primary);
+}
+
+.btn-edit-device svg {
+    width: 100%;
+    height: 100%;
+}
+
+/* Online status indicators */
+.device-status-right {
+    display: flex;
+    align-items: center;
+}
+
+.device-status-pill {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.status-indicator-text {
+    display: none; /* PC 隐藏文字，只用圆点 */
+}
+
+.device-traffic-stats-mini {
+    display: none; /* PC 隐藏右上角微型流量 */
+}
+
+.status-indicator-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.indicator-online {
+    background-color: var(--success);
+    animation: dot-pulse 3.5s infinite ease-in-out;
+}
+
+@keyframes dot-pulse {
+    0% {
+        opacity: 0.6;
+        box-shadow: 0 0 3px rgba(74, 225, 118, 0.4);
+    }
+    50% {
+        opacity: 1;
+        box-shadow: 0 0 8px rgba(74, 225, 118, 0.8);
+    }
+    100% {
+        opacity: 0.6;
+        box-shadow: 0 0 3px rgba(74, 225, 118, 0.4);
+    }
+}
+
+.indicator-offline {
+    background-color: var(--text-muted);
+}
+
+/* Middle Row: IP and MAC */
+.card-mid-row {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-top: 4px;
+}
+
+.device-ip-text, .device-mac-text {
+    font-size: 11px;
+    color: var(--text-secondary);
+    font-family: monospace;
+}
+
+/* Bottom Row: Traffic and Controls */
+.card-bottom-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    margin-top: 8px;
+}
+
+.device-traffic-stats {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.device-speed-item {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.speed-icon {
+    width: 8px;
+    height: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.speed-icon svg {
+    width: 100%;
+    height: 100%;
+}
+
+/* Segmented Control Buttons (直连 / 代理 / 游戏) */
+.segmented-control {
+    background-color: #32353c;
+    border-radius: 4px;
+    display: flex;
+    padding: 2px;
+    gap: 2px;
+}
+
+.segment-btn {
+    height: 19px;
+    padding: 0 10px;
+    border: none;
+    background: none;
+    color: var(--text-secondary);
+    font-family: var(--font-sans);
+    font-size: 11px;
+    font-weight: 600;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: var(--transition-smooth);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Unselected Hover state */
+.segment-btn:not(.active):hover {
+    background-color: rgba(255, 255, 255, 0.05);
+    color: var(--text-primary);
+}
+
+/* Active states based on figma */
+.segment-btn.active.direct-active {
+    background-color: var(--primary);
+    color: #00285d;
+}
+
+.segment-btn.active.proxy-active {
+    background-color: var(--success);
+    color: #003915;
+}
+
+.segment-btn.active.game-active {
+    background-color: var(--game-purple);
+    color: #e1e2eb;
+}
+
+/* Footer style */
+.footer-bar {
+    height: 47px;
+    background-color: var(--bg-container);
+    border-top: 1px solid var(--card-border);
+    padding: 0 48px;
+    display: flex;
+    align-items: center;
+}
+
+.footer-container {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.footer-group-left, .footer-group-center, .footer-group-right {
+    display: flex;
+    align-items: center;
+    gap: 32px;
+}
+
+.footer-meta-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+.footer-icon {
+    font-size: 10px;
+}
+
+.footer-link {
+    font-size: 11px;
+    color: var(--text-secondary);
+    text-decoration: none;
+    transition: var(--transition-smooth);
+}
+
+.footer-link:hover {
+    color: var(--text-primary);
+}
+
+@media (max-width: 900px) {
+    .footer-container {
+        flex-direction: column;
+        gap: 8px;
+        padding: 12px 0;
+        height: auto;
+    }
+    .footer-bar {
+        height: auto;
+        padding: 12px 24px;
+    }
+    .footer-group-left, .footer-group-center, .footer-group-right {
+        gap: 16px;
+    }
+}
+
+/* UI Overlay: Loading screen */
+.loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(16, 19, 26, 0.7);
+    backdrop-filter: blur(8px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+}
+
+.loading-overlay.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.loading-box {
+    background-color: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 12px;
+    padding: 24px 32px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+    max-width: 320px;
+    text-align: center;
+}
+
+.loading-spinner {
+    width: 28px;
+    height: 28px;
+    border: 3px solid rgba(77, 142, 255, 0.1);
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+.loading-box p {
+    font-size: 13px;
+    color: var(--text-primary);
+    line-height: 1.5;
+}
+
+/* UI Overlay: Toast notification */
+.toast-popup {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(100px);
+    background-color: rgba(22, 27, 34, 0.9);
+    border: 1px solid var(--primary);
+    backdrop-filter: blur(12px);
+    color: var(--text-primary);
+    padding: 10px 20px;
+    border-radius: 30px;
+    font-size: 13px;
+    font-weight: 500;
+    z-index: 2000;
+    transition: transform 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+    pointer-events: none;
+}
+
+.toast-popup.show {
+    transform: translateX(-50%) translateY(0);
+}
+
+/* Animations */
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+@keyframes pulse {
+    0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(74, 225, 118, 0.7); }
+    70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(74, 225, 118, 0); }
+    100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(74, 225, 118, 0); }
+}
+
+/* Modal Overlay Styling */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(16, 19, 26, 0.7);
+    backdrop-filter: blur(12px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1500;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+}
+
+.modal-overlay.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* Modal Content Box */
+.modal-box {
+    background-color: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 12px;
+    width: 380px;
+    max-width: 90%;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+    overflow: hidden;
+    transform: translateY(30px);
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.175);
+}
+
+.modal-overlay.active .modal-box {
+    transform: translateY(0);
+}
+
+.modal-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--card-border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.modal-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.btn-close-modal {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    transition: var(--transition-smooth);
+}
+
+.btn-close-modal:hover {
+    color: var(--text-primary);
+}
+
+.btn-close-modal svg {
+    width: 14px;
+    height: 14px;
+}
+
+.modal-body {
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.form-label {
+    font-size: 11px;
+    color: var(--text-secondary);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.form-info-text {
+    font-size: 12px;
+    color: var(--text-primary);
+    background-color: var(--bg-container);
+    padding: 8px 12px;
+    border-radius: 6px;
+    border: 1px solid rgba(48, 54, 61, 0.4);
+    font-family: monospace;
+}
+
+.form-input, .form-select {
+    height: 36px;
+    background-color: var(--bg-container);
+    border: 1px solid var(--card-border);
+    border-radius: 6px;
+    padding: 0 12px;
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    font-size: 13px;
+    transition: var(--transition-smooth);
+}
+
+.form-input:focus, .form-select:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 2px rgba(77, 142, 255, 0.2);
+}
+
+.form-select {
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%238b929c'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    background-size: 14px;
+    padding-right: 36px;
+    cursor: pointer;
+}
+
+.modal-footer {
+    padding: 16px 20px;
+    background-color: rgba(11, 14, 20, 0.4);
+    border-top: 1px solid var(--card-border);
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+}
+
+.btn-modal {
+    height: 32px;
+    padding: 0 16px;
+    border-radius: 6px;
+    font-family: var(--font-sans);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: var(--transition-smooth);
+}
+
+.btn-modal-cancel {
+    background-color: #21262d;
+    border: 1px solid var(--card-border);
+    color: var(--text-primary);
+}
+
+.btn-modal-cancel:hover {
+    background-color: #30363d;
+}
+
+.btn-modal-save {
+    background-color: var(--primary);
+    border: none;
+    color: #00285d;
+}
+
+.btn-modal-save:hover {
+    background-color: #70a6ff;
+}
+
+/* ==========================================================================
+   Mobile Adaptive Styles (iPhone 15 Pro & 390px - 480px Viewport)
+   ========================================================================== */
+@media (max-width: 480px) {
+    /* 1. 基础边距与排版缩减 */
+    .header-top-bar {
+        height: 52px; /* 减少到 52px */
+        padding: 12px 16px 8px 16px; /* 减少 padding 留白 */
+        border-bottom: 1px solid var(--card-border);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .header-logo-section {
+        gap: 8px;
+    }
+
+    .brand-title {
+        font-size: 16px;
+        font-weight: 700;
+        letter-spacing: -0.3px;
+        text-transform: uppercase;
+        color: var(--text-primary);
+    }
+
+    /* 移动端特有：右上角已连接状态药丸 */
+    .header-status-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        background-color: rgba(29, 32, 38, 1.00);
+        border: 1px solid rgba(48, 54, 61, 0.6);
+        padding: 5px 12px;
+        border-radius: 14px;
+        height: 26px;
+    }
+
+    .header-status-pill .status-dot {
+        width: 8px;
+        height: 8px;
+        background-color: var(--success);
+        border-radius: 50%;
+        box-shadow: 0 0 6px var(--success);
+        animation: pulse 2s infinite;
+    }
+
+    .header-status-pill .status-text {
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--success);
+    }
+
+    .main-container {
+        padding: 16px 16px 32px 16px; /* 主边距为 16px */
+        gap: 24px;
+    }
+
+    /* 2. 状态 Overviews - 2x2 网格排列 */
+    .section-status-overview {
+        grid-template-columns: repeat(2, 1fr) !important;
+        gap: 12px !important;
+    }
+
+    .status-card {
+        min-height: 86px; /* Figma 移动端卡片高度为 86px */
+        padding: 12px 14px;
+        border-radius: 8px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+    }
+
+    .card-meta {
+        margin-bottom: 0px;
+    }
+
+    .card-label {
+        font-size: 11px;
+        color: var(--text-secondary);
+    }
+
+    .card-icon {
+        display: none; /* 移动端卡片隐藏右上角大图标以留出空间给内容 */
+    }
+
+    .card-value-group {
+        margin-top: 4px;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-end;
+        flex: 1;
+    }
+
+    .card-value {
+        font-size: 16px; /* 下调为 16px，利于容纳内容 */
+        font-weight: 700;
+        line-height: 1.2;
+    }
+
+    .card-sub-value {
+        font-size: 10px;
+        margin-top: 2px;
+        color: var(--text-muted);
+    }
+
+    /* 呼吸灯动画重声明（兼容性） */
+    @keyframes pulse {
+        0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(74, 225, 118, 0.7); }
+        70% { transform: scale(1); box-shadow: 0 0 0 5px rgba(74, 225, 118, 0); }
+        100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(74, 225, 118, 0); }
+    }
+
+
+
+    /* 卡片特例 2：当前节点跑马灯自动左右滚动 (无需Hover) */
+    .node-name-wrapper {
+        width: 140px; /* 移动端下宽度变窄 */
+        mask-image: linear-gradient(to right, rgba(0,0,0,1) 85%, rgba(0,0,0,0) 100%);
+        -webkit-mask-image: linear-gradient(to right, rgba(0,0,0,1) 85%, rgba(0,0,0,0) 100%);
+    }
+
+    .node-name-text-scroll {
+        font-size: 14px;
+        font-weight: 700;
+        color: var(--text-primary); /* Figma中移动端字色为浅白 */
+    }
+
+    /* 默认静止不滚动，点击卡片锁定焦点赋予 .scroll-active 类后才滚动 */
+    .node-name-text-scroll.long-text.scroll-active {
+        animation: scrollNodeName 6s linear infinite alternate !important;
+    }
+
+    @keyframes scrollNodeName {
+        0% { transform: translateX(0); }
+        100% { transform: translateX(calc(-100% + 120px)); }
+    }
+
+    /* 卡片特例 3：设备状态展示 */
+    #devices-total, #devices-proxy {
+        font-size: 16px;
+        font-weight: 700;
+    }
+    .status-card:nth-child(3) .card-value-group h2 {
+        font-size: 16px;
+    }
+    .status-card:nth-child(3) .value-unit {
+        font-size: 10px;
+    }
+
+    /* 卡片特例 4：内存卡片进度条 */
+    .progress-bar-container {
+        height: 6px; /* 放大到 6px */
+        margin-top: 6px;
+    }
+
+    /* 3. 过滤器与搜索栏排版 */
+    .section-filters-search {
+        gap: 0;
+        padding-bottom: 0px !important;
+        border-bottom: none !important;
+        margin-bottom: -12px; /* 进一步拉近状态卡片和分类筛选的距离 */
+    }
+
+    .filters-top-row {
+        display: none !important; /* 彻底删除/隐藏标题、速率、搜索框 */
+    }
+
+    .filters-bottom-row .search-input-wrapper {
+        display: none !important; /* 彻底隐藏移动端搜索框 */
+    }
+
+    /* 4. 分类 Tab 栏单行横向手势溢出滑动 */
+    .filter-buttons-container {
+        display: flex;
+        gap: 8px;
+        flex-wrap: nowrap !important; /* 禁止折行 */
+        overflow-x: auto !important; /* 横向溢出滚动 */
+        overflow-y: hidden;
+        -webkit-overflow-scrolling: touch; /* iOS 惯性滑动 */
+        margin: 0 -16px; /* 负边距让溢出看起来直接贴着屏幕边缘 */
+        padding: 4px 16px;
+        scrollbar-width: none; /* Firefox 隐藏滚动条 */
+    }
+
+    .filter-buttons-container::-webkit-scrollbar {
+        display: none; /* Chrome/Safari 隐藏滚动条 */
+    }
+
+    .filter-btn {
+        flex: 0 0 auto; /* 防止被 flex 挤压变形 */
+        height: 34px; /* Figma 移动端高度 34px */
+        padding: 0 16px;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 500;
+        background-color: rgba(29, 32, 38, 1.00);
+        color: rgba(225, 226, 235, 1.00);
+        transition: var(--transition-smooth);
+    }
+
+    .filter-btn.active {
+        background-color: rgba(173, 198, 255, 1.00);
+        color: rgba(0, 46, 106, 1.00);
+        font-weight: 600;
+    }
+
+    /* 5. 设备卡片高保真适配 */
+    .device-grid {
+        grid-template-columns: 1fr !important; /* 强制单列 */
+        gap: 12px !important;
+    }
+
+    .device-card {
+        height: 126px; /* Figma 移动端卡片高度 126px */
+        padding: 12px 16px;
+        border-radius: 8px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+    }
+
+    .card-top-row {
+        align-items: center; /* 改为居中对齐，保证左右等高元素完美垂直居中 */
+    }
+
+    .device-avatar-name {
+        gap: 12px;
+        max-width: 72%;
+        align-items: center; /* 头像与文字的垂直居中 */
+    }
+
+    .device-avatar {
+        width: 40px; /* Figma 移动端 Avatar 升级为 40px */
+        height: 40px;
+        border-radius: 6px;
+    }
+
+    .device-avatar svg {
+        width: 20px;
+        height: 20px;
+    }
+
+    .device-title-wrapper {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 2px;
+    }
+
+    .device-name-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .device-name-text {
+        font-size: 14px;
+        font-weight: 600;
+        max-width: 140px;
+    }
+
+    .device-card .btn-edit-device {
+        background: none;
+        border: none;
+        cursor: pointer;
+        color: var(--text-muted);
+        width: 14px;
+        height: 14px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: var(--transition-smooth);
+        padding: 0;
+    }
+
+    /* 将原本的 mid 行（IP和MAC）在移动端做紧凑重新排布 */
+    .card-mid-row {
+        display: none; /* 移动端在顶部Avatar右侧直接排布IP，MAC地址由于空间狭小予以省略或仅显示IP */
+    }
+
+    /* 重写：把 IP 显示在名称下方 */
+    .device-title-wrapper::after {
+        content: attr(data-ip-display);
+        font-size: 11px;
+        color: var(--text-secondary);
+        font-family: monospace;
+        display: block;
+        margin-top: 1px;
+    }
+
+    /* 右侧状态和上下行流量的垂直堆叠 */
+    .device-status-right {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 4px;
+        min-width: 80px;
+    }
+
+    .device-status-pill {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .status-indicator-dot {
+        display: inline-block !important; /* 移动端右上角保留小圆点 */
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        margin: 0;
+    }
+
+    .status-indicator-text {
+        display: inline !important; /* 展示在线/离线文字 */
+        font-size: 11px;
+        font-weight: 600;
+    }
+
+    .device-traffic-stats-mini {
+        display: flex !important; /* 移动端显示右上角微型流量 */
+        align-items: center;
+        gap: 8px;
+    }
+
+    .device-speed-item {
+        font-size: 10px;
+        display: flex;
+        align-items: center;
+        gap: 2px;
+    }
+
+    .device-speed-item .speed-icon {
+        width: 8px;
+        height: 8px;
+    }
+
+    .card-bottom-row .device-traffic-stats {
+        display: none !important; /* 隐藏底部常规流量计 */
+    }
+
+    /* 分段选择器 - 高大触摸化改造 (38px高，按钮28px高) */
+    .card-bottom-row {
+        margin-top: 6px;
+        justify-content: flex-end; /* 右对齐 */
+        width: 100%;
+    }
+
+    .segmented-control {
+        background-color: rgba(11, 14, 20, 1.00); /* 填充深黑色背景 */
+        border-radius: 6px;
+        padding: 3px;
+        width: 100%; /* 占满底部 */
+        height: 38px; /* 整体高度 38px */
+        display: flex;
+        align-items: center;
+    }
+
+    .segment-btn {
+        flex: 1; /* 平分宽度 */
+        height: 30px; /* 按钮高度 30px */
+        font-size: 12px;
+        font-weight: 600;
+        border-radius: 4px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .segment-btn.active.direct-active {
+        background-color: rgba(173, 198, 255, 1.00); /* 激活直连：浅蓝背景 */
+        color: rgba(0, 46, 106, 1.00); /* 深蓝文字 */
+    }
+
+    .segment-btn.active.proxy-active {
+        background-color: var(--success); /* 激活代理：绿色背景 */
+        color: #003915; /* 深绿文字 */
+    }
+
+    .segment-btn.active.game-active {
+        background-color: var(--game-purple); /* 激活游戏：紫色背景 */
+        color: #ffffff; /* 白色文字 */
+    }
+
+    /* 6. 编辑别名弹窗 Bottom Sheet 抽屉化 */
+    .modal-overlay {
+        align-items: flex-end; /* 靠底部对齐 */
+    }
+
+    .modal-box {
+        width: 100%;
+        max-width: 100%;
+        border-radius: 16px 16px 0 0; /* 仅顶部圆角 */
+        border-bottom: none;
+        transform: translateY(100%); /* 初始在底部外 */
+        transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+        padding-bottom: env(safe-area-inset-bottom, 20px); /* 兼容刘海屏底部安全距离 */
+    }
+
+    .modal-overlay.active .modal-box {
+        transform: translateY(0); /* 划入 */
+    }
+
+    /* 顶部手柄指示条 */
+    .modal-handle {
+        display: block;
+        width: 36px;
+        height: 4px;
+        background-color: rgba(139, 148, 158, 0.3);
+        border-radius: 2px;
+        margin: 10px auto 4px auto;
+    }
+
+    .modal-header {
+        padding: 12px 20px 16px 20px;
+        border-bottom: 1px solid var(--card-border);
+    }
+
+    .modal-title {
+        font-size: 15px;
+    }
+
+    .modal-body {
+        padding: 20px;
+        gap: 14px;
+    }
+
+    .form-input, .form-select {
+        height: 40px; /* 输入框加高方便触控 */
+        font-size: 14px;
+    }
+
+    .modal-footer {
+        padding: 16px 20px 24px 20px;
+        background-color: rgba(11, 14, 20, 0.6);
+        display: flex;
+        gap: 12px;
+    }
+
+    .btn-modal {
+        flex: 1; /* 两个大按钮平分宽度 */
+        height: 44px; /* 增高到 44px 符合触控标准 */
+        font-size: 14px;
+    }
+
+    /* 7. 页脚极简化 */
+    .footer-bar {
+        padding: 16px 24px 32px 24px;
+        background-color: var(--bg-main);
+        border-top: 1px solid var(--card-border);
+    }
+
+    .footer-container {
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .footer-group-left, .footer-group-center, .footer-group-right {
+        flex-direction: row;
+        justify-content: center;
+        width: 100%;
+        gap: 16px;
+    }
+    
+    .footer-group-center {
+        display: none; /* 移动端隐藏 CPU/内存页脚指标，已在顶部体现 */
+    }
+
+    .footer-meta-item, .footer-link {
+        font-size: 10px;
+    }
+}

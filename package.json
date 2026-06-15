@@ -1,0 +1,18 @@
+{
+  "name": "clash-meta",
+  "version": "1.0.0",
+  "description": "Local web portal to manage Clash whitelist for iPad and iPhone",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "test": "jest"
+  },
+  "dependencies": {
+    "axios": "^1.18.0",
+    "express": "^4.19.2"
+  },
+  "devDependencies": {
+    "jest": "^30.4.2"
+  }
+}
