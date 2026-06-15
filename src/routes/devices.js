@@ -87,8 +87,8 @@ router.get('/', async (req, res) => {
                         mac, 
                         ip, 
                         hostname,
-                        rx_rate: matchIpInfo.tx_rate || 0, // 下行流速
-                        tx_rate: matchIpInfo.rx_rate || 0  // 上行流速
+                        rx_rate: matchIpInfo.rx_rate || 0, // 下行流速
+                        tx_rate: matchIpInfo.tx_rate || 0  // 上行流速
                     });
                 }
             }
