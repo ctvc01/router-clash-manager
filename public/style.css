@@ -803,18 +803,27 @@ body {
 
 /* Active states based on figma */
 .segment-btn.active.direct-active {
-    background-color: var(--primary);
-    color: #00285d;
+    background: linear-gradient(135deg, #5c606a 0%, #464a54 100%);
+    color: #e2e4e9;
+    box-shadow: none;
 }
 
 .segment-btn.active.proxy-active {
-    background-color: var(--success);
-    color: #003915;
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    color: #ffffff;
+    box-shadow: 0 0 10px rgba(16, 185, 129, 0.5);
 }
 
 .segment-btn.active.game-active {
-    background-color: var(--game-purple);
-    color: #e1e2eb;
+    background: linear-gradient(135deg, #852df6 0%, #d93df6 100%);
+    color: #ffffff;
+    box-shadow: 0 0 10px rgba(133, 45, 246, 0.5);
+}
+
+.segment-btn.active.ai-active {
+    background: linear-gradient(135deg, #00d2ff 0%, #0066ff 100%);
+    color: #ffffff;
+    box-shadow: 0 0 10px rgba(0, 210, 255, 0.5);
 }
 
 /* Footer style */
@@ -1512,18 +1521,27 @@ body {
     }
 
     .segment-btn.active.direct-active {
-        background-color: rgba(173, 198, 255, 1.00); /* 激活直连：浅蓝背景 */
-        color: rgba(0, 46, 106, 1.00); /* 深蓝文字 */
+        background: linear-gradient(135deg, #5c606a 0%, #464a54 100%); /* 激活直连：置灰弱化 */
+        color: #e2e4e9;
+        box-shadow: none;
     }
 
     .segment-btn.active.proxy-active {
-        background-color: var(--success); /* 激活代理：绿色背景 */
-        color: #003915; /* 深绿文字 */
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%); /* 激活代理：翡翠绿渐变 */
+        color: #ffffff;
+        box-shadow: 0 0 12px rgba(16, 185, 129, 0.6);
     }
 
     .segment-btn.active.game-active {
-        background-color: var(--game-purple); /* 激活游戏：紫色背景 */
-        color: #ffffff; /* 白色文字 */
+        background: linear-gradient(135deg, #852df6 0%, #d93df6 100%); /* 激活游戏：电竞紫渐变 */
+        color: #ffffff;
+        box-shadow: 0 0 12px rgba(133, 45, 246, 0.6);
+    }
+
+    .segment-btn.active.ai-active {
+        background: linear-gradient(135deg, #00d2ff 0%, #0066ff 100%); /* 激活 AI：极光蓝渐变 */
+        color: #ffffff;
+        box-shadow: 0 0 12px rgba(0, 210, 255, 0.6);
     }
 
     /* 6. 编辑别名弹窗 Bottom Sheet 抽屉化 */

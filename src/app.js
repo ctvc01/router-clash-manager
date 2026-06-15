@@ -4,6 +4,7 @@ const gatewayRouter = require('./routes/gateway');
 const { router: devicesRouter } = require('./routes/devices');
 const whitelistRouter = require('./routes/whitelist');
 const gameRouter = require('./routes/game');
+const aiRouter = require('./routes/ai');
 const Logger = require('./utils/logger');
 
 const app = express();
@@ -34,6 +35,7 @@ app.use('/api', gatewayRouter);             // 提供 /api/status, /api/error-lo
 app.use('/api/devices', devicesRouter);     // 提供 /api/devices, /api/devices/custom
 app.use('/api/whitelist', whitelistRouter); // 提供 /api/whitelist/add, /api/whitelist/remove
 app.use('/api/game', gameRouter);           // 提供 /api/game/list, /api/game/enable, /api/game/disable
+app.use('/api/ai', aiRouter);               // 提供 /api/ai/list, /api/ai/enable, /api/ai/disable
 
 // 6. 全局异步错误捕获与兜底处理器 (防崩退)
 app.use((err, req, res, next) => {

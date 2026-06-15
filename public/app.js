@@ -46,6 +46,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let state = {
         whitelist: [],            // 代理白名单的 MAC 列表 (来自后端)
         gameAccelerated: [],      // 游戏加速的 MAC 列表 (来自后端)
+        aiBoosted: [],            // AI 强化的 MAC 列表 (来自后端)
         customDevices: {},        // 自定义设备别名与类型列表 (来自后端)
         lanDevices: [],           // 融合后的局域网设备列表
         status: {},               // 路由运行状态
@@ -337,6 +338,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await res.json();
             
             state.whitelist = data.whitelist.map(m => m.toLowerCase());
+            state.gameAccelerated = (data.gameList || []).map(m => m.toLowerCase());
+            state.aiBoosted = (data.aiList || []).map(m => m.toLowerCase());
             state.customDevices = data.custom || {};
             
             // 仅使用真实局域网在线设备并同步真实流速
@@ -357,7 +360,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // 统计大卡片
             elDevicesTotal.textContent = state.lanDevices.length;
-            elDevicesProxy.textContent = state.whitelist.length + state.gameAccelerated.length;
+            elDevicesProxy.textContent = state.whitelist.length + state.gameAccelerated.length + state.aiBoosted.length;
             
             renderFilterTabs();
             updateRealSpeeds();
@@ -367,7 +370,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // 异常时回退为空列表
             state.lanDevices = [];
             elDevicesTotal.textContent = 0;
-            elDevicesProxy.textContent = state.whitelist.length + state.gameAccelerated.length;
+            elDevicesProxy.textContent = state.whitelist.length + state.gameAccelerated.length + state.aiBoosted.length;
             
             renderFilterTabs();
             updateRealSpeeds();
@@ -467,6 +470,52 @@ document.addEventListener('DOMContentLoaded', () => {
         showToast('游戏加速通道已成功关停，规则已重载！');
     }
 
+    // [新增] 开启 AI 强化
+    async function enableAi(mac) {
+        if (!mac) return;
+        mac = mac.toLowerCase();
+        
+        if (!state.aiBoosted.includes(mac)) {
+            state.aiBoosted.push(mac);
+        }
+        state.whitelist = state.whitelist.filter(m => m !== mac);
+        state.gameAccelerated = state.gameAccelerated.filter(m => m !== mac);
+        
+        const res = await fetch('/api/ai/enable', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mac: mac })
+        });
+        
+        if (!res.ok) {
+            const data = await res.json();
+            throw new Error(data.message || '网络连接或配置自检失败');
+        }
+        
+        showToast('AI 极速分流通道已就绪，已自动寻优至最速 Google 节点！');
+    }
+
+    // [新增] 关停 AI 强化
+    async function disableAi(mac) {
+        if (!mac) return;
+        mac = mac.toLowerCase();
+        
+        state.aiBoosted = state.aiBoosted.filter(m => m !== mac);
+        
+        const res = await fetch('/api/ai/disable', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mac: mac })
+        });
+        
+        if (!res.ok) {
+            const data = await res.json();
+            throw new Error(data.message || '网络连接或配置自检失败');
+        }
+        
+        showToast('AI 强化通道已成功关停，规则已重载！');
+    }
+
     // [新增逻辑] 提交自定义名称与类别属性
     async function saveDeviceCustom(mac, name, category) {
         if (!mac) return;
@@ -509,15 +558,15 @@ document.addEventListener('DOMContentLoaded', () => {
         
         let filteredCount = 0;
 
-        // 对设备在线状态进行排序：游戏模式 > 代理模式 > 直连模式
+        // 对设备在线状态进行排序：游戏模式 > AI 模式 > 代理模式 > 直连模式
         const sortedDevices = [...state.lanDevices].sort((a, b) => {
             const aMac = a.mac.toLowerCase();
             const bMac = b.mac.toLowerCase();
             
-            const aMode = state.gameAccelerated.includes(aMac) ? 'game' : (state.whitelist.includes(aMac) ? 'proxy' : 'direct');
-            const bMode = state.gameAccelerated.includes(bMac) ? 'game' : (state.whitelist.includes(bMac) ? 'proxy' : 'direct');
+            const aMode = state.gameAccelerated.includes(aMac) ? 'game' : (state.aiBoosted.includes(aMac) ? 'ai' : (state.whitelist.includes(aMac) ? 'proxy' : 'direct'));
+            const bMode = state.gameAccelerated.includes(bMac) ? 'game' : (state.aiBoosted.includes(bMac) ? 'ai' : (state.whitelist.includes(bMac) ? 'proxy' : 'direct'));
             
-            const modeWeight = { 'game': 2, 'proxy': 1, 'direct': 0 };
+            const modeWeight = { 'game': 3, 'ai': 2, 'proxy': 1, 'direct': 0 };
             
             // 模式权重高者排在前面
             if (modeWeight[aMode] !== modeWeight[bMode]) {
@@ -555,6 +604,8 @@ document.addEventListener('DOMContentLoaded', () => {
             let activeMode = 'direct';
             if (state.gameAccelerated.includes(mac)) {
                 activeMode = 'game';
+            } else if (state.aiBoosted.includes(mac)) {
+                activeMode = 'ai';
             } else if (state.whitelist.includes(mac)) {
                 activeMode = 'proxy';
             }
@@ -562,13 +613,23 @@ document.addEventListener('DOMContentLoaded', () => {
             const avatarSvg = getDeviceIcon(category);
             const speed = state.deviceSpeeds[mac] || { down: 0, up: 0 };
             
-            // 模式选择控制器：游戏主机(game)展示直连/代理/游戏三态；其它展示双态
+            // 模式选择控制器：
+            // 1. 只有电脑(pc)、平板(tablet)、手机(phone) 3 种类型的设备才提供直连/代理/AI 强化三态
+            // 2. 游戏主机(game)提供直连/游戏双态
+            // 3. 其它类型(tv, iot, other等)默认仅提供直连/代理双态
             let controlHtml = '';
-            if (category === 'game') {
+            if (['pc', 'phone', 'tablet'].includes(category)) {
                 controlHtml = `
                     <div class="segmented-control">
                         <button class="segment-btn ${activeMode === 'direct' ? 'active direct-active' : ''}" data-mac="${mac}" data-action="direct">直连</button>
                         <button class="segment-btn ${activeMode === 'proxy' ? 'active proxy-active' : ''}" data-mac="${mac}" data-action="proxy">代理</button>
+                        <button class="segment-btn ${activeMode === 'ai' ? 'active ai-active' : ''}" data-mac="${mac}" data-action="ai">AI强化</button>
+                    </div>
+                `;
+            } else if (category === 'game') {
+                controlHtml = `
+                    <div class="segmented-control">
+                        <button class="segment-btn ${activeMode === 'game' ? '' : 'active direct-active'}" data-mac="${mac}" data-action="direct">直连</button>
                         <button class="segment-btn ${activeMode === 'game' ? 'active game-active' : ''}" data-mac="${mac}" data-action="game">游戏</button>
                     </div>
                 `;
@@ -687,6 +748,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (state.gameAccelerated.includes(mac)) {
                     await disableGame(mac);
                 }
+                if (state.aiBoosted.includes(mac)) {
+                    await disableAi(mac);
+                }
                 await removeDevice(mac);
             } 
             else if (action === 'proxy') {
@@ -694,11 +758,24 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (state.gameAccelerated.includes(mac)) {
                     await disableGame(mac);
                 }
+                if (state.aiBoosted.includes(mac)) {
+                    await disableAi(mac);
+                }
                 await addDevice(mac);
             } 
             else if (action === 'game') {
                 // 切游戏加速 (AND 规则插入)
+                if (state.aiBoosted.includes(mac)) {
+                    await disableAi(mac);
+                }
                 await enableGame(mac);
+            }
+            else if (action === 'ai') {
+                // 切 AI 强化
+                if (state.gameAccelerated.includes(mac)) {
+                    await disableGame(mac);
+                }
+                await enableAi(mac);
             }
             // 切换完成后，重新获取设备状态，确保数据跟后端完全一致！
             await fetchDevices();

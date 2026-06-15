@@ -6,6 +6,7 @@ const cache = require('../utils/cache');
 const Validators = require('../utils/validators');
 const SshService = require('../services/sshService');
 const GameAccService = require('../services/gameAccService');
+const AiBoostService = require('../services/aiBoostService');
 
 const router = express.Router();
 
@@ -52,10 +53,11 @@ router.get('/', async (req, res) => {
         ]);
 
         const gameMacs = GameAccService.readGameDevices().map(m => m.toLowerCase());
+        const aiMacs = AiBoostService.readAiDevices().map(m => m.toLowerCase());
         const whitelist = whitelistOutput
             .split('\n')
             .map(line => line.trim().toLowerCase())
-            .filter(line => line.length > 0 && !gameMacs.includes(line));
+            .filter(line => line.length > 0 && !gameMacs.includes(line) && !aiMacs.includes(line));
 
         let trafficData = {};
         try {
@@ -98,7 +100,9 @@ router.get('/', async (req, res) => {
         const responseData = {
             whitelist,
             lan_devices,
-            custom
+            custom,
+            gameList: gameMacs,
+            aiList: aiMacs
         };
 
         // 将获取的数据缓存 15 秒
@@ -110,7 +114,9 @@ router.get('/', async (req, res) => {
         res.json({
             whitelist: [],
             lan_devices: [],
-            custom: readCustom()
+            custom: readCustom(),
+            gameList: [],
+            aiList: []
         });
     }
 });

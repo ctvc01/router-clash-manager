@@ -38,10 +38,11 @@ rsync -avz --delete \
   --exclude='aliases.json' \
   --exclude='device_custom.json' \
   --exclude='game_devices' \
+  --exclude='ai_devices' \
   ./ ${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PATH}/
 
 echo "=== 3. 初始化远程持久化文件，防止被挂载为文件夹 ==="
-ssh ${REMOTE_USER}@${REMOTE_HOST} "touch ${REMOTE_PATH}/device_custom.json ${REMOTE_PATH}/game_devices ${REMOTE_PATH}/aliases.json"
+ssh ${REMOTE_USER}@${REMOTE_HOST} "touch ${REMOTE_PATH}/device_custom.json ${REMOTE_PATH}/game_devices ${REMOTE_PATH}/ai_devices ${REMOTE_PATH}/aliases.json"
 
 echo "=== 4. 远程构建并重启容器 ==="
 ssh ${REMOTE_USER}@${REMOTE_HOST} "cd ${REMOTE_PATH} && docker compose up --build --force-recreate -d"

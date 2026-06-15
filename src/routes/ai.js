@@ -10,34 +10,34 @@ const AiBoostService = require('../services/aiBoostService');
 
 const router = express.Router();
 
-// 1. 获取开启游戏加速的设备 MAC 列表
+// 1. 获取开启 AI 强化的设备 MAC 列表
 router.get('/list', (req, res) => {
-    res.json(GameAccService.readGameDevices());
+    res.json(AiBoostService.readAiDevices());
 });
 
-// 2. 开启设备游戏加速模式
+// 2. 开启设备 AI 强化模式
 router.post('/enable', async (req, res) => {
     try {
         const mac = Validators.validateMAC(req.body.mac);
-        const gameMacs = GameAccService.readGameDevices();
-        let aiMacs = AiBoostService.readAiDevices();
+        const aiMacs = AiBoostService.readAiDevices();
+        let gameMacs = GameAccService.readGameDevices();
         
-        // 互斥处理：如果在 AI 强化模式，需从中移除
-        if (aiMacs.includes(mac)) {
-            aiMacs = aiMacs.filter(m => m !== mac);
-            AiBoostService.writeAiDevices(aiMacs);
-            Logger.info('GameAcc', `开启游戏加速：由于设备 ${mac} 原本在 AI 强化模式，已自动将其从中移除。`);
-        }
-        
-        if (!gameMacs.includes(mac)) {
-            gameMacs.push(mac);
+        // 互斥处理：如果在游戏模式，需从中移除
+        if (gameMacs.includes(mac)) {
+            gameMacs = gameMacs.filter(m => m !== mac);
             GameAccService.writeGameDevices(gameMacs);
+            Logger.info('AiBoost', `开启 AI 强化：由于设备 ${mac} 原本在游戏模式，已自动将其从中移除。`);
         }
         
-        // 1. 更新 Clash 规则与加速专用策略组
+        if (!aiMacs.includes(mac)) {
+            aiMacs.push(mac);
+            AiBoostService.writeAiDevices(aiMacs);
+        }
+        
+        // 1. 更新 Clash 规则与 AI 专用策略组
         await RulesEngine.updateClashRules(gameMacs, aiMacs);
         
-        // 2. 将游戏设备写入路由器物理 MAC 白名单（防火墙重定向所需）
+        // 2. 将设备写入路由器物理 MAC 白名单（防火墙重定向所需）
         const whitelistOutput = await SshService.runRemoteCommand('cat /data/ShellCrash/configs/mac');
         const whitelistMacs = whitelistOutput
             .split('\n')
@@ -47,38 +47,38 @@ router.post('/enable', async (req, res) => {
         if (!whitelistMacs.includes(mac)) {
             await SshService.runRemoteCommand(`echo "${mac}" >> /data/ShellCrash/configs/mac`);
             await SshService.restartShellCrashSecurely();
-            Logger.info('GameAcc', `已将设备 ${mac} 物理写入 MAC 白名单并重启 ShellCrash！`);
+            Logger.info('AiBoost', `已将设备 ${mac} 物理写入 MAC 白名单并重启 ShellCrash！`);
         }
         
-        // 3. 异步任务：等待内核就绪、测速寻优并锁定最优专线节点
+        // 3. 异步任务：等待内核就绪、测速寻优并锁定最优 AI 节点
         (async () => {
             try {
                 const isReady = await ClashService.waitClashReady(25);
                 if (isReady) {
-                    Logger.info('GameAcc', 'Clash 核心就绪成功，开始测速锁定最优游戏节点...');
-                    const fastestNode = await GameAccService.findFastestGameNode();
+                    Logger.info('AiBoost', 'Clash 核心就绪成功，开始测速锁定最优 AI 节点...');
+                    const fastestNode = await AiBoostService.findFastestAiNode();
                     if (fastestNode) {
-                        await GameAccService.lockGameNode(fastestNode);
+                        await AiBoostService.lockAiNode(fastestNode);
                     }
-                    GameAccService.startGameAccMonitor();
+                    AiBoostService.startAiBoostMonitor();
                 } else {
-                    Logger.warn('GameAcc', 'Clash 核心在 25 秒内未就绪，跳过自动测速锁定流程。');
+                    Logger.warn('AiBoost', 'Clash 核心在 25 秒内未就绪，跳过自动测速锁定流程。');
                 }
             } catch (monitorErr) {
-                Logger.error('GameAcc', '异步开启测速与守护任务失败', monitorErr);
+                Logger.error('AiBoost', '异步开启 AI 测速与守护任务失败', monitorErr);
             }
         })();
         
-        // 如果 AI 设备无了，停止 AI 守护
-        if (aiMacs.length === 0) {
-            AiBoostService.stopAiBoostMonitor();
+        // 如果游戏设备无了，停止游戏守护
+        if (gameMacs.length === 0) {
+            GameAccService.stopGameAccMonitor();
         }
         
         // 操作成功，清除设备列表的缓存
         cache.clear('deviceList');
         res.json({ success: true });
     } catch (err) {
-        Logger.error('GameAcc', '启用游戏加速接口异常', err);
+        Logger.error('AiBoost', '启用 AI 强化接口异常', err);
         res.status(err.message && err.message.includes('格式') ? 400 : 500).json({ 
             success: false, 
             message: err.message 
@@ -86,19 +86,19 @@ router.post('/enable', async (req, res) => {
     }
 });
 
-// 3. 关闭设备游戏加速模式
+// 3. 关闭设备 AI 强化模式
 router.post('/disable', async (req, res) => {
     try {
         const mac = Validators.validateMAC(req.body.mac);
-        let gameMacs = GameAccService.readGameDevices();
+        let aiMacs = AiBoostService.readAiDevices();
+        const gameMacs = GameAccService.readGameDevices();
         
-        if (gameMacs.includes(mac)) {
-            gameMacs = gameMacs.filter(m => m !== mac);
-            GameAccService.writeGameDevices(gameMacs);
+        if (aiMacs.includes(mac)) {
+            aiMacs = aiMacs.filter(m => m !== mac);
+            AiBoostService.writeAiDevices(aiMacs);
         }
         
         // 1. 同步注销加速规则
-        const aiMacs = AiBoostService.readAiDevices();
         await RulesEngine.updateClashRules(gameMacs, aiMacs);
         
         // 2. 清除路由器上的 MAC 白名单（回滚为直连，由前端自选是否随后切入网页代理）
@@ -116,20 +116,20 @@ router.post('/disable', async (req, res) => {
                 await SshService.runRemoteCommand(`printf "${updatedMacs.join('\\n')}\\n" > /data/ShellCrash/configs/mac`);
             }
             await SshService.restartShellCrashSecurely();
-            Logger.info('GameAcc', `已从路由物理 MAC 白名单清除设备 ${mac} 并重启 ShellCrash！`);
+            Logger.info('AiBoost', `已从路由物理 MAC 白名单清除设备 ${mac} 并重启 ShellCrash！`);
         }
         
-        // 3. 如果没有任何设备处于加速模式，停止可用性健康守护进程
-        const remainingMacs = GameAccService.readGameDevices();
+        // 3. 如果没有任何设备处于 AI 模式，停止监控
+        const remainingMacs = AiBoostService.readAiDevices();
         if (remainingMacs.length === 0) {
-            GameAccService.stopGameAccMonitor();
+            AiBoostService.stopAiBoostMonitor();
         }
         
         // 操作成功，清除设备列表的缓存
         cache.clear('deviceList');
         res.json({ success: true });
     } catch (err) {
-        Logger.error('GameAcc', '禁用游戏加速接口异常', err);
+        Logger.error('AiBoost', '禁用 AI 强化接口异常', err);
         res.status(err.message && err.message.includes('格式') ? 400 : 500).json({ 
             success: false, 
             message: err.message 

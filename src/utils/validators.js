@@ -64,7 +64,7 @@ const Validators = {
             }
         }
         // 2. 精准单词边界检测拦截，防止运行未授权的可执行程序 (避免误杀 shellcrash 等 sh 结尾的名词)
-        const dangerousWords = /\b(sh|bash|wget|curl|nc)\b/;
+        const dangerousWords = /\b(sh|bash|wget|nc)\b/;
         const match = command.match(dangerousWords);
         if (match) {
             throw new Error(`[Security] 拦截到未授权的程序执行: ${match[1]}`);

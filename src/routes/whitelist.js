@@ -3,6 +3,9 @@ const Logger = require('../utils/logger');
 const cache = require('../utils/cache');
 const Validators = require('../utils/validators');
 const SshService = require('../services/sshService');
+const GameAccService = require('../services/gameAccService');
+const AiBoostService = require('../services/aiBoostService');
+const RulesEngine = require('../services/rulesEngine');
 
 const router = express.Router();
 
@@ -10,6 +13,28 @@ const router = express.Router();
 router.post('/add', async (req, res) => {
     try {
         const mac = Validators.validateMAC(req.body.mac);
+        
+        // 互斥处理：从高级分流模式（游戏/AI）中剔除
+        let gameMacs = GameAccService.readGameDevices();
+        let aiMacs = AiBoostService.readAiDevices();
+        let listChanged = false;
+        
+        if (gameMacs.includes(mac)) {
+            gameMacs = gameMacs.filter(m => m !== mac);
+            GameAccService.writeGameDevices(gameMacs);
+            listChanged = true;
+        }
+        if (aiMacs.includes(mac)) {
+            aiMacs = aiMacs.filter(m => m !== mac);
+            AiBoostService.writeAiDevices(aiMacs);
+            listChanged = true;
+        }
+        
+        if (listChanged) {
+            await RulesEngine.updateClashRules(gameMacs, aiMacs);
+            if (gameMacs.length === 0) GameAccService.stopGameAccMonitor();
+            if (aiMacs.length === 0) AiBoostService.stopAiBoostMonitor();
+        }
         
         const whitelistOutput = await SshService.runRemoteCommand('cat /data/ShellCrash/configs/mac');
         const whitelistMacs = whitelistOutput
@@ -44,6 +69,28 @@ router.post('/add', async (req, res) => {
 router.post('/remove', async (req, res) => {
     try {
         const mac = Validators.validateMAC(req.body.mac);
+
+        // 互斥处理：从高级分流模式（游戏/AI）中剔除
+        let gameMacs = GameAccService.readGameDevices();
+        let aiMacs = AiBoostService.readAiDevices();
+        let listChanged = false;
+        
+        if (gameMacs.includes(mac)) {
+            gameMacs = gameMacs.filter(m => m !== mac);
+            GameAccService.writeGameDevices(gameMacs);
+            listChanged = true;
+        }
+        if (aiMacs.includes(mac)) {
+            aiMacs = aiMacs.filter(m => m !== mac);
+            AiBoostService.writeAiDevices(aiMacs);
+            listChanged = true;
+        }
+        
+        if (listChanged) {
+            await RulesEngine.updateClashRules(gameMacs, aiMacs);
+            if (gameMacs.length === 0) GameAccService.stopGameAccMonitor();
+            if (aiMacs.length === 0) AiBoostService.stopAiBoostMonitor();
+        }
 
         const whitelistOutput = await SshService.runRemoteCommand('cat /data/ShellCrash/configs/mac');
         const whitelistMacs = whitelistOutput

@@ -4,6 +4,7 @@ const Logger = require('./utils/logger');
 const ClashService = require('./services/clashService');
 const ProxyHealthService = require('./services/proxyHealthService');
 const GameAccService = require('./services/gameAccService');
+const AiBoostService = require('./services/aiBoostService');
 
 // 1. 启动前强校验环境变量与核心凭证
 validateEnvironment();
@@ -17,6 +18,16 @@ if (activeGameDevices.length > 0) {
 
 // 启动北京时间每日凌晨 04:00 定时测速重测与锁定自愈任务
 GameAccService.startDailyTaskMonitor();
+
+// 初始化 AI 强化后台守护进程与定时监控任务
+const activeAiDevices = AiBoostService.readAiDevices();
+if (activeAiDevices.length > 0) {
+    Logger.info('Daemon', `检测到当前有 ${activeAiDevices.length} 个 AI 强化设备，正在自动激活 AI 强化守护进程...`);
+    AiBoostService.startAiBoostMonitor();
+}
+
+// 启动 AI 强化每日凌晨定时切换任务
+AiBoostService.startDailyTaskMonitor();
 
 // 启动代理端口及链路自愈全局健康度监测守护进程
 ProxyHealthService.startProxyHealthMonitor();

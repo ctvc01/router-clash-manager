@@ -68,6 +68,7 @@ docker-compose.override.yml
 # 忽略包含本地局域网设备 MAC 地址和中文命名的隐私数据
 device_custom.json
 game_devices
+ai_devices
 aliases.json
 
 # 忽略 Figma 节点抓取的本地数据与临时文件

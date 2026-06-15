@@ -21,6 +21,7 @@ const config = {
     paths: {
         custom: path.join(__dirname, '..', 'device_custom.json'),
         gameDevices: path.join(__dirname, '..', 'game_devices'),
+        aiDevices: path.join(__dirname, '..', 'ai_devices'),
         sshExec: path.join(__dirname, '..', 'ssh_exec.exp')
     }
 };
