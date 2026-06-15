@@ -51,41 +51,49 @@
 
 ---
 
-## 🚀 快速安装与配置
+## ⚡ 极速启动 (Quick Start)
 
-### 1. 配置路由器凭证
+对于大多数拥有 Docker 环境的用户，只需在终端中依次执行以下四步命令即可快速拉起服务：
 
-为了防止您的路由器密码等敏感信息泄露至 Git 历史，本系统推荐使用环境变量进行安全配置：
-
-* **Node.js 直接运行（本地配置文件）**：
-  在项目根目录下复制模板生成 `.env` 配置文件：
-  ```bash
-  cp .env.example .env
-  ```
-  编辑新生成的 `.env` 文件，填入您的路由器 IP、登录用户名及密码。
-  
-* **Docker Compose 运行（容器注入）**：
-  直接在 `docker-compose.yml` 中的 `environment` 部分或容器启动时，注入以下环境变量即可：
-  * `ROUTER_IP`（路由器网关 IP，默认 `192.168.31.1`）
-  * `ROUTER_USER`（SSH 登录用户名，默认 `root`）
-  * `ROUTER_PASSWORD`（SSH 密码，必需）
-
-### 2. 部署运行
-
-#### 方式 A：使用 Docker Compose 一键启动（推荐）
-在项目目录下执行命令：
 ```bash
+# 1. 克隆项目到本地
+git clone https://github.com/ctvc01/router-clash-manager.git
+
+# 2. 进入项目目录
+cd router-clash-manager
+
+# 3. 复制生成本地环境变量文件并进行编辑（填入路由器 SSH 登录密码）
+cp .env.example .env
+nano .env
+
+# 4. 一键后台启动容器
 docker compose up -d
 ```
-启动成功后，控制台服务将默认运行在本地的 `3000` 端口。
 
-#### 方式 B：使用 Node.js 直接运行
-1. 确保部署系统上安装了 `expect` 和 `openssh-client` 工具（如 macOS 下运行 `brew install expect`）。
-2. 在项目目录下安装依赖并启动：
+> 💡 启动成功后，您即可直接在浏览器访问 `http://<部署机器IP>:3000` 开启设备分流和联机加速控制！
+
+---
+
+## 🛠️ 详细安装与多方式部署
+
+### 1. 路由器 SSH 登录凭证配置
+
+本系统支持通过项目根目录下的 `.env` 文件进行参数管理（该文件已被写入 `.gitignore`，安全隔离，不会被提交或泄露）：
+
+* `ROUTER_IP`：路由器网关 IP（默认 `192.168.31.1`）
+* `ROUTER_USER`：SSH 登录用户名（默认 `root`）
+* `ROUTER_PASSWORD`：SSH 登录密码（必需，请务必填写）
+
+### 2. 备选部署方式：本地 Node.js 二进制直接运行
+
+如果您不想使用 Docker，也可以直接在支持 Node.js 的物理机上启动：
+
+1. **安装 SSH 前置工具**：确保运行系统上安装了 `expect` 和 `openssh-client`（如 macOS 下运行 `brew install expect`，Ubuntu 下运行 `sudo apt install expect openssh-client`）。
+2. **下载依赖并启动**：
    ```bash
    npm install
    npm start
-    ```
+   ````
 
 #### 🧪 运行本地单元测试
 
