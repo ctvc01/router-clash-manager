@@ -201,4 +201,101 @@ router.get('/error-log', async (req, res) => {
     }
 });
 
+// 3. 获取所有策略组节点信息（用于顶层节点详情弹窗）
+router.get('/nodes', async (req, res) => {
+    try {
+        const proxiesData = await ClashService.getProxies();
+        const proxies = proxiesData.proxies || {};
+        
+        const getRealPhysicalNode = (proxiesMap, nodeName) => {
+            const p = proxiesMap[nodeName];
+            if (!p) return { name: nodeName, delay: 0 };
+            // 如果节点是策略组，递归查找当前激活子节点
+            if (p.now && typeof p.now === 'string' && proxiesMap[p.now]) {
+                return getRealPhysicalNode(proxiesMap, p.now);
+            }
+            let delay = 0;
+            if (p.history && p.history.length > 0) {
+                const valid = p.history.filter(h => h.delay > 0);
+                delay = valid.length > 0 ? valid[valid.length - 1].delay : (p.history[p.history.length - 1].delay || 0);
+            }
+            return { name: nodeName, delay };
+        };
+
+        const result = {
+            proxy: {
+                name: '🚀 节点选择',
+                now: proxies['🚀 节点选择']?.now || 'DIRECT',
+                realNode: getRealPhysicalNode(proxies, proxies['🚀 节点选择']?.now || 'DIRECT').name,
+                delay: getRealPhysicalNode(proxies, proxies['🚀 节点选择']?.now || 'DIRECT').delay
+            },
+            game: {
+                name: '🎮 游戏加速',
+                now: proxies['🎮 游戏加速']?.now || 'DIRECT',
+                realNode: getRealPhysicalNode(proxies, proxies['🎮 游戏加速']?.now || 'DIRECT').name,
+                delay: getRealPhysicalNode(proxies, proxies['🎮 游戏加速']?.now || 'DIRECT').delay,
+                all: []
+            },
+            ai: {
+                name: '🤖 AI强化',
+                now: proxies['🤖 AI强化']?.now || 'DIRECT',
+                realNode: getRealPhysicalNode(proxies, proxies['🤖 AI强化']?.now || 'DIRECT').name,
+                delay: getRealPhysicalNode(proxies, proxies['🤖 AI强化']?.now || 'DIRECT').delay
+            }
+        };
+
+        // 整理游戏模式的所有可选物理节点 (过滤掉策略组名称和直连，包含名字和历史延迟)
+        const filterOutGroups = ['⚡ 游戏自动测速', '🚀 节点选择', '👑 高级节点', 'DIRECT', 'GLOBAL'];
+        if (proxies['🎮 游戏加速'] && proxies['🎮 游戏加速'].all) {
+            result.game.all = proxies['🎮 游戏加速'].all
+                .filter(name => !filterOutGroups.includes(name))
+                .map(name => {
+                    const p = proxies[name];
+                    let delay = 0;
+                    if (p && p.history && p.history.length > 0) {
+                        const valid = p.history.filter(h => h.delay > 0);
+                        delay = valid.length > 0 ? valid[valid.length - 1].delay : (p.history[p.history.length - 1].delay || 0);
+                    }
+                    return { name, delay };
+                });
+        }
+
+        res.json({
+            status: 'success',
+            proxies: result
+        });
+    } catch (err) {
+        Logger.error('Gateway', '获取节点详情列表失败', err);
+        res.status(500).json({
+            status: 'error',
+            message: '无法从 Clash 核心获取节点详情',
+            details: err.message
+        });
+    }
+});
+
+// 4. 选择/切换特定的策略组节点（支持二次确认的手动切换）
+router.post('/select', async (req, res) => {
+    try {
+        const { group, node } = req.body;
+        if (!group || !node) {
+            return res.status(400).json({ status: 'error', message: '缺少 group 或 node 参数' });
+        }
+        
+        const success = await ClashService.selectProxyNode(group, node);
+        if (success) {
+            res.json({ status: 'success' });
+        } else {
+            res.status(500).json({ status: 'error', message: 'Clash API 切换节点失败' });
+        }
+    } catch (err) {
+        Logger.error('Gateway', '切换节点路由发生异常', err);
+        res.status(500).json({
+            status: 'error',
+            message: '切换节点失败',
+            details: err.message
+        });
+    }
+});
+
 module.exports = router;

@@ -49,8 +49,23 @@ class AiBoostService {
                 return null;
             }
             
-            const testPromises = group.all.map(async (nodeName) => {
-                const delay = await ClashService.testNodeDelay(nodeName, 4000);
+            // 过滤掉不支持 AI 的香港节点，避免因低握手延迟而误选不可用 IP
+            const filteredNodes = group.all.filter(nodeName => {
+                const lowerName = nodeName.toLowerCase();
+                return !lowerName.includes('hk') && 
+                       !lowerName.includes('hongkong') && 
+                       !lowerName.includes('香港') && 
+                       !lowerName.includes('港') &&
+                       !['direct', 'global'].includes(lowerName);
+            });
+
+            if (filteredNodes.length === 0) {
+                Logger.warn('AiBoost', '过滤香港节点后无可用的 AI 备选物理节点，退回原自动策略');
+                return group.now || null;
+            }
+            
+            const testPromises = filteredNodes.map(async (nodeName) => {
+                const delay = await ClashService.testNodeDelay(nodeName, 4000, 'https://generativelanguage.googleapis.com/');
                 return { name: nodeName, delay: delay > 0 ? delay : 99999 };
             });
             
@@ -121,7 +136,7 @@ class AiBoostService {
                     return;
                 }
                 
-                const delay = await ClashService.testNodeDelay(currentNode, 4000);
+                const delay = await ClashService.testNodeDelay(currentNode, 4000, 'https://generativelanguage.googleapis.com/');
                 if (delay === 0) {
                     Logger.warn('AiBoost', `⚠️ 当前锁定的 AI 节点 [${currentNode}] 已完全断联！触发自动故障转移测速...`);
                     const fastestNode = await this.findFastestAiNode();

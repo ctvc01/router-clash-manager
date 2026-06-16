@@ -53,9 +53,9 @@ class ClashService {
     }
 
     // 测试单个节点延迟
-    static async testNodeDelay(nodeName, timeoutMs = 4000) {
+    static async testNodeDelay(nodeName, timeoutMs = 4000, testUrl = 'http://ctest.cdn.nintendo.net/') {
         const encodedName = encodeURIComponent(nodeName);
-        const url = `/proxies/${encodedName}/delay?timeout=${timeoutMs - 1000}&url=${encodeURIComponent('http://ctest.cdn.nintendo.net/')}`;
+        const url = `/proxies/${encodedName}/delay?timeout=${timeoutMs - 1000}&url=${encodeURIComponent(testUrl)}`;
         const res = await this._request('GET', url, null, timeoutMs);
         if (res.status === 200) {
             return res.data.delay || 0;

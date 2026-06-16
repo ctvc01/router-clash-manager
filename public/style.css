@@ -1003,10 +1003,10 @@ body {
     background-color: var(--card-bg);
     border: 1px solid var(--card-border);
     border-radius: 12px;
-    width: 380px;
+    width: 520px;
     max-width: 90%;
     box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
-    overflow: hidden;
+    overflow: visible;
     transform: translateY(30px);
     transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.175);
 }
@@ -1065,7 +1065,7 @@ body {
 }
 
 .form-label {
-    font-size: 11px;
+    font-size: 13px;
     color: var(--text-secondary);
     font-weight: 600;
     text-transform: uppercase;
@@ -1148,6 +1148,21 @@ body {
 
 .btn-modal-save:hover {
     background-color: #70a6ff;
+}
+
+/* 自定义确认弹窗 (紧凑型) */
+.confirm-modal-box {
+    width: 380px;
+    max-width: 85%;
+}
+
+.btn-modal-save.btn-danger {
+    background: linear-gradient(135deg, #ff6b6b, #ee5a24);
+    color: #fff;
+}
+
+.btn-modal-save.btn-danger:hover {
+    background: linear-gradient(135deg, #ff8787, #ff6348);
 }
 
 /* ==========================================================================
@@ -1633,3 +1648,217 @@ body {
         font-size: 10px;
     }
 }
+
+/* --- 节点详情详情弹窗专属样式 --- */
+.node-info-card {
+    background-color: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--card-border);
+    border-radius: 6px;
+    padding: 12px 14px;
+    margin-top: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.node-detail-row {
+    display: flex;
+    align-items: center;
+    font-size: 13px;
+    gap: 12px;
+}
+
+.node-detail-label {
+    color: var(--text-secondary);
+    flex-shrink: 0;
+    width: 90px;
+}
+
+.node-detail-value {
+    color: var(--text-primary);
+    font-weight: 500;
+    flex: 1;
+    min-width: 0;
+    text-align: left;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* 节点名称固定最大宽度，超长截断 */
+.node-name-scrollable {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: left;
+}
+
+.font-highlight {
+    color: #e2e4e9;
+    font-weight: 600;
+}
+
+.font-ai-text {
+    color: #00d2ff;
+    text-shadow: 0 0 4px rgba(0, 210, 255, 0.2);
+}
+
+.font-game-text {
+    color: #d93df6;
+    text-shadow: 0 0 4px rgba(217, 61, 246, 0.2);
+}
+
+.badge-status {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 3px;
+    background-color: rgba(255, 255, 255, 0.08);
+    color: var(--text-secondary);
+    text-transform: uppercase;
+}
+
+.badge-status.font-ai {
+    background: linear-gradient(135deg, rgba(0, 210, 255, 0.15) 0%, rgba(0, 102, 255, 0.15) 100%);
+    color: #00d2ff;
+    border: 1px solid rgba(0, 210, 255, 0.3);
+}
+
+.badge-status.font-proxy {
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, rgba(5, 150, 105, 0.15) 100%);
+    color: #10b981;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.badge-status.font-game {
+    background: linear-gradient(135deg, rgba(133, 45, 246, 0.15) 0%, rgba(217, 61, 246, 0.15) 100%);
+    color: #d93df6;
+    border: 1px solid rgba(133, 45, 246, 0.3);
+}
+
+/* --- 高保真自定义下拉列表样式 --- */
+.material-symbols-outlined {
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    display: inline-block;
+    vertical-align: middle;
+    line-height: 1;
+}
+
+.game-dropdown-menu {
+    position: fixed;
+    z-index: 10000;
+    background: rgba(22, 27, 34, 0.97);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--card-border);
+    border-radius: 8px;
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.5);
+    overflow: hidden;
+}
+
+.game-dropdown-list {
+    max-height: 200px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+}
+
+/* 自定义下拉滚动条 */
+.game-dropdown-list::-webkit-scrollbar {
+    width: 4px;
+}
+.game-dropdown-list::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.02);
+}
+.game-dropdown-list::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 2px;
+}
+
+.game-dropdown-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 14px;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+    font-size: 13px;
+    color: var(--text-primary);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.game-dropdown-item:last-child {
+    border-bottom: none;
+}
+
+.game-dropdown-item:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.game-dropdown-item.selected {
+    background-color: rgba(77, 142, 255, 0.1);
+    color: var(--primary);
+}
+
+.game-dropdown-item-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    min-width: 0;
+}
+
+.game-dropdown-item-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.icon-selected-check {
+    color: var(--primary);
+    font-size: 14px !important;
+}
+
+.icon-placeholder {
+    width: 14px;
+    display: inline-block;
+}
+
+.hover-bg-light:hover {
+    background-color: rgba(255, 255, 255, 0.03);
+}
+
+/* 展开下拉动画 */
+@keyframes dropdown-expand {
+    from {
+        opacity: 0;
+        transform: scale(0.98) translateY(-6px);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
+.animate-dropdown {
+    animation: dropdown-expand 180ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+/* 延迟配色微调 */
+.text-green {
+    color: #4ae176 !important;
+}
+.text-orange {
+    color: #ffb786 !important;
+}
+.text-red {
+    color: #ffb4ab !important;
+}
+.text-muted {
+    color: var(--text-secondary) !important;
+}
+

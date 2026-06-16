@@ -108,8 +108,18 @@ class RulesEngine {
                 ruleLines.push(`  - AND,((SRC-IP-CIDR,${ip}/32),(GEOSITE,cn)),DIRECT`);
                 ruleLines.push(`  - AND,((SRC-IP-CIDR,${ip}/32),(GEOIP,CN)),DIRECT`);
                 
-                // 全局 AI 专线分流
-                ruleLines.push(`  - SRC-IP-CIDR,${ip}/32,🤖 AI强化`);
+                // 精细化 AI 服务流量分流（只将核心 AI 服务与资源引流到专线，其余常规国外流量落入常规代理）
+                // Google AI 核心域名及交互接口（包含 Web 端、Stitch 以及 API 通道）
+                ruleLines.push(`  - AND,((SRC-IP-CIDR,${ip}/32),(DOMAIN-SUFFIX,gemini.google.com)),🤖 AI强化`);
+                ruleLines.push(`  - AND,((SRC-IP-CIDR,${ip}/32),(DOMAIN-SUFFIX,labs.google)),🤖 AI强化`);
+                ruleLines.push(`  - AND,((SRC-IP-CIDR,${ip}/32),(DOMAIN-SUFFIX,aistudio.google)),🤖 AI强化`);
+                ruleLines.push(`  - AND,((SRC-IP-CIDR,${ip}/32),(DOMAIN-SUFFIX,notebooklm.google)),🤖 AI强化`);
+                ruleLines.push(`  - AND,((SRC-IP-CIDR,${ip}/32),(DOMAIN,generativelanguage.googleapis.com)),🤖 AI强化`);
+                ruleLines.push(`  - AND,((SRC-IP-CIDR,${ip}/32),(DOMAIN,alkalimina-pa.clients6.google.com)),🤖 AI强化`);
+                ruleLines.push(`  - AND,((SRC-IP-CIDR,${ip}/32),(DOMAIN,proactivebackend-pa.googleapis.com)),🤖 AI强化`);
+                ruleLines.push(`  - AND,((SRC-IP-CIDR,${ip}/32),(GEOSITE,openai)),🤖 AI强化`);
+                ruleLines.push(`  - AND,((SRC-IP-CIDR,${ip}/32),(GEOSITE,anthropic)),🤖 AI强化`);
+                ruleLines.push(`  - AND,((SRC-IP-CIDR,${ip}/32),(DOMAIN-SUFFIX,claude.ai)),🤖 AI强化`);
             }
         }
         ruleLines.push("# === AI ACC END ===");

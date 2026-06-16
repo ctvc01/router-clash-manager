@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Clash Meta</title>
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -300,6 +301,113 @@
             <div class="modal-footer">
                 <button id="btn-modal-cancel" class="btn-modal btn-modal-cancel">取消</button>
                 <button id="btn-modal-save" class="btn-modal btn-modal-save">保存配置</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- UI Overlay: Node Detail Modal -->
+    <div id="node-detail-modal" class="modal-overlay">
+        <div class="modal-box">
+            <!-- 移动端 Bottom Sheet 拖拽条手柄 -->
+            <div class="modal-handle"></div>
+            <div class="modal-header">
+                <span class="modal-title">当前节点详情</span>
+                <button id="btn-close-node-modal" class="btn-close-modal" title="关闭" style="border: none; background: transparent; padding: 4px; display: flex; align-items: center; justify-content: center; cursor: pointer;">
+                    <span class="material-symbols-outlined" style="font-size: 20px;">close</span>
+                </button>
+            </div>
+            <div class="modal-body" style="max-height: 65vh; overflow-y: auto; overflow-x: visible; padding: 20px; display: flex; flex-direction: column; gap: 24px;">
+                <!-- 网页代理模式 -->
+                <div class="form-group" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 0;">
+                    <label class="form-label" style="display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 4px;">
+                        <div style="display: flex; align-items: center; gap: 6px; font-weight: 600;">
+                            <span>🚀 代理模式</span>
+                        </div>
+                        <span class="badge-status font-proxy">RULE</span>
+                    </label>
+                    <div class="node-info-card">
+                        <div class="node-detail-row">
+                            <span class="node-detail-label">策略组</span>
+                            <span id="node-proxy-now" class="node-detail-value">--</span>
+                        </div>
+                        <div class="node-detail-row" style="padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.06);">
+                            <span class="node-detail-label">当前节点</span>
+                            <span id="node-proxy-real" class="node-detail-value font-highlight node-name-scrollable">--</span>
+                            <span id="node-proxy-delay" class="text-green flex-shrink-0" style="flex-shrink: 0;">-- ms</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- AI 强化分流模式 -->
+                <div class="form-group" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 0;">
+                    <label class="form-label" style="display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 4px;">
+                        <div style="display: flex; align-items: center; gap: 6px; font-weight: 600;">
+                            <span>🤖 AI 强化模式</span>
+                        </div>
+                        <span class="badge-status font-ai">AI_BOOST</span>
+                    </label>
+                    <div class="node-info-card">
+                        <div class="node-detail-row">
+                            <span class="node-detail-label">策略组</span>
+                            <span id="node-ai-now" class="node-detail-value">--</span>
+                        </div>
+                        <div class="node-detail-row" style="padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.06);">
+                            <span class="node-detail-label">当前节点</span>
+                            <span id="node-ai-real" class="node-detail-value font-highlight node-name-scrollable">--</span>
+                            <span id="node-ai-delay" class="text-green flex-shrink-0" style="flex-shrink: 0;">-- ms</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 游戏加速模式 -->
+                <div class="form-group" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 0;">
+                    <label class="form-label" style="display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 4px;">
+                        <div style="display: flex; align-items: center; gap: 6px; font-weight: 600;">
+                            <span>🎮 游戏模式</span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 6px;">
+                            <span class="badge-status font-game">GAME</span>
+                            <span id="badge-game-auto" class="badge-status font-game">AUTO</span>
+                        </div>
+                    </label>
+                    <div class="node-info-card" style="position: relative; overflow: visible;">
+                        <!-- 展开触发区：点击这一行触发自定义的下拉菜单展示 -->
+                        <div id="btn-toggle-game-dropdown" class="node-detail-row pt-2 cursor-pointer" style="transition: background-color 0.2s ease;">
+                            <span class="node-detail-label">当前节点</span>
+                            <span id="node-game-real" class="node-detail-value font-highlight node-name-scrollable">--</span>
+                            <div style="display: flex; align-items: center; gap: 4px; flex-shrink: 0;">
+                                <span id="node-game-delay" class="text-green">-- ms</span>
+                                <span id="icon-game-dropdown-arrow" class="material-symbols-outlined font-highlight" style="font-size: 16px;">expand_more</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 确定按钮隐藏在 DOM 中以便 JS 事件调用不报错 -->
+            <button id="btn-close-node-modal-ok" style="display: none;"></button>
+        </div>
+    </div>
+
+    <!-- 游戏节点自定义浮动式下拉菜单（独立于 modal 外层，避免 transform 包含块影响 fixed 定位） -->
+    <div id="game-node-dropdown-menu" class="game-dropdown-menu" style="display: none;">
+        <div class="game-dropdown-list" id="game-dropdown-list-container">
+            <!-- 由 JS 动态渲染可用物理节点列表 -->
+        </div>
+    </div>
+
+    <!-- 自定义确认弹窗（替代浏览器原生 confirm） -->
+    <div id="confirm-modal" class="modal-overlay" style="z-index: 10001;">
+        <div class="modal-box confirm-modal-box">
+            <div class="modal-header">
+                <span class="modal-title" id="confirm-modal-title">确认操作</span>
+            </div>
+            <div class="modal-body" style="padding: 20px;">
+                <p id="confirm-modal-message" style="font-size: 13px; color: var(--text-primary); line-height: 1.6; margin: 0; white-space: pre-line;"></p>
+            </div>
+            <div class="modal-footer">
+                <button id="btn-confirm-cancel" class="btn-modal btn-modal-cancel">取消</button>
+                <button id="btn-confirm-ok" class="btn-modal btn-modal-save">确认切换</button>
             </div>
         </div>
     </div>
