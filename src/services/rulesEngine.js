@@ -53,6 +53,9 @@ class RulesEngine {
                 ruleLines.push(`  - AND,((SRC-IP-CIDR,${ip}/32),(IP-CIDR,10.0.0.0/8)),DIRECT`);
                 ruleLines.push(`  - AND,((SRC-IP-CIDR,${ip}/32),(IP-CIDR,172.16.0.0/12)),DIRECT`);
                 
+                // 屏蔽 QUIC (UDP 443) 流量，强制秒退回 TCP 链路以避免运营商 UDP 阻断导致的网页假死
+                ruleLines.push(`  - AND,((SRC-IP-CIDR,${ip}/32),(DST-PORT,443),(PROTOCOL,UDP)),REJECT`);
+                
                 // 大陆直连例外（优先放行国内流量/服务/国内 CDN 缓存下载，保障最佳下载速度）
                 ruleLines.push(`  - AND,((SRC-IP-CIDR,${ip}/32),(GEOSITE,cn)),DIRECT`);
                 ruleLines.push(`  - AND,((SRC-IP-CIDR,${ip}/32),(GEOIP,CN)),DIRECT`);
@@ -97,6 +100,9 @@ class RulesEngine {
                 ruleLines.push(`  - AND,((SRC-IP-CIDR,${ip}/32),(IP-CIDR,192.168.0.0/16)),DIRECT`);
                 ruleLines.push(`  - AND,((SRC-IP-CIDR,${ip}/32),(IP-CIDR,10.0.0.0/8)),DIRECT`);
                 ruleLines.push(`  - AND,((SRC-IP-CIDR,${ip}/32),(IP-CIDR,172.16.0.0/12)),DIRECT`);
+                
+                // 屏蔽 QUIC (UDP 443) 流量，解决浏览器加载 Google/Gemini 网页卡顿 Loading 假死故障
+                ruleLines.push(`  - AND,((SRC-IP-CIDR,${ip}/32),(DST-PORT,443),(PROTOCOL,UDP)),REJECT`);
                 
                 // 大陆直连例外（防止国内网站/服务绕路境外代理，解决如微信公众号上传慢问题）
                 ruleLines.push(`  - AND,((SRC-IP-CIDR,${ip}/32),(GEOSITE,cn)),DIRECT`);
