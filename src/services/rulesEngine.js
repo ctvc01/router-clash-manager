@@ -53,6 +53,10 @@ class RulesEngine {
                 ruleLines.push(`  - AND,((SRC-IP-CIDR,${ip}/32),(IP-CIDR,10.0.0.0/8)),DIRECT`);
                 ruleLines.push(`  - AND,((SRC-IP-CIDR,${ip}/32),(IP-CIDR,172.16.0.0/12)),DIRECT`);
                 
+                // 大陆直连例外（优先放行国内流量/服务/国内 CDN 缓存下载，保障最佳下载速度）
+                ruleLines.push(`  - AND,((SRC-IP-CIDR,${ip}/32),(GEOSITE,cn)),DIRECT`);
+                ruleLines.push(`  - AND,((SRC-IP-CIDR,${ip}/32),(GEOIP,CN)),DIRECT`);
+                
                 // 视频分流
                 ruleLines.push(`  - AND,((SRC-IP-CIDR,${ip}/32),(DOMAIN-KEYWORD,youtube)),🚀 节点选择`);
                 ruleLines.push(`  - AND,((SRC-IP-CIDR,${ip}/32),(DOMAIN-KEYWORD,googlevideo)),🚀 节点选择`);
@@ -71,10 +75,6 @@ class RulesEngine {
                 
                 // 游戏专线
                 ruleLines.push(`  - AND,((SRC-IP-CIDR,${ip}/32),(DOMAIN-SUFFIX,cdn.nintendo.net)),🎮 游戏加速`);
-                
-                // 大陆直连例外（防止游戏主机国内流量绕路境外代理）
-                ruleLines.push(`  - AND,((SRC-IP-CIDR,${ip}/32),(GEOSITE,cn)),DIRECT`);
-                ruleLines.push(`  - AND,((SRC-IP-CIDR,${ip}/32),(GEOIP,CN)),DIRECT`);
                 
                 ruleLines.push(`  - SRC-IP-CIDR,${ip}/32,🎮 游戏加速`);
             }
