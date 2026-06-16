@@ -71,6 +71,11 @@ class RulesEngine {
                 
                 // 游戏专线
                 ruleLines.push(`  - AND,((SRC-IP-CIDR,${ip}/32),(DOMAIN-SUFFIX,cdn.nintendo.net)),🎮 游戏加速`);
+                
+                // 大陆直连例外（防止游戏主机国内流量绕路境外代理）
+                ruleLines.push(`  - AND,((SRC-IP-CIDR,${ip}/32),(GEOSITE,cn)),DIRECT`);
+                ruleLines.push(`  - AND,((SRC-IP-CIDR,${ip}/32),(GEOIP,CN)),DIRECT`);
+                
                 ruleLines.push(`  - SRC-IP-CIDR,${ip}/32,🎮 游戏加速`);
             }
         }
@@ -92,6 +97,10 @@ class RulesEngine {
                 ruleLines.push(`  - AND,((SRC-IP-CIDR,${ip}/32),(IP-CIDR,192.168.0.0/16)),DIRECT`);
                 ruleLines.push(`  - AND,((SRC-IP-CIDR,${ip}/32),(IP-CIDR,10.0.0.0/8)),DIRECT`);
                 ruleLines.push(`  - AND,((SRC-IP-CIDR,${ip}/32),(IP-CIDR,172.16.0.0/12)),DIRECT`);
+                
+                // 大陆直连例外（防止国内网站/服务绕路境外代理，解决如微信公众号上传慢问题）
+                ruleLines.push(`  - AND,((SRC-IP-CIDR,${ip}/32),(GEOSITE,cn)),DIRECT`);
+                ruleLines.push(`  - AND,((SRC-IP-CIDR,${ip}/32),(GEOIP,CN)),DIRECT`);
                 
                 // 全局 AI 专线分流
                 ruleLines.push(`  - SRC-IP-CIDR,${ip}/32,🤖 AI强化`);
