@@ -49,27 +49,58 @@ const Validators = {
         };
     },
 
-    // 防远程命令注入校验
+    // 防远程命令注入校验（白名单 + 黑名单双重检查）
     validateSSHCommand(command) {
         if (!command || typeof command !== 'string') {
             throw new Error('执行命令不能为空');
         }
-        // 1. 敏感命令指纹拦截
-        const dangerousPatterns = [
-            'rm -rf', '>&', 'nc -l', '/dev/zero', 'mkfifo'
+
+        const trimmedCmd = command.trim();
+
+        // 1. 黑名单：绝对禁用的危险操作
+        const FORBIDDEN_PATTERNS = [
+            /\brm\s+/,                // rm 命令
+            /\bchmod\b/,              // 权限修改
+            /\bchown\b/,              // 所有权修改
+            /\bdd\b/,                 // 磁盘操作
+            /\bmkfs\b/,               // 格式化
+            /\breboot\b/,             // 重启
+            /\bshutdown\b/,           // 关闭
+            /\|\s*sh\b/,              // 管道到 sh
+            /\|\s*bash\b/,            // 管道到 bash
+            /\|\s*nc\s+-l/,           // 监听的 nc（反向 shell）
+            /\bwget\b/,               // wget 下载
+            /;\s*rm\s+/,              // 分号链式 rm 操作
+            /&&\s*rm\s+/,             // 双 && 链式 rm 操作
+            />\s*\/dev\/null\s*2>&1\s*&/  // 后台进程隐藏
         ];
-        for (const pattern of dangerousPatterns) {
-            if (command.includes(pattern)) {
-                throw new Error(`[Security] 拦截到可能的恶意命令注入指纹: ${pattern}`);
+
+        for (const pattern of FORBIDDEN_PATTERNS) {
+            if (pattern.test(trimmedCmd)) {
+                throw new Error(`[Security] 拦截到危险操作`);
             }
         }
-        // 2. 精准单词边界检测拦截，防止运行未授权的可执行程序 (避免误杀 shellcrash 等 sh 结尾的名词)
-        const dangerousWords = /\b(sh|bash|wget|nc)\b/;
-        const match = command.match(dangerousWords);
-        if (match) {
-            throw new Error(`[Security] 拦截到未授权的程序执行: ${match[1]}`);
+
+        // 2. 白名单：允许的命令前缀或特殊命令
+        const ALLOWED_COMMANDS = [
+            'pidof', 'pgrep', 'cat', 'echo', 'grep', 'kill', 'sleep', 'curl',
+            'netstat', 'cp', 'touch', 'base64', 'for', 'if', '(', 'true', 'false',
+            'ubus', 'printf', 'top', '/etc/init.d/'
+        ];
+
+        const firstWord = trimmedCmd.split(/[\s|;&<>]/)[0].trim();
+        const isAllowed = ALLOWED_COMMANDS.some(cmd => {
+            if (firstWord === cmd) return true;
+            if (firstWord.startsWith(cmd + ' ')) return true;
+            if (firstWord.startsWith(cmd)) return true;  // 允许路径前缀匹配
+            return false;
+        });
+
+        if (!isAllowed) {
+            throw new Error(`[Security] 命令 "${firstWord}" 不在白名单中`);
         }
-        return command;
+
+        return trimmedCmd;
     }
 };
 

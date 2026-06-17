@@ -54,21 +54,52 @@ class SshService {
         });
     }
 
-    // 安全重启 ShellCrash，带串行排队锁，容忍因防火墙/路由重构导致的假性 SSH 断线
+    // 安全重启 ShellCrash，带串行排队锁和正确的启动等待逻辑
     static async restartShellCrashSecurely() {
         restartPromise = restartPromise.then(async () => {
             try {
                 Logger.info('ShellCrash', '正在请求重启 ShellCrash 服务 (排队中)...');
-                // 额外缓冲 1.5 秒确保上一次关闭的旧 ClashCore 完全释放本地端口
-                await this.runRemoteCommand('sleep 1.5');
-                await this.runRemoteCommand('/etc/init.d/shellcrash stop && /etc/init.d/shellcrash start');
-                Logger.info('ShellCrash', 'ShellCrash 重启命令同步执行成功。');
+
+                // 1. 杀死旧进程
+                await this.runRemoteCommand('kill $(pidof CrashCore) 2>/dev/null; true');
+
+                // 2. 等待旧进程完全退出（最多等待 5s）
+                for (let i = 0; i < 5; i++) {
+                    const pidOut = await this.runRemoteCommand('pidof CrashCore 2>/dev/null || echo ""');
+                    if (!pidOut.trim()) {
+                        Logger.info('ShellCrash', '旧进程已完全退出');
+                        break;
+                    }
+                    await new Promise(r => setTimeout(r, 1000));
+                }
+
+                // 3. 启动新进程
+                await this.runRemoteCommand('( /tmp/ShellCrash/CrashCore -d /data/ShellCrash -f /data/ShellCrash/yamls/config.yaml </dev/null >/dev/null 2>/dev/null & )');
+                Logger.info('ShellCrash', '已下发新进程启动命令，等待进程启动...');
+
+                // 4. 等待新进程启动（最多等待 10s）
+                let processStarted = false;
+                for (let i = 0; i < 10; i++) {
+                    const pidOut = await this.runRemoteCommand('pidof CrashCore 2>/dev/null || echo ""');
+                    if (pidOut.trim()) {
+                        Logger.info('ShellCrash', `进程已启动 (PID: ${pidOut.trim()})`);
+                        processStarted = true;
+                        break;
+                    }
+                    await new Promise(r => setTimeout(r, 1000));
+                }
+
+                if (!processStarted) {
+                    Logger.warn('ShellCrash', '进程启动超时，但继续执行（可能是异步启动）');
+                }
+
+                Logger.info('ShellCrash', 'ShellCrash 已成功完成分步重启。');
             } catch (err) {
                 const stderrMsg = err.stderr || '';
                 const errMsg = (err.error && err.error.message) || '';
-                const isClosedByRemote = stderrMsg.includes('closed by remote') || 
-                                         errMsg.includes('closed by remote') || 
-                                         stderrMsg.includes('Connection') || 
+                const isClosedByRemote = stderrMsg.includes('closed by remote') ||
+                                         errMsg.includes('closed by remote') ||
+                                         stderrMsg.includes('Connection') ||
                                          errMsg.includes('Connection') ||
                                          stderrMsg.includes('kex_exchange_identification') ||
                                          errMsg.includes('kex_exchange_identification') ||
