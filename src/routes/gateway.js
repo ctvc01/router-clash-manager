@@ -36,11 +36,15 @@ async function getCurrentNodeInfo() {
         }
         
         // 递归查找物理节点
-        const getRealPhysicalNode = (proxiesMap, nodeName) => {
+        const getRealPhysicalNode = (proxiesMap, nodeName, visited = new Set()) => {
+            if (visited.has(nodeName)) {
+                return { name: nodeName, delay: 0 };
+            }
+            visited.add(nodeName);
             const p = proxiesMap[nodeName];
             if (!p) return { name: nodeName, delay: 0 };
             if (p.now && typeof p.now === 'string') {
-                return getRealPhysicalNode(proxiesMap, p.now);
+                return getRealPhysicalNode(proxiesMap, p.now, visited);
             }
             let delay = 0;
             if (p.history && p.history.length > 0) {

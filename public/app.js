@@ -199,6 +199,23 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 3000);
     }
 
+    // 辅助：HTML 特殊字符转义防 XSS (C4)
+    function escapeHtml(str) {
+        if (!str) return '';
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
+
+    // 辅助：防抖函数 (H4)
+    function debounce(fn, delay) {
+        let timer;
+        return function(...args) {
+            clearTimeout(timer);
+            timer = setTimeout(() => fn.apply(this, args), delay);
+        };
+    }
+
     // 辅助：格式化运行时间 (分钟转 "X天 Y时 Z分")
     function formatUptime(totalMinutes) {
         const days = Math.floor(totalMinutes / (24 * 60));
@@ -404,14 +421,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // 逻辑：向白名单添加设备
+    // 逻辑：向白名单添加设备 (C6: 先请求后更新状态)
     async function addDevice(mac) {
         if (!mac) return;
         mac = mac.toLowerCase();
-        
-        if (!state.whitelist.includes(mac)) {
-            state.whitelist.push(mac);
-        }
         
         const res = await fetch('/api/whitelist/add', {
             method: 'POST',
@@ -424,16 +437,18 @@ document.addEventListener('DOMContentLoaded', () => {
             throw new Error(data.message || data.details || '添加白名单失败');
         }
         
-        elDevicesProxy.textContent = state.whitelist.length + state.gameAccelerated.length;
+        if (!state.whitelist.includes(mac)) {
+            state.whitelist.push(mac);
+        }
+        
+        elDevicesProxy.textContent = state.whitelist.length + state.gameAccelerated.length + state.aiBoosted.length;
         renderGrid();
     }
 
-    // 逻辑：从白名单移出设备
+    // 逻辑：从白名单移出设备 (C6: 先请求后更新状态)
     async function removeDevice(mac) {
         if (!mac) return;
         mac = mac.toLowerCase();
-        
-        state.whitelist = state.whitelist.filter(m => m !== mac);
         
         const res = await fetch('/api/whitelist/remove', {
             method: 'POST',
@@ -446,20 +461,16 @@ document.addEventListener('DOMContentLoaded', () => {
             throw new Error(data.message || data.details || '移出白名单失败');
         }
         
-        elDevicesProxy.textContent = state.whitelist.length + state.gameAccelerated.length;
+        state.whitelist = state.whitelist.filter(m => m !== mac);
+        
+        elDevicesProxy.textContent = state.whitelist.length + state.gameAccelerated.length + state.aiBoosted.length;
         renderGrid();
     }
 
-    // [新增] 开启游戏加速
+    // [新增] 开启游戏加速 (C6: 先请求后更新状态)
     async function enableGame(mac) {
         if (!mac) return;
         mac = mac.toLowerCase();
-        
-        if (!state.gameAccelerated.includes(mac)) {
-            state.gameAccelerated.push(mac);
-        }
-        // 从普通白名单剔除，走专门的游戏 AND 规则路由
-        state.whitelist = state.whitelist.filter(m => m !== mac);
         
         const res = await fetch('/api/game/enable', {
             method: 'POST',
@@ -472,15 +483,18 @@ document.addEventListener('DOMContentLoaded', () => {
             throw new Error(data.message || '网络连接或配置自检失败');
         }
         
+        if (!state.gameAccelerated.includes(mac)) {
+            state.gameAccelerated.push(mac);
+        }
+        state.whitelist = state.whitelist.filter(m => m !== mac);
+        
         showToast('Switch 游戏加速通道已就绪，已选测最佳低延迟专线节点！');
     }
 
-    // [新增] 关停游戏加速
+    // [新增] 关停游戏加速 (C6: 先请求后更新状态)
     async function disableGame(mac) {
         if (!mac) return;
         mac = mac.toLowerCase();
-        
-        state.gameAccelerated = state.gameAccelerated.filter(m => m !== mac);
         
         const res = await fetch('/api/game/disable', {
             method: 'POST',
@@ -493,19 +507,15 @@ document.addEventListener('DOMContentLoaded', () => {
             throw new Error(data.message || '网络连接或配置自检失败');
         }
         
+        state.gameAccelerated = state.gameAccelerated.filter(m => m !== mac);
+        
         showToast('游戏加速通道已成功关停，规则已重载！');
     }
 
-    // [新增] 开启 AI 强化
+    // [新增] 开启 AI 强化 (C6: 先请求后更新状态)
     async function enableAi(mac) {
         if (!mac) return;
         mac = mac.toLowerCase();
-        
-        if (!state.aiBoosted.includes(mac)) {
-            state.aiBoosted.push(mac);
-        }
-        state.whitelist = state.whitelist.filter(m => m !== mac);
-        state.gameAccelerated = state.gameAccelerated.filter(m => m !== mac);
         
         const res = await fetch('/api/ai/enable', {
             method: 'POST',
@@ -518,15 +528,19 @@ document.addEventListener('DOMContentLoaded', () => {
             throw new Error(data.message || '网络连接或配置自检失败');
         }
         
+        if (!state.aiBoosted.includes(mac)) {
+            state.aiBoosted.push(mac);
+        }
+        state.whitelist = state.whitelist.filter(m => m !== mac);
+        state.gameAccelerated = state.gameAccelerated.filter(m => m !== mac);
+        
         showToast('AI 极速分流通道已就绪，已自动寻优至最速 Google 节点！');
     }
 
-    // [新增] 关停 AI 强化
+    // [新增] 关停 AI 强化 (C6: 先请求后更新状态)
     async function disableAi(mac) {
         if (!mac) return;
         mac = mac.toLowerCase();
-        
-        state.aiBoosted = state.aiBoosted.filter(m => m !== mac);
         
         const res = await fetch('/api/ai/disable', {
             method: 'POST',
@@ -538,6 +552,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await res.json();
             throw new Error(data.message || '网络连接或配置自检失败');
         }
+        
+        state.aiBoosted = state.aiBoosted.filter(m => m !== mac);
         
         showToast('AI 强化通道已成功关停，规则已重载！');
     }
@@ -624,7 +640,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             filteredCount++;
             
-            const isOffline = d.hostname === 'Living-Room-Light';
+            const isOffline = false;
             
             // 状态逻辑判断
             let activeMode = 'direct';
@@ -677,10 +693,10 @@ document.addEventListener('DOMContentLoaded', () => {
                         <div class="device-avatar">
                             ${avatarSvg}
                         </div>
-                        <div class="device-title-wrapper" data-ip-display="IP: ${d.ip}">
+                        <div class="device-title-wrapper" data-ip-display="IP: ${escapeHtml(d.ip)}">
                             <div class="device-name-row">
-                                <span class="device-name-text">${displayName}</span>
-                                <button class="btn-edit-device" data-mac="${mac}" data-ip="${d.ip}" data-name="${displayName}" data-category="${category}" title="编辑名称和分类">
+                                <span class="device-name-text">${escapeHtml(displayName)}</span>
+                                <button class="btn-edit-device" data-mac="${mac}" data-ip="${escapeHtml(d.ip)}" data-name="${escapeHtml(displayName)}" data-category="${category}" title="编辑名称和分类">
                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                         <path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
                                     </svg>
@@ -717,8 +733,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 <!-- Mid Row -->
                 <div class="card-mid-row">
-                    <span class="device-ip-text">IP: ${d.ip}</span>
-                    <span class="device-mac-text">MAC: ${mac.toUpperCase()}</span>
+                    <span class="device-ip-text">IP: ${escapeHtml(d.ip)}</span>
+                    <span class="device-mac-text">MAC: ${escapeHtml(mac.toUpperCase())}</span>
                 </div>
 
                 <!-- Bottom Row -->
@@ -845,10 +861,10 @@ document.addEventListener('DOMContentLoaded', () => {
         renderGrid();
     });
 
-    // 绑定事件：搜索输入
-    elSearchInput.addEventListener('input', () => {
+    // 绑定事件：搜索输入 (H4: 添加 200ms 防抖)
+    elSearchInput.addEventListener('input', debounce(() => {
         renderGrid();
-    });
+    }, 200));
 
     // [新增事件] 模态弹窗 Modal 的操作事件绑定
     elBtnCloseModal.addEventListener('click', () => {
@@ -904,20 +920,15 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             elConfirmModal.classList.add('active');
 
-            // 清理旧事件监听（克隆替换）
-            const newOkBtn = elBtnConfirmOk.cloneNode(true);
-            elBtnConfirmOk.parentNode.replaceChild(newOkBtn, elBtnConfirmOk);
-            const newCancelBtn = elBtnConfirmCancel.cloneNode(true);
-            elBtnConfirmCancel.parentNode.replaceChild(newCancelBtn, elBtnConfirmCancel);
-
-            newOkBtn.addEventListener('click', () => {
+            // H6: 使用 onclick 直接覆盖替代克隆 DOM，避免缓存引用失效
+            elBtnConfirmOk.onclick = () => {
                 elConfirmModal.classList.remove('active');
                 resolve(true);
-            });
-            newCancelBtn.addEventListener('click', () => {
+            };
+            elBtnConfirmCancel.onclick = () => {
                 elConfirmModal.classList.remove('active');
                 resolve(false);
-            });
+            };
         });
     }
 
@@ -1224,10 +1235,10 @@ document.addEventListener('DOMContentLoaded', () => {
         elErrorLogModal.classList.remove('active');
     });
 
-    // 定时器：每 3 秒高频拉取一次真实的设备流量和状态，并重绘
+    // 定时器：每 10 秒拉取一次真实的设备流量和状态，并重绘 (H2: 降低 DOM 重建频率)
     setInterval(() => {
         fetchDevices();
-    }, 3000);
+    }, 10000);
 
     // 定时器：每 15 秒更新一次真实的 Clash 核心状态
     setInterval(() => {
@@ -1241,8 +1252,7 @@ document.addEventListener('DOMContentLoaded', () => {
         elFooterUptime.textContent = formatUptime(state.systemUptimeMinutes);
         
         await fetchStatus();
-        await fetchGameList();  // 拉取加速的游戏设备
-        await fetchDevices();   // 拉取局域网设备并重绘
+        await fetchDevices();   // 拉取局域网设备并重绘 (L11: fetchDevices 已包含 gameList 数据)
         
         updateRealSpeeds();
         renderFilterTabs();

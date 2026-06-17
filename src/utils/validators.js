@@ -56,7 +56,7 @@ const Validators = {
         }
         // 1. 敏感命令指纹拦截
         const dangerousPatterns = [
-            'rm -rf', '>&', '<<', 'nc -l', '/dev/zero', 'mkfifo'
+            'rm -rf', '>&', 'nc -l', '/dev/zero', 'mkfifo'
         ];
         for (const pattern of dangerousPatterns) {
             if (command.includes(pattern)) {

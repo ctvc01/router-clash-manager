@@ -78,7 +78,16 @@ class ProxyHealthService {
                 const isProxyWorking = await this.testProxyConnectivity(config.ports.proxy, 'http://cp.cloudflare.com/generate_204', 4000);
                 if (!isProxyWorking) {
                     Logger.warn('ProxyDaemon', '⚠️ 检测到网页代理链路超时阻断！已触发机场节点重新并发测速以引导自动节点漂移自愈...');
-                    await this.triggerProviderHealthCheck('caomei1');
+                    let providerName = 'caomei1'; // 默认 fallback
+                    try {
+                        const providerOutput = await SshService.runRemoteCommand("grep -A 1 'proxy-providers:' /data/ShellCrash/yamls/config.yaml | tail -n 1 | cut -d: -f1 | tr -d ' '");
+                        if (providerOutput && providerOutput.trim().length > 0 && !providerOutput.includes('Error')) {
+                            providerName = providerOutput.trim();
+                        }
+                    } catch (pErr) {
+                        Logger.warn('ProxyDaemon', '自愈程序获取 proxy-provider 失败，使用 caomei1', pErr);
+                    }
+                    await this.triggerProviderHealthCheck(providerName);
                 }
             } catch (err) {
                 Logger.error('ProxyDaemon', '自愈守护进程周期性检测发生异常', err);

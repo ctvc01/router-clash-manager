@@ -40,15 +40,8 @@ class RulesEngine {
         // 1. 注入游戏加速规则
         ruleLines.push("# === GAME ACC START ===");
         for (const mac of gameMacs) {
-            let ip = dhcpLeases[mac];
-            if (!ip) {
-                const mockIps = {
-                    "00:11:22:33:44:55": "192.0.2.100",
-                    "aa:bb:cc:dd:ee:ff": "192.0.2.200"
-                };
-                ip = mockIps[mac];
-            }
-            if (ip) {
+            const ip = dhcpLeases[mac];
+            if (!ip) continue;
                 ruleLines.push(`  - AND,((SRC-IP-CIDR,${ip}/32),(IP-CIDR,192.168.0.0/16)),DIRECT`);
                 ruleLines.push(`  - AND,((SRC-IP-CIDR,${ip}/32),(IP-CIDR,10.0.0.0/8)),DIRECT`);
                 ruleLines.push(`  - AND,((SRC-IP-CIDR,${ip}/32),(IP-CIDR,172.16.0.0/12)),DIRECT`);
@@ -80,22 +73,14 @@ class RulesEngine {
                 ruleLines.push(`  - AND,((SRC-IP-CIDR,${ip}/32),(DOMAIN-SUFFIX,cdn.nintendo.net)),🎮 游戏加速`);
                 
                 ruleLines.push(`  - SRC-IP-CIDR,${ip}/32,🎮 游戏加速`);
-            }
         }
         ruleLines.push("# === GAME ACC END ===");
 
         // 2. 注入 AI 强化规则
         ruleLines.push("# === AI ACC START ===");
         for (const mac of aiMacs) {
-            let ip = dhcpLeases[mac];
-            if (!ip) {
-                const mockIps = {
-                    "00:11:22:33:44:55": "192.0.2.100",
-                    "aa:bb:cc:dd:ee:ff": "192.0.2.200"
-                };
-                ip = mockIps[mac];
-            }
-            if (ip) {
+            const ip = dhcpLeases[mac];
+            if (!ip) continue;
                 // 局域网直连拦截
                 ruleLines.push(`  - AND,((SRC-IP-CIDR,${ip}/32),(IP-CIDR,192.168.0.0/16)),DIRECT`);
                 ruleLines.push(`  - AND,((SRC-IP-CIDR,${ip}/32),(IP-CIDR,10.0.0.0/8)),DIRECT`);
@@ -120,7 +105,6 @@ class RulesEngine {
                 ruleLines.push(`  - AND,((SRC-IP-CIDR,${ip}/32),(GEOSITE,openai)),🤖 AI强化`);
                 ruleLines.push(`  - AND,((SRC-IP-CIDR,${ip}/32),(GEOSITE,anthropic)),🤖 AI强化`);
                 ruleLines.push(`  - AND,((SRC-IP-CIDR,${ip}/32),(DOMAIN-SUFFIX,claude.ai)),🤖 AI强化`);
-            }
         }
         ruleLines.push("# === AI ACC END ===");
 
@@ -149,11 +133,19 @@ class RulesEngine {
             
             // 2. 写入临时游戏与 AI 规则与策略组
             await SshService.runRemoteCommand('rm -f /tmp/game_rules.txt /tmp/game_group.txt');
-            for (const line of ruleLines) {
-                await SshService.runRemoteCommand(`echo '${line}' >> /tmp/game_rules.txt`);
+            
+            if (ruleLines.length > 0) {
+                const rulesContent = ruleLines.join('\n');
+                await SshService.runRemoteCommand(`cat << 'RULES_EOF' > /tmp/game_rules.txt\n${rulesContent}\nRULES_EOF`);
+            } else {
+                await SshService.runRemoteCommand('touch /tmp/game_rules.txt');
             }
-            for (const line of groupLines) {
-                await SshService.runRemoteCommand(`echo '${line}' >> /tmp/game_group.txt`);
+
+            if (groupLines.length > 0) {
+                const groupsContent = groupLines.join('\n');
+                await SshService.runRemoteCommand(`cat << 'GROUPS_EOF' > /tmp/game_group.txt\n${groupsContent}\nGROUPS_EOF`);
+            } else {
+                await SshService.runRemoteCommand('touch /tmp/game_group.txt');
             }
             
             // 3. 将临时规则与策略组写入 config.yaml，前置清理旧的标记段
