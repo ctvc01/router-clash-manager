@@ -9,6 +9,8 @@ const GameAccService = require('./services/gameAccService');
 const AiBoostService = require('./services/aiBoostService');
 const RulesEngine = require('./services/rulesEngine');
 const StorageCleanupService = require('./services/storageCleanupService');
+const ConfigVersionManager = require('./services/configVersionManager');
+const ChangelogManager = require('./services/changelogManager');
 
 // 1. 启动前强校验环境变量与核心凭证
 validateEnvironment();
@@ -16,6 +18,10 @@ validateEnvironment();
 // 1.5 初始化数据持久化框架
 PersistenceService.initializeAll();
 PersistenceService.logIntegrityReport();
+
+// 1.6 初始化配置版本管理和变更日志
+ConfigVersionManager.initialize();
+Logger.info('Server', '✅ 配置版本管理系统已初始化');
 
 // 2. 初始化后台守护进程与定时监控任务
 const activeGameDevices = GameAccService.readGameDevices();
@@ -51,6 +57,10 @@ ProxyHealthService.startProxyHealthMonitor();
 
 // 启动存储空间定期清理任务（每日凌晨 02:00）
 StorageCleanupService.startDailyCleanup();
+
+// 启动自动配置备份任务
+ConfigVersionManager.startAutoBackup('/data/ShellCrash/yamls/config.yaml');
+Logger.info('Server', '✅ 自动配置备份任务已启动');
 
 // 异步验证路由器 API 连通性 (弱校验警示，不直接崩溃退出进程)
 async function verifyConnectivity() {

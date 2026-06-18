@@ -3,6 +3,9 @@ const { config } = require('../config');
 const Logger = require('../utils/logger');
 const SshService = require('./sshService');
 const ClashService = require('./clashService');
+const ConfigValidator = require('./configValidator');
+const ChangelogManager = require('./changelogManager');
+const ConfigVersionManager = require('./configVersionManager');
 const { PROXY_GROUPS, ROUTER_PATHS, SPEEDTEST_URLS } = require('../constants');
 
 class RulesEngine {
@@ -181,17 +184,37 @@ class RulesEngine {
             
             // 4. 自检配置语法
             try {
-                await SshService.runRemoteCommand('/tmp/ShellCrash/CrashCore -t -d /data/ShellCrash -f /data/ShellCrash/yamls/config.yaml');
+                Logger.info('RulesEngine', '执行规则应用前的预检查...');
+                const preCheckResult = await ConfigValidator.preCheckBeforeApply('/data/ShellCrash/yamls/config.yaml');
+
+                if (!preCheckResult.canApply) {
+                    Logger.error('RulesEngine', '❌ 配置预检查失败，拒绝应用', preCheckResult.reason);
+                    ChangelogManager.logRulesUpdate(gameMacs, aiMacs, false, preCheckResult.reason);
+                    throw new Error('配置预检查失败: ' + preCheckResult.reason);
+                }
+
+                if (preCheckResult.hasWarnings) {
+                    Logger.warn('RulesEngine', '⚠️ 配置有警告: ' + preCheckResult.warnings.join('; '));
+                }
+
                 Logger.info('RulesEngine', '新增规则后 Clash 配置文件自检通过！');
             } catch (testErr) {
                 Logger.warn('RulesEngine', '新配置文件自检失败，正在执行安全回滚', testErr);
                 await SshService.runRemoteCommand('cp -f /tmp/config.yaml.bak /data/ShellCrash/yamls/config.yaml');
                 await SshService.runRemoteCommand(`curl -s -X PUT -d '{"path": "/data/ShellCrash/yamls/config.yaml"}' http://127.0.0.1:${config.ports.clash}/configs?force=true`);
+                ChangelogManager.logRulesUpdate(gameMacs, aiMacs, false, testErr.message || String(testErr));
                 throw new Error('新配置自检失败，已自动回滚！错误详情: ' + (testErr.stderr || testErr.message || '配置语法错误'));
             }
-            
+
             // 5. 触发 Clash 核心热重载 API
             await SshService.runRemoteCommand(`curl -s -X PUT -d '{"path": "/data/ShellCrash/yamls/config.yaml"}' http://127.0.0.1:${config.ports.clash}/configs?force=true`);
+
+            // 6. 创建配置快照
+            ConfigVersionManager.createSnapshot('/data/ShellCrash/yamls/config.yaml', '.applied');
+
+            // 7. 记录变更日志
+            ChangelogManager.logRulesUpdate(gameMacs, aiMacs, true);
+
             Logger.info('RulesEngine', 'NAS端规则同步与 ClashMeta 重载指令下发成功！');
         } catch (err) {
             Logger.error('RulesEngine', 'Clash 规则配置文件远程更新异常', err);

@@ -7,6 +7,8 @@ const ClashService = require('../services/clashService');
 const StorageCleanupService = require('../services/storageCleanupService');
 const ClashApiProxy = require('../utils/clashApiProxy');
 const ProxyGroupDetector = require('../utils/proxyGroupDetector');
+const ConfigVersionManager = require('../services/configVersionManager');
+const ChangelogManager = require('../services/changelogManager');
 
 const router = express.Router();
 
@@ -306,6 +308,104 @@ router.post('/cleanup', async (req, res) => {
         res.status(500).json({
             status: 'error',
             message: '存储清理失败',
+            details: err.message
+        });
+    }
+});
+
+// 获取配置变更日志摘要
+router.get('/changelog/summary', async (req, res) => {
+    try {
+        const summary = ChangelogManager.getSummary();
+        res.json({
+            status: 'success',
+            data: summary
+        });
+    } catch (err) {
+        Logger.error('Gateway', '获取变更日志摘要失败', err);
+        res.status(500).json({
+            status: 'error',
+            message: '获取变更日志摘要失败',
+            details: err.message
+        });
+    }
+});
+
+// 获取最近的配置变更记录
+router.get('/changelog/recent', async (req, res) => {
+    try {
+        const limit = parseInt(req.query.limit || '50', 10);
+        const changes = ChangelogManager.getRecentChanges(limit);
+        res.json({
+            status: 'success',
+            data: { count: changes.length, changes }
+        });
+    } catch (err) {
+        Logger.error('Gateway', '获取变更记录失败', err);
+        res.status(500).json({
+            status: 'error',
+            message: '获取变更记录失败',
+            details: err.message
+        });
+    }
+});
+
+// 列出可用的配置版本
+router.get('/config/versions', async (req, res) => {
+    try {
+        const versions = ConfigVersionManager.listVersions();
+        res.json({
+            status: 'success',
+            data: {
+                count: versions.length,
+                versions: versions.map(v => ({
+                    index: v.index,
+                    filename: v.filename,
+                    size: v.size,
+                    time: v.time
+                }))
+            }
+        });
+    } catch (err) {
+        Logger.error('Gateway', '列出配置版本失败', err);
+        res.status(500).json({
+            status: 'error',
+            message: '列出配置版本失败',
+            details: err.message
+        });
+    }
+});
+
+// 恢复到指定配置版本
+router.post('/config/restore', async (req, res) => {
+    try {
+        const { versionIndex } = req.body;
+        if (versionIndex === undefined) {
+            return res.status(400).json({
+                status: 'error',
+                message: '缺少 versionIndex 参数'
+            });
+        }
+
+        Logger.info('Gateway', `正在恢复配置到版本索引: ${versionIndex}`);
+        const success = ConfigVersionManager.restoreVersion(versionIndex, '/data/ShellCrash/yamls/config.yaml');
+
+        if (success) {
+            // 触发Clash重新加载
+            await SshService.runRemoteCommand(`curl -s -X PUT -d '{"path": "/data/ShellCrash/yamls/config.yaml"}' http://127.0.0.1:${config.ports.clash}/configs?force=true`);
+            Logger.info('Gateway', '配置已恢复并重新加载');
+            res.json({ status: 'success', message: '配置版本已恢复' });
+        } else {
+            res.status(500).json({
+                status: 'error',
+                message: '配置恢复失败'
+            });
+        }
+    } catch (err) {
+        Logger.error('Gateway', '配置恢复失败', err);
+        res.status(500).json({
+            status: 'error',
+            message: '配置恢复失败',
             details: err.message
         });
     }
