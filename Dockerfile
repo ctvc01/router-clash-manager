@@ -17,4 +17,4 @@ RUN chmod +x ssh_exec.exp
 
 EXPOSE 3000
 
-CMD ["node", "server.js"]
+CMD ["node", "src/server.js"]
