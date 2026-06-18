@@ -3,6 +3,7 @@ const { config, validateEnvironment } = require('./config');
 const Logger = require('./utils/logger');
 const PersistenceService = require('./services/persistenceService');
 const ClashService = require('./services/clashService');
+const ClashApiProxy = require('./utils/clashApiProxy');
 const ProxyHealthService = require('./services/proxyHealthService');
 const GameAccService = require('./services/gameAccService');
 const AiBoostService = require('./services/aiBoostService');
@@ -55,7 +56,7 @@ StorageCleanupService.startDailyCleanup();
 async function verifyConnectivity() {
     try {
         Logger.info('Server', '正在验证与路由器 Clash API 的连接状态...');
-        const versionData = await ClashService.getVersion(4000);
+        const versionData = await ClashApiProxy.getVersion();
         Logger.info('Server', `✅ 成功建立与 Clash 核心的连接！内核版本: ${versionData.version || '未知'}`);
     } catch (err) {
         Logger.warn('Server', `⚠️ 警告：目前无法连通路由器的 Clash API (可能由于路由器离线或未运行 Clash)。请检查网络和 ROUTER_IP。错误: ${err.message}`);

@@ -1,7 +1,7 @@
 FROM node:20-alpine
 
-# 安装 expect、openssh-client 和 curl 以支持调用 expect 脚本及进行容器健康检查
-RUN apk add --no-cache expect openssh-client curl
+# 安装 expect、openssh-client、curl 和 sshpass 支持SSH隧道
+RUN apk add --no-cache expect openssh-client curl sshpass
 
 WORKDIR /app
 
