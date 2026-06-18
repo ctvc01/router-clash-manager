@@ -85,7 +85,7 @@ const Validators = {
         const ALLOWED_COMMANDS = [
             'pidof', 'pgrep', 'cat', 'echo', 'grep', 'kill', 'sleep', 'curl',
             'netstat', 'cp', 'touch', 'base64', 'for', 'if', '(', 'true', 'false',
-            'ubus', 'printf', 'top', '/etc/init.d/', 'rm'
+            'ubus', 'printf', 'top', '/etc/init.d/', 'rm', 'sed'
         ];
 
         const firstWord = trimmedCmd.split(/[\s|;&<>]/)[0].trim();
