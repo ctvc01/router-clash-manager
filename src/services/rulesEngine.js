@@ -157,13 +157,19 @@ class RulesEngine {
             await SshService.runRemoteCommand("sed -i '/# === GAME GROUP START ===/,/# === GAME GROUP END ===/d' /data/ShellCrash/yamls/config.yaml");
             await SshService.runRemoteCommand("sed -i '/# === AI GROUP START ===/,/# === AI GROUP END ===/d' /data/ShellCrash/yamls/config.yaml");
 
-            // 步骤 2: 在 rules: 后插入规则（直接使用 sed 的 /pattern/r file 语法）
+            // 步骤 2: 在 rules: 后插入规则（处理 rules: [] 或空 rules: 格式）
             if (ruleLines.length > 0) {
+                // 先尝试处理 rules: [] 或 rules: {} 格式
+                await SshService.runRemoteCommand("sed -i '/^rules:/s/:.*/:/;/^rules:$/a\\\n' /data/ShellCrash/yamls/config.yaml");
+                // 然后在 rules: 行后插入规则文件内容
                 await SshService.runRemoteCommand("sed -i '/^rules:$/r /tmp/game_rules.txt' /data/ShellCrash/yamls/config.yaml");
             }
 
             // 步骤 3: 在 proxy-groups: 后插入代理组
             if (groupLines.length > 0) {
+                // 先确保有 proxy-groups: 行（如果没有则添加）
+                await SshService.runRemoteCommand("grep -q '^proxy-groups:' /data/ShellCrash/yamls/config.yaml || sed -i '$ a\\\\nproxy-groups:' /data/ShellCrash/yamls/config.yaml");
+                // 然后在 proxy-groups: 行后插入代理组文件内容
                 await SshService.runRemoteCommand("sed -i '/^proxy-groups:$/r /tmp/game_group.txt' /data/ShellCrash/yamls/config.yaml");
             }
             
