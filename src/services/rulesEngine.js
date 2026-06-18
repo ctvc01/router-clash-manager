@@ -105,7 +105,12 @@ class RulesEngine {
 
         // 构造加速策略组
         const groupLines = [];
-        
+
+        // 0. 主代理组延迟测试（总是存在）
+        groupLines.push("  # === PROXY SPEEDTEST START ===");
+        groupLines.push(`  - {name: 🔍 代理自动测速, type: url-test, url: http://www.gstatic.com/generate_204, interval: 300, tolerance: 30, include-all: true, use: [${providerName}]}`);
+        groupLines.push("  # === PROXY SPEEDTEST END ===");
+
         // 1. 游戏加速策略组
         groupLines.push("  # === GAME GROUP START ===");
         if (gameMacs.length > 0) {
@@ -152,6 +157,7 @@ class RulesEngine {
             
             // 3. 安全地修改配置文件（使用被验证器接受的 sed 命令）
             // 步骤 1: 清理旧的注入段
+            await SshService.runRemoteCommand("sed -i '/# === PROXY SPEEDTEST START ===/,/# === PROXY SPEEDTEST END ===/d' /data/ShellCrash/yamls/config.yaml");
             await SshService.runRemoteCommand("sed -i '/# === GAME ACC START ===/,/# === GAME ACC END ===/d' /data/ShellCrash/yamls/config.yaml");
             await SshService.runRemoteCommand("sed -i '/# === AI ACC START ===/,/# === AI ACC END ===/d' /data/ShellCrash/yamls/config.yaml");
             await SshService.runRemoteCommand("sed -i '/# === GAME GROUP START ===/,/# === GAME GROUP END ===/d' /data/ShellCrash/yamls/config.yaml");
