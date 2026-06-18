@@ -150,25 +150,21 @@ class RulesEngine {
                 await SshService.runRemoteCommand('touch /tmp/game_group.txt');
             }
             
-            // 3. 安全地修改配置文件（使用单独的命令，避免转义问题）
+            // 3. 安全地修改配置文件（使用被验证器接受的 sed 命令）
             // 步骤 1: 清理旧的注入段
             await SshService.runRemoteCommand("sed -i '/# === GAME ACC START ===/,/# === GAME ACC END ===/d' /data/ShellCrash/yamls/config.yaml");
             await SshService.runRemoteCommand("sed -i '/# === AI ACC START ===/,/# === AI ACC END ===/d' /data/ShellCrash/yamls/config.yaml");
             await SshService.runRemoteCommand("sed -i '/# === GAME GROUP START ===/,/# === GAME GROUP END ===/d' /data/ShellCrash/yamls/config.yaml");
             await SshService.runRemoteCommand("sed -i '/# === AI GROUP START ===/,/# === AI GROUP END ===/d' /data/ShellCrash/yamls/config.yaml");
 
-            // 步骤 2: 在 rules: 后插入规则
+            // 步骤 2: 在 rules: 后插入规则（直接使用 sed 的 /pattern/r file 语法）
             if (ruleLines.length > 0) {
-                // 使用 sed 的行号插入方法
-                const rulesCmd = 'L=$(grep -n "^rules:" /data/ShellCrash/yamls/config.yaml | cut -d: -f1) && sed -i "${L}r /tmp/game_rules.txt" /data/ShellCrash/yamls/config.yaml';
-                await SshService.runRemoteCommand(rulesCmd);
+                await SshService.runRemoteCommand("sed -i '/^rules:$/r /tmp/game_rules.txt' /data/ShellCrash/yamls/config.yaml");
             }
 
             // 步骤 3: 在 proxy-groups: 后插入代理组
             if (groupLines.length > 0) {
-                // 使用 sed 的行号插入方法
-                const groupsCmd = 'L=$(grep -n "^proxy-groups:" /data/ShellCrash/yamls/config.yaml | cut -d: -f1) && sed -i "${L}r /tmp/game_group.txt" /data/ShellCrash/yamls/config.yaml';
-                await SshService.runRemoteCommand(groupsCmd);
+                await SshService.runRemoteCommand("sed -i '/^proxy-groups:$/r /tmp/game_group.txt' /data/ShellCrash/yamls/config.yaml");
             }
             
             // 4. 自检配置语法
