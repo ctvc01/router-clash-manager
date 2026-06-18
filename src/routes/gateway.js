@@ -4,6 +4,7 @@ const { config } = require('../config');
 const Logger = require('../utils/logger');
 const SshService = require('../services/sshService');
 const ClashService = require('../services/clashService');
+const StorageCleanupService = require('../services/storageCleanupService');
 
 const router = express.Router();
 
@@ -297,6 +298,25 @@ router.post('/select', async (req, res) => {
         res.status(500).json({
             status: 'error',
             message: '切换节点失败',
+            details: err.message
+        });
+    }
+});
+
+// 手动触发存储清理
+router.post('/cleanup', async (req, res) => {
+    try {
+        Logger.info('Maintenance', '手动触发存储清理请求...');
+        await StorageCleanupService.cleanupNow();
+        res.json({
+            status: 'success',
+            message: '存储清理任务已完成'
+        });
+    } catch (err) {
+        Logger.error('Maintenance', '存储清理失败', err);
+        res.status(500).json({
+            status: 'error',
+            message: '存储清理失败',
             details: err.message
         });
     }

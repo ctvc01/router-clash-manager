@@ -5,6 +5,7 @@ const ClashService = require('./services/clashService');
 const ProxyHealthService = require('./services/proxyHealthService');
 const GameAccService = require('./services/gameAccService');
 const AiBoostService = require('./services/aiBoostService');
+const StorageCleanupService = require('./services/storageCleanupService');
 
 // 1. 启动前强校验环境变量与核心凭证
 validateEnvironment();
@@ -31,6 +32,9 @@ AiBoostService.startDailyTaskMonitor();
 
 // 启动代理端口及链路自愈全局健康度监测守护进程
 ProxyHealthService.startProxyHealthMonitor();
+
+// 启动存储空间定期清理任务（每日凌晨 02:00）
+StorageCleanupService.startDailyCleanup();
 
 // 异步验证路由器 API 连通性 (弱校验警示，不直接崩溃退出进程)
 async function verifyConnectivity() {
