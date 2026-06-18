@@ -160,15 +160,15 @@ sed -i '/# === GAME GROUP START ===/,/# === GAME GROUP END ===/d' /data/ShellCra
 sed -i '/# === AI GROUP START ===/,/# === AI GROUP END ===/d' /data/ShellCrash/yamls/config.yaml
 
 # 找到 rules: 所在的行号，在其后插入新规则
-RULES_LINE=$(grep -n '^rules:' /data/ShellCrash/yamls/config.yaml | cut -d: -f1)
-if [ -n "$RULES_LINE" ] && [ $(wc -l < /tmp/game_rules.txt) -gt 0 ]; then
-    sed -i "${RULES_LINE}r /tmp/game_rules.txt" /data/ShellCrash/yamls/config.yaml
+RULES_LINE=\$(grep -n '^rules:' /data/ShellCrash/yamls/config.yaml | cut -d: -f1)
+if [ -n "\$RULES_LINE" ] && [ \$(wc -l < /tmp/game_rules.txt) -gt 0 ]; then
+    sed -i "\${RULES_LINE}r /tmp/game_rules.txt" /data/ShellCrash/yamls/config.yaml
 fi
 
 # 找到 proxy-groups: 所在的行号，在其后插入新代理组
-GROUPS_LINE=$(grep -n '^proxy-groups:' /data/ShellCrash/yamls/config.yaml | cut -d: -f1)
-if [ -n "$GROUPS_LINE" ] && [ $(wc -l < /tmp/game_group.txt) -gt 0 ]; then
-    sed -i "${GROUPS_LINE}r /tmp/game_group.txt" /data/ShellCrash/yamls/config.yaml
+GROUPS_LINE=\$(grep -n '^proxy-groups:' /data/ShellCrash/yamls/config.yaml | cut -d: -f1)
+if [ -n "\$GROUPS_LINE" ] && [ \$(wc -l < /tmp/game_group.txt) -gt 0 ]; then
+    sed -i "\${GROUPS_LINE}r /tmp/game_group.txt" /data/ShellCrash/yamls/config.yaml
 fi
 `;
 
