@@ -150,16 +150,32 @@ class RulesEngine {
                 await SshService.runRemoteCommand('touch /tmp/game_group.txt');
             }
             
-            // 3. 将临时规则与策略组写入 config.yaml，前置清理旧的标记段
-            await SshService.runRemoteCommand("sed -i '/# === GAME ACC START ===/,/# === GAME ACC END ===/d' /data/ShellCrash/yamls/config.yaml");
-            await SshService.runRemoteCommand("sed -i '/# === AI ACC START ===/,/# === AI ACC END ===/d' /data/ShellCrash/yamls/config.yaml");
-            await SshService.runRemoteCommand("sed -i '/# === GAME GROUP START ===/,/# === GAME GROUP END ===/d' /data/ShellCrash/yamls/config.yaml");
-            await SshService.runRemoteCommand("sed -i '/# === AI GROUP START ===/,/# === AI GROUP END ===/d' /data/ShellCrash/yamls/config.yaml");
-            await SshService.runRemoteCommand("sed -i '/# === GAME SNIFFER START ===/,/# === GAME SNIFFER END ===/d' /data/ShellCrash/yamls/config.yaml");
-            
-            // 插入新的规则与组配置
-            await SshService.runRemoteCommand("sed -i '/rules:/r /tmp/game_rules.txt' /data/ShellCrash/yamls/config.yaml");
-            await SshService.runRemoteCommand("sed -i '/proxy-groups:/r /tmp/game_group.txt' /data/ShellCrash/yamls/config.yaml");
+            // 3. 使用 shell 脚本安全地修改配置文件（避免 sed 转义问题）
+            // 生成一个用来清理和注入规则的 shell 脚本
+            let updateScript = `#!/bin/sh
+# 清理旧的注入段
+sed -i '/# === GAME ACC START ===/,/# === GAME ACC END ===/d' /data/ShellCrash/yamls/config.yaml
+sed -i '/# === AI ACC START ===/,/# === AI ACC END ===/d' /data/ShellCrash/yamls/config.yaml
+sed -i '/# === GAME GROUP START ===/,/# === GAME GROUP END ===/d' /data/ShellCrash/yamls/config.yaml
+sed -i '/# === AI GROUP START ===/,/# === AI GROUP END ===/d' /data/ShellCrash/yamls/config.yaml
+
+# 找到 rules: 所在的行号，在其后插入新规则
+RULES_LINE=$(grep -n '^rules:' /data/ShellCrash/yamls/config.yaml | cut -d: -f1)
+if [ -n "$RULES_LINE" ] && [ $(wc -l < /tmp/game_rules.txt) -gt 0 ]; then
+    sed -i "${RULES_LINE}r /tmp/game_rules.txt" /data/ShellCrash/yamls/config.yaml
+fi
+
+# 找到 proxy-groups: 所在的行号，在其后插入新代理组
+GROUPS_LINE=$(grep -n '^proxy-groups:' /data/ShellCrash/yamls/config.yaml | cut -d: -f1)
+if [ -n "$GROUPS_LINE" ] && [ $(wc -l < /tmp/game_group.txt) -gt 0 ]; then
+    sed -i "${GROUPS_LINE}r /tmp/game_group.txt" /data/ShellCrash/yamls/config.yaml
+fi
+`;
+
+            // 上传并执行更新脚本
+            const scriptPath = '/tmp/update_config.sh';
+            await SshService.runRemoteCommand(`cat > ${scriptPath} << 'EOF'\n${updateScript}EOF`);
+            await SshService.runRemoteCommand(`chmod +x ${scriptPath} && ${scriptPath}`);
             
             // 4. 自检配置语法
             try {
