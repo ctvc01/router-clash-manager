@@ -5,6 +5,7 @@ const ClashService = require('./services/clashService');
 const ProxyHealthService = require('./services/proxyHealthService');
 const GameAccService = require('./services/gameAccService');
 const AiBoostService = require('./services/aiBoostService');
+const RulesEngine = require('./services/rulesEngine');
 const StorageCleanupService = require('./services/storageCleanupService');
 
 // 1. 启动前强校验环境变量与核心凭证
@@ -12,6 +13,16 @@ validateEnvironment();
 
 // 2. 初始化后台守护进程与定时监控任务
 const activeGameDevices = GameAccService.readGameDevices();
+const activeAiDevices = AiBoostService.readAiDevices();
+
+// 如果有活跃的加速设备，启动时自动初始化规则注入
+if (activeGameDevices.length > 0 || activeAiDevices.length > 0) {
+    Logger.info('Daemon', `检测到当前有 ${activeGameDevices.length} 个游戏设备 + ${activeAiDevices.length} 个 AI 设备，正在初始化规则注入...`);
+    RulesEngine.updateClashRules(activeGameDevices, activeAiDevices).catch(err => {
+        Logger.warn('Daemon', '启动时规则注入失败（稍后会重试）', err);
+    });
+}
+
 if (activeGameDevices.length > 0) {
     Logger.info('Daemon', `检测到当前有 ${activeGameDevices.length} 个加速设备，正在自动激活游戏加速守护进程...`);
     GameAccService.startGameAccMonitor();
@@ -21,7 +32,6 @@ if (activeGameDevices.length > 0) {
 GameAccService.startDailyTaskMonitor();
 
 // 初始化 AI 强化后台守护进程与定时监控任务
-const activeAiDevices = AiBoostService.readAiDevices();
 if (activeAiDevices.length > 0) {
     Logger.info('Daemon', `检测到当前有 ${activeAiDevices.length} 个 AI 强化设备，正在自动激活 AI 强化守护进程...`);
     AiBoostService.startAiBoostMonitor();
