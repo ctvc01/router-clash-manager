@@ -273,6 +273,11 @@ router.post('/select', async (req, res) => {
 
         const success = await ClashApiProxy.selectProxyNode(group, node);
         if (success) {
+            // 异步进行节点延迟测试，不阻塞响应
+            ClashApiProxy.testNodeDelay(node).catch(e =>
+                Logger.debug('Gateway', '节点延迟测试失败', e)
+            );
+
             res.json({ status: 'success' });
         } else {
             res.status(500).json({ status: 'error', message: 'Clash API 切换节点失败' });
