@@ -2,11 +2,13 @@ const SshService = require('../services/sshService');
 const Logger = require('../utils/logger');
 
 class ClashApiProxy {
-    // 通过SSH在路由器上执行curl命令获取Clash API响应
-    static async fetchViaSSH(endpoint) {
+    // 通过SSH在路由器上执行curl命令获取Clash API响应（带超时）
+    static async fetchViaSSH(endpoint, timeoutMs = 5000) {
         try {
-            // 使用 SshService 执行 curl 命令在路由器上
-            const curlCmd = `curl -s http://127.0.0.1:9999${endpoint}`;
+            // 添加curl超时：connect-timeout连接超时 + max-time总超时
+            const connectTimeout = Math.ceil(timeoutMs / 1000);
+            const curlCmd = `curl -s --connect-timeout ${connectTimeout} --max-time ${connectTimeout + 1} http://127.0.0.1:9999${endpoint}`;
+
             const output = await SshService.runRemoteCommand(curlCmd);
 
             if (!output || output.trim().length === 0) {

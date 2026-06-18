@@ -26,8 +26,13 @@ class SshService {
             .trim();
     }
 
-    // 执行远程命令
-    static runRemoteCommand(command) {
+    // 执行远程命令（带自动重试）
+    static runRemoteCommand(command, maxRetries = 3) {
+        return this._executeWithRetry(command, 0, maxRetries);
+    }
+
+    // 内部实现：带指数退避的命令执行
+    static _executeWithRetry(command, attempt = 0, maxRetries = 3) {
         return new Promise((resolve, reject) => {
             try {
                 // 安全审计：命令校验
@@ -46,11 +51,29 @@ class SshService {
                     if (command.includes('pgrep') && error.code === 1) {
                         return resolve('');
                     }
-                    Logger.error('SSH', `远程命令执行失败: "${command}"`, { error, stderr });
-                    return reject({ error, stderr });
+
+                    // 网络相关错误可重试
+                    const isRetryable = error.code === 'ETIMEDOUT' ||
+                                       error.code === 'ECONNREFUSED' ||
+                                       error.code === 'EHOSTUNREACH' ||
+                                       stderr?.includes('Connection timeout') ||
+                                       stderr?.includes('Connection refused');
+
+                    if (isRetryable && attempt < maxRetries) {
+                        // 指数退避：100ms, 300ms, 900ms
+                        const delay = Math.min(100 * Math.pow(3, attempt), 5000);
+                        Logger.debug('SSH', `命令执行失败，${delay}ms后进行重试 (${attempt + 1}/${maxRetries})`);
+                        setTimeout(() => {
+                            this._executeWithRetry(command, attempt + 1, maxRetries).then(resolve).catch(reject);
+                        }, delay);
+                    } else {
+                        Logger.error('SSH', `远程命令执行失败 (已重试${attempt}次): "${command}"`, { error, stderr });
+                        reject({ error, stderr, attempts: attempt + 1 });
+                    }
+                } else {
+                    const cleaned = this._cleanOutput(stdout);
+                    resolve(cleaned);
                 }
-                const cleaned = this._cleanOutput(stdout);
-                resolve(cleaned);
             });
         });
     }

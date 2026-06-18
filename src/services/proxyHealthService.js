@@ -48,70 +48,76 @@ class ProxyHealthService {
         Logger.info('ProxyDaemon', '🛡️ 启动网页代理全局健康度自愈监测守护进程...');
         consecutiveFailures = 0;
 
-        proxyHealthMonitorTimer = setInterval(async () => {
-            try {
-                // 重启冷却期：重启后 90s 内不执行检测（给进程充足的初始化时间）
-                const lastRestartTime = SshService.getLastRestartTime?.() || 0;
-                const timeSinceLastRestart = Date.now() - lastRestartTime;
-                if (timeSinceLastRestart < 90000) {
-                    Logger.debug('ProxyDaemon', `处于重启冷却期 (${Math.floor((90000 - timeSinceLastRestart) / 1000)}s 剩余)`);
-                    return;
-                }
+        // 初始化预热：第一次心跳延迟30s执行，给系统充足的启动和初始化时间
+        setTimeout(() => this._runHealthCheck(), 30000);
 
-                // 1. 检查 Clash Core 进程（支持多种进程名）
-                const pidOutput = await SshService.runRemoteCommand('pidof CrashCore || pidof crashcore || pidof Clash || pgrep -f "CrashCore|crashcore" || true');
-                const isProcessRunning = pidOutput.trim().length > 0 && !pidOutput.includes('Error');
+        // 之后每60秒轮询一次
+        proxyHealthMonitorTimer = setInterval(() => this._runHealthCheck(), 60000);
+        Logger.info('ProxyDaemon', '心跳检测已启动 (30s初始延迟，之后每60s检测一次)');
+    }
 
-                if (!isProcessRunning) {
-                    consecutiveFailures++;
-                    Logger.warn('ProxyDaemon', `⚠️ [${consecutiveFailures}/2] 检测到 Clash Core 进程已异常退出`);
-                    if (consecutiveFailures >= 2) {
-                        Logger.warn('ProxyDaemon', '触发强制自愈拉起...');
-                        await SshService.restartShellCrashSecurely();
-                        consecutiveFailures = 0;
-                    }
-                    return;
-                }
-
-                // 2. 检查代理端口是否健康监听（关键）
-                const isPortListening = await this.checkPortListeningLocal(config.ports.proxy);
-                if (!isPortListening) {
-                    consecutiveFailures++;
-                    Logger.warn('ProxyDaemon', `⚠️ [${consecutiveFailures}/2] 检测到核心代理端口 ${config.ports.proxy} 假死/未开启`);
-                    if (consecutiveFailures >= 2) {
-                        Logger.warn('ProxyDaemon', '触发强制修复...');
-                        await SshService.restartShellCrashSecurely();
-                        consecutiveFailures = 0;
-                    }
-                    return;
-                }
-
-                // 注：DNS 和 API 端口检查已跳过，仅关注代理功能本身
-
-                // 4. 检查海外代理链路可用性
-                const isProxyWorking = await this.testProxyConnectivity(config.ports.proxy, 'http://cp.cloudflare.com/generate_204', 4000);
-                if (!isProxyWorking) {
-                    Logger.warn('ProxyDaemon', '⚠️ 检测到网页代理链路超时阻断！已触发机场节点重新并发测速以引导自动节点漂移自愈...');
-                    let providerName = 'caomei1';
-                    try {
-                        const providerOutput = await SshService.runRemoteCommand("grep -A 1 'proxy-providers:' /data/ShellCrash/yamls/config.yaml | tail -n 1 | cut -d: -f1 | tr -d ' '");
-                        if (providerOutput && providerOutput.trim().length > 0 && !providerOutput.includes('Error')) {
-                            providerName = providerOutput.trim();
-                        }
-                    } catch (pErr) {
-                        Logger.warn('ProxyDaemon', '自愈程序获取 proxy-provider 失败，使用 caomei1', pErr);
-                    }
-                    await this.triggerProviderHealthCheck(providerName);
-                    consecutiveFailures = 0; // 测速自愈不算失败，重置计数
-                } else {
-                    consecutiveFailures = 0; // 所有检测通过，重置计数
-                    Logger.debug('ProxyDaemon', '✅ 全部检测通过');
-                }
-            } catch (err) {
-                Logger.error('ProxyDaemon', '自愈守护进程周期性检测发生异常', err);
-                consecutiveFailures++;
+    // 内部实现：单次心跳检测
+    static async _runHealthCheck() {
+        try {
+            // 重启冷却期：重启后 90s 内不执行检测（给进程充足的初始化时间）
+            const lastRestartTime = SshService.getLastRestartTime?.() || 0;
+            const timeSinceLastRestart = Date.now() - lastRestartTime;
+            if (timeSinceLastRestart < 90000) {
+                Logger.debug('ProxyDaemon', `处于重启冷却期 (${Math.floor((90000 - timeSinceLastRestart) / 1000)}s 剩余)`);
+                return;
             }
-        }, 60000); // 每 60 秒轮询检测一次
+
+            // 1. 检查 Clash Core 进程（支持多种进程名）
+            const pidOutput = await SshService.runRemoteCommand('pidof CrashCore || pidof crashcore || pidof Clash || pgrep -f "CrashCore|crashcore" || true');
+            const isProcessRunning = pidOutput.trim().length > 0 && !pidOutput.includes('Error');
+
+            if (!isProcessRunning) {
+                consecutiveFailures++;
+                Logger.warn('ProxyDaemon', `⚠️ [${consecutiveFailures}/2] 检测到 Clash Core 进程已异常退出`);
+                if (consecutiveFailures >= 2) {
+                    Logger.warn('ProxyDaemon', '触发强制自愈拉起...');
+                    await SshService.restartShellCrashSecurely();
+                    consecutiveFailures = 0;
+                }
+                return;
+            }
+
+            // 2. 检查代理端口是否健康监听（关键）
+            const isPortListening = await this.checkPortListeningLocal(config.ports.proxy);
+            if (!isPortListening) {
+                consecutiveFailures++;
+                Logger.warn('ProxyDaemon', `⚠️ [${consecutiveFailures}/2] 检测到核心代理端口 ${config.ports.proxy} 假死/未开启`);
+                if (consecutiveFailures >= 2) {
+                    Logger.warn('ProxyDaemon', '触发强制修复...');
+                    await SshService.restartShellCrashSecurely();
+                    consecutiveFailures = 0;
+                }
+                return;
+            }
+
+            // 3. 检查海外代理链路可用性
+            const isProxyWorking = await this.testProxyConnectivity(config.ports.proxy, 'http://cp.cloudflare.com/generate_204', 4000);
+            if (!isProxyWorking) {
+                Logger.warn('ProxyDaemon', '⚠️ 检测到网页代理链路超时阻断！已触发机场节点重新并发测速以引导自动节点漂移自愈...');
+                let providerName = 'caomei1';
+                try {
+                    const providerOutput = await SshService.runRemoteCommand("grep -A 1 'proxy-providers:' /data/ShellCrash/yamls/config.yaml | tail -n 1 | cut -d: -f1 | tr -d ' '");
+                    if (providerOutput && providerOutput.trim().length > 0 && !providerOutput.includes('Error')) {
+                        providerName = providerOutput.trim();
+                    }
+                } catch (pErr) {
+                    Logger.warn('ProxyDaemon', '自愈程序获取 proxy-provider 失败，使用 caomei1', pErr);
+                }
+                await this.triggerProviderHealthCheck(providerName);
+                consecutiveFailures = 0;
+            } else {
+                consecutiveFailures = 0;
+                Logger.debug('ProxyDaemon', '✅ 全部检测通过');
+            }
+        } catch (err) {
+            Logger.error('ProxyDaemon', '自愈守护进程心跳检测发生异常', err);
+            consecutiveFailures++;
+        }
     }
 
     // 关闭监测器
