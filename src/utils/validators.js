@@ -59,7 +59,8 @@ const Validators = {
 
         // 1. 黑名单：绝对禁用的危险操作
         const FORBIDDEN_PATTERNS = [
-            /\brm\s+/,                // rm 命令
+            /\brm\s+.*\//,            // rm 操作根目录或其他路径（但允许 /tmp/ 下的清理）
+            /\brm\s+-rf\s+\//,        // rm -rf / 格式
             /\bchmod\b/,              // 权限修改
             /\bchown\b/,              // 所有权修改
             /\bdd\b/,                 // 磁盘操作
@@ -70,8 +71,8 @@ const Validators = {
             /\|\s*bash\b/,            // 管道到 bash
             /\|\s*nc\s+-l/,           // 监听的 nc（反向 shell）
             /\bwget\b/,               // wget 下载
-            /;\s*rm\s+/,              // 分号链式 rm 操作
-            /&&\s*rm\s+/,             // 双 && 链式 rm 操作
+            /;\s*rm\s+.*\//,          // 分号链式 rm 路径操作
+            /&&\s*rm\s+.*\//,         // 双 && 链式 rm 路径操作
             />\s*\/dev\/null\s*2>&1\s*&/  // 后台进程隐藏
         ];
 
@@ -85,7 +86,7 @@ const Validators = {
         const ALLOWED_COMMANDS = [
             'pidof', 'pgrep', 'cat', 'echo', 'grep', 'kill', 'sleep', 'curl',
             'netstat', 'cp', 'touch', 'base64', 'for', 'if', '(', 'true', 'false',
-            'ubus', 'printf', 'top', '/etc/init.d/'
+            'ubus', 'printf', 'top', '/etc/init.d/', 'rm'
         ];
 
         const firstWord = trimmedCmd.split(/[\s|;&<>]/)[0].trim();
