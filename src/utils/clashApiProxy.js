@@ -48,7 +48,7 @@ class ClashApiProxy {
     }
 
     // 测试单个节点延迟
-    static async testNodeDelay(nodeName, timeoutMs = 4000, testUrl = 'http://ctest.cdn.nintendo.net/') {
+    static async testNodeDelay(nodeName, timeoutMs = 4000, testUrl = 'http://www.gstatic.com/generate_204') {
         try {
             const encodedName = encodeURIComponent(nodeName);
             const encodedUrl = encodeURIComponent(testUrl);
