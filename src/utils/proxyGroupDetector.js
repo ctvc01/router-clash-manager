@@ -97,9 +97,13 @@ class ProxyGroupDetector {
         // 获取最后一次有效测试的延迟
         let delay = 0;
         if (node.history && Array.isArray(node.history) && node.history.length > 0) {
+            // 优先取最后一条非0延迟记录，否则取最后一条记录
             const validDelays = node.history.filter(h => h.delay > 0);
             if (validDelays.length > 0) {
                 delay = validDelays[validDelays.length - 1].delay;
+            } else if (node.history.length > 0) {
+                // 如果都是0延迟，取最后一条（可能还在测试中）
+                delay = node.history[node.history.length - 1].delay;
             }
         }
 
