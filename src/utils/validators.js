@@ -59,8 +59,8 @@ const Validators = {
 
         // 1. 黑名单：绝对禁用的危险操作
         const FORBIDDEN_PATTERNS = [
-            /\brm\s+.*\//,            // rm 操作根目录或其他路径（但允许 /tmp/ 下的清理）
-            /\brm\s+-rf\s+\//,        // rm -rf / 格式
+            /\brm\s+-rf\s+\//,        // rm -rf / 等根目录危险操作
+            /\brm\s+(-[a-z]*\s+)*\/(data|etc|root|sys|usr|lib|bin|sbin|boot|proc|var)(?:\/|$)/,  // 只拦截删除关键系统目录的 rm 操作
             /\bchmod\b/,              // 权限修改
             /\bchown\b/,              // 所有权修改
             /\bdd\b/,                 // 磁盘操作
@@ -71,9 +71,8 @@ const Validators = {
             /\|\s*bash\b/,            // 管道到 bash
             /\|\s*nc\s+-l/,           // 监听的 nc（反向 shell）
             /\bwget\b/,               // wget 下载
-            /;\s*rm\s+.*\//,          // 分号链式 rm 路径操作
-            /&&\s*rm\s+.*\//,         // 双 && 链式 rm 路径操作
-            />\s*\/dev\/null\s*2>&1\s*&/  // 后台进程隐藏
+            /;\s*rm\s+(-[a-z]*\s+)*\/(data|etc|root|sys|usr|lib|bin|sbin|boot|proc|var)/,  // 分号链式删除关键目录
+            /&&\s*rm\s+(-[a-z]*\s+)*\/(data|etc|root|sys|usr|lib|bin|sbin|boot|proc|var)/  // 双 && 链式删除关键目录
         ];
 
         for (const pattern of FORBIDDEN_PATTERNS) {
