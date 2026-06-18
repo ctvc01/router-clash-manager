@@ -4,6 +4,7 @@ const Logger = require('../utils/logger');
 const Validators = require('../utils/validators');
 
 let restartPromise = Promise.resolve();
+let lastRestartTime = 0;
 
 class SshService {
     // 清洗 SSH/expect 命令流的多余系统数据干扰
@@ -60,12 +61,16 @@ class SshService {
             try {
                 Logger.info('ShellCrash', '正在请求重启 ShellCrash 服务 (排队中)...');
 
+                // 0. 清除启动锁定文件（确保不会因旧失败状态锁定）
+                await this.runRemoteCommand('rm -f /data/ShellCrash/.start_error');
+                Logger.info('ShellCrash', '已清除启动错误标记文件');
+
                 // 1. 杀死旧进程
                 await this.runRemoteCommand('kill $(pidof CrashCore) 2>/dev/null; true');
 
                 // 2. 等待旧进程完全退出（最多等待 5s）
                 for (let i = 0; i < 5; i++) {
-                    const pidOut = await this.runRemoteCommand('pidof CrashCore 2>/dev/null || echo ""');
+                    const pidOut = await this.runRemoteCommand('pidof CrashCore 2>/dev/null || pidof crashcore 2>/dev/null || echo ""');
                     if (!pidOut.trim()) {
                         Logger.info('ShellCrash', '旧进程已完全退出');
                         break;
@@ -77,22 +82,28 @@ class SshService {
                 await this.runRemoteCommand('( /tmp/ShellCrash/CrashCore -d /data/ShellCrash -f /data/ShellCrash/yamls/config.yaml </dev/null >/dev/null 2>/dev/null & )');
                 Logger.info('ShellCrash', '已下发新进程启动命令，等待进程启动...');
 
-                // 4. 等待新进程启动（最多等待 10s）
+                // 4. 等待新进程启动（最多等待 15s，给配置加载充足时间）
                 let processStarted = false;
-                for (let i = 0; i < 10; i++) {
-                    const pidOut = await this.runRemoteCommand('pidof CrashCore 2>/dev/null || echo ""');
+                for (let i = 0; i < 15; i++) {
+                    const pidOut = await this.runRemoteCommand('pidof CrashCore 2>/dev/null || pidof crashcore 2>/dev/null || echo ""');
                     if (pidOut.trim()) {
                         Logger.info('ShellCrash', `进程已启动 (PID: ${pidOut.trim()})`);
                         processStarted = true;
+
+                        // 启动后再等待 5s，确保端口初始化完成
+                        Logger.info('ShellCrash', '等待 5s 确保端口绑定完成...');
+                        await new Promise(r => setTimeout(r, 5000));
                         break;
                     }
                     await new Promise(r => setTimeout(r, 1000));
                 }
 
                 if (!processStarted) {
-                    Logger.warn('ShellCrash', '进程启动超时，但继续执行（可能是异步启动）');
+                    Logger.warn('ShellCrash', '进程启动超时（15s 内未找到），但继续执行');
                 }
 
+                // 更新最后重启时间
+                lastRestartTime = Date.now();
                 Logger.info('ShellCrash', 'ShellCrash 已成功完成分步重启。');
             } catch (err) {
                 const stderrMsg = err.stderr || '';
@@ -117,3 +128,4 @@ class SshService {
 }
 
 module.exports = SshService;
+module.exports.getLastRestartTime = () => lastRestartTime;
