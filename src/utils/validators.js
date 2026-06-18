@@ -89,7 +89,24 @@ const Validators = {
             'tail', 'head', 'awk', 'find', 'cut', 'df', 'tr'
         ];
 
+        // 允许的绝对路径前缀（需要通过黑名单检查）
+        const ALLOWED_PATH_PREFIXES = [
+            '/tmp/ShellCrash/',      // ShellCrash 临时二进制
+            '/data/ShellCrash/'      // ShellCrash 数据目录
+        ];
+
         const firstWord = trimmedCmd.split(/[\s|;&<>]/)[0].trim();
+
+        // 先检查是否是绝对路径
+        if (firstWord.startsWith('/')) {
+            const isAllowedPath = ALLOWED_PATH_PREFIXES.some(prefix => firstWord.startsWith(prefix));
+            if (isAllowedPath) {
+                return trimmedCmd;  // 已通过黑名单检查，允许执行
+            }
+            throw new Error(`[Security] 命令路径 "${firstWord}" 不在白名单中`);
+        }
+
+        // 检查命令名是否在白名单中
         const isAllowed = ALLOWED_COMMANDS.some(cmd => {
             if (firstWord === cmd) return true;
             if (firstWord.startsWith(cmd + ' ')) return true;
