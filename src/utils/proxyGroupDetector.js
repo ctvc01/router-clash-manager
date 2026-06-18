@@ -22,9 +22,10 @@ class ProxyGroupDetector {
         }
 
         // 首先尝试硬编码的候选名称
+        // 注：Clash Meta的type是 "Selector" 或 "select"，需要不区分大小写或兼容两种
         for (const name of this.PROXY_GROUP_CANDIDATES) {
             const group = proxies[name];
-            if (group && group.type === 'select' && group.now) {
+            if (group && this._isSelectType(group.type) && group.now) {
                 Logger.debug('ProxyGroupDetector', `Found proxy group by name: ${name}`);
                 return { name, group };
             }
@@ -35,7 +36,7 @@ class ProxyGroupDetector {
         let maxNodeCount = 0;
 
         for (const [name, group] of Object.entries(proxies)) {
-            if (group && group.type === 'select' && group.all && Array.isArray(group.all)) {
+            if (group && this._isSelectType(group.type) && group.all && Array.isArray(group.all)) {
                 const nodeCount = group.all.length;
                 if (nodeCount > maxNodeCount && nodeCount > 2) {
                     // 跳过系统代理组
@@ -53,6 +54,13 @@ class ProxyGroupDetector {
         }
 
         return null;
+    }
+
+    // 检查type是否为select类型（兼容 select 和 Selector）
+    static _isSelectType(type) {
+        if (!type) return false;
+        const lowerType = typeof type === 'string' ? type.toLowerCase() : '';
+        return lowerType === 'select' || lowerType === 'selector';
     }
 
     // 获取代理组的当前选中节点
