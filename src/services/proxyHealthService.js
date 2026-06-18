@@ -73,7 +73,7 @@ class ProxyHealthService {
                     return;
                 }
 
-                // 2. 检查代理端口是否健康监听
+                // 2. 检查代理端口是否健康监听（关键）
                 const isPortListening = await this.checkPortListeningLocal(config.ports.proxy);
                 if (!isPortListening) {
                     consecutiveFailures++;
@@ -86,18 +86,7 @@ class ProxyHealthService {
                     return;
                 }
 
-                // 3. 检查 DNS 端口是否健康监听
-                const isDnsListening = await this.checkPortListeningLocal(config.ports.dns);
-                if (!isDnsListening) {
-                    consecutiveFailures++;
-                    Logger.warn('ProxyDaemon', `⚠️ [${consecutiveFailures}/2] 检测到 DNS 监听端口 ${config.ports.dns} 异常未开启`);
-                    if (consecutiveFailures >= 2) {
-                        Logger.warn('ProxyDaemon', '触发强制修复...');
-                        await SshService.restartShellCrashSecurely();
-                        consecutiveFailures = 0;
-                    }
-                    return;
-                }
+                // 注：DNS 和 API 端口检查已跳过，仅关注代理功能本身
 
                 // 4. 检查海外代理链路可用性
                 const isProxyWorking = await this.testProxyConnectivity(config.ports.proxy, 'http://cp.cloudflare.com/generate_204', 4000);
