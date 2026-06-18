@@ -5,10 +5,12 @@ class ClashApiProxy {
     // 通过SSH在路由器上执行curl命令获取Clash API响应
     static async fetchViaSSH(endpoint) {
         try {
+            // 使用 SshService 执行 curl 命令在路由器上
             const curlCmd = `curl -s http://127.0.0.1:9999${endpoint}`;
             const output = await SshService.runRemoteCommand(curlCmd);
 
             if (!output || output.trim().length === 0) {
+                Logger.debug('ClashApiProxy', `Empty response from endpoint: ${endpoint}`);
                 throw new Error('Empty response from Clash API');
             }
 
@@ -16,11 +18,11 @@ class ClashApiProxy {
             try {
                 return JSON.parse(output);
             } catch (parseErr) {
-                Logger.warn('ClashApiProxy', `Failed to parse JSON from endpoint ${endpoint}`, parseErr);
-                throw new Error(`Invalid JSON response: ${output.substring(0, 100)}`);
+                Logger.warn('ClashApiProxy', `Failed to parse JSON from endpoint ${endpoint}:`, output.substring(0, 200));
+                throw new Error(`Invalid JSON response from Clash API`);
             }
         } catch (err) {
-            Logger.error('ClashApiProxy', `Failed to fetch ${endpoint} via SSH`, err);
+            Logger.error('ClashApiProxy', `Failed to fetch ${endpoint} via SSH`, err.message);
             throw err;
         }
     }
@@ -54,7 +56,7 @@ class ClashApiProxy {
             const result = await this.fetchViaSSH(endpoint);
             return result.delay || 0;
         } catch (err) {
-            Logger.debug('ClashApiProxy', `Node delay test failed for ${nodeName}`, err);
+            Logger.debug('ClashApiProxy', `Node delay test failed for ${nodeName}`);
             return 0;
         }
     }
@@ -64,19 +66,21 @@ class ClashApiProxy {
         try {
             const encodedGroup = encodeURIComponent(groupName);
             const jsonData = JSON.stringify({ name: nodeName });
-            const escapedData = jsonData.replace(/"/g, '\\"').replace(/\$/g, '\\$');
+            // 需要转义用于 shell 命令
+            const escapedData = jsonData.replace(/'/g, "'\\''");
 
-            const curlCmd = `curl -s -X PUT -d "${escapedData}" http://127.0.0.1:9999/proxies/${encodedGroup}`;
-            const output = await SshService.runRemoteCommand(curlCmd);
+            // 使用 curl -d 和 PUT 方法
+            const curlCmd = `curl -s -X PUT -d '${escapedData}' http://127.0.0.1:9999/proxies/${encodedGroup}`;
+            await SshService.runRemoteCommand(curlCmd);
 
-            // 不需要检查响应体，204状态码意味着成功
             Logger.info('ClashApiProxy', `Successfully selected ${nodeName} for group ${groupName}`);
             return true;
         } catch (err) {
-            Logger.error('ClashApiProxy', `Failed to select proxy node via SSH`, err);
+            Logger.error('ClashApiProxy', `Failed to select proxy node`, err.message);
             return false;
         }
     }
 }
 
 module.exports = ClashApiProxy;
+
