@@ -108,7 +108,7 @@ class RulesEngine {
 
         // 0. 主代理组延迟测试（总是存在）
         groupLines.push("  # === PROXY SPEEDTEST START ===");
-        groupLines.push(`  - {name: 🔍 代理自动测速, type: url-test, url: http://www.gstatic.com/generate_204, interval: 300, tolerance: 30, include-all: true, use: [${providerName}]}`);
+        groupLines.push(`  - {name: "🔍 代理自动测速", type: url-test, url: http://www.gstatic.com/generate_204, interval: 300, tolerance: 30, include-all: true, use: [${providerName}]}`);
         groupLines.push("  # === PROXY SPEEDTEST END ===");
 
         // 1. 游戏加速策略组
