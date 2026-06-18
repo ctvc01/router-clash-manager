@@ -5,6 +5,8 @@ const Logger = require('../utils/logger');
 const SshService = require('../services/sshService');
 const ClashService = require('../services/clashService');
 const StorageCleanupService = require('../services/storageCleanupService');
+const ClashApiProxy = require('../utils/clashApiProxy');
+const ProxyGroupDetector = require('../utils/proxyGroupDetector');
 
 const router = express.Router();
 
@@ -23,39 +25,27 @@ function getLocalIP() {
     return 'localhost';
 }
 
-// 辅助：获取 Clash 当前代理节点信息
+// 辅助：获取 Clash 当前代理节点信息（使用SSH隧道和动态检测）
 async function getCurrentNodeInfo() {
     try {
-        const proxiesData = await ClashService.getProxies();
+        const proxiesData = await ClashApiProxy.getProxies();
         const proxies = proxiesData.proxies || {};
-        
-        let name = 'DIRECT';
-        if (proxies['🚀 节点选择']) {
-            name = proxies['🚀 节点选择'].now;
-        } else if (proxies['GLOBAL']) {
-            name = proxies['GLOBAL'].now;
+
+        // 优先查找主代理组
+        const mainGroup = ProxyGroupDetector.findMainProxyGroup(proxies);
+        if (!mainGroup) {
+            Logger.debug('Gateway', '无法找到主代理组，返回DIRECT');
+            return { name: 'DIRECT', delay: 0 };
         }
-        
-        // 递归查找物理节点
-        const getRealPhysicalNode = (proxiesMap, nodeName, visited = new Set()) => {
-            if (visited.has(nodeName)) {
-                return { name: nodeName, delay: 0 };
-            }
-            visited.add(nodeName);
-            const p = proxiesMap[nodeName];
-            if (!p) return { name: nodeName, delay: 0 };
-            if (p.now && typeof p.now === 'string') {
-                return getRealPhysicalNode(proxiesMap, p.now, visited);
-            }
-            let delay = 0;
-            if (p.history && p.history.length > 0) {
-                const valid = p.history.filter(h => h.delay > 0);
-                delay = valid.length > 0 ? valid[valid.length - 1].delay : (p.history[p.history.length - 1].delay || 0);
-            }
-            return { name: nodeName, delay };
+
+        const currentNodeName = mainGroup.group.now || 'DIRECT';
+        const realNode = ProxyGroupDetector.getRealPhysicalNode(proxies, currentNodeName);
+
+        return {
+            name: realNode.name,
+            delay: realNode.delay,
+            mainGroupName: mainGroup.name
         };
-        
-        return getRealPhysicalNode(proxies, name);
     } catch (e) {
         Logger.debug('Gateway', `查询当前节点异常: ${e.message}`);
         return { name: '未知', delay: 0 };
@@ -142,27 +132,33 @@ router.get('/status', async (req, res) => {
             Logger.debug('Gateway', '获取运行时间失败', uptimeErr);
         }
 
-        // 6. 异步获取 Clash API 版本与模式信息
+        // 6. 异步获取 Clash API 版本与模式信息（使用SSH隧道）
         let version = '未知';
         let mode = '未知';
         let currentNode = '未知';
         let latency = 0;
 
         try {
-            const vData = await ClashService.getVersion(1500);
+            const vData = await ClashApiProxy.getVersion();
             version = vData.version || '未知';
-        } catch (e) {}
+        } catch (e) {
+            Logger.debug('Gateway', '通过SSH隧道获取Clash版本失败', e);
+        }
 
         try {
-            const cData = await ClashService.getConfigs(1500);
+            const cData = await ClashApiProxy.getConfigs();
             mode = cData.mode || '未知';
-        } catch (e) {}
+        } catch (e) {
+            Logger.debug('Gateway', '通过SSH隧道获取Clash配置失败', e);
+        }
 
         try {
             const nodeInfo = await getCurrentNodeInfo();
             currentNode = nodeInfo.name;
             latency = nodeInfo.delay;
-        } catch (e) {}
+        } catch (e) {
+            Logger.debug('Gateway', '获取当前节点失败', e);
+        }
 
         res.json({
             status: 'success',
@@ -180,10 +176,10 @@ router.get('/status', async (req, res) => {
         });
     } catch (err) {
         Logger.error('Gateway', '获取系统与代理状态失败', err);
-        res.status(500).json({ 
-            status: 'error', 
-            message: '无法连接到路由器或获取状态失败', 
-            details: err.stderr || err.message 
+        res.status(500).json({
+            status: 'error',
+            message: '无法连接到路由器或获取状态失败',
+            details: err.stderr || err.message
         });
     }
 });
@@ -209,47 +205,35 @@ router.get('/error-log', async (req, res) => {
 // 3. 获取所有策略组节点信息（用于顶层节点详情弹窗）
 router.get('/nodes', async (req, res) => {
     try {
-        const proxiesData = await ClashService.getProxies();
+        const proxiesData = await ClashApiProxy.getProxies();
         const proxies = proxiesData.proxies || {};
-        
-        const getRealPhysicalNode = (proxiesMap, nodeName) => {
-            const p = proxiesMap[nodeName];
-            if (!p) return { name: nodeName, delay: 0 };
-            // 如果节点是策略组，递归查找当前激活子节点
-            if (p.now && typeof p.now === 'string' && proxiesMap[p.now]) {
-                return getRealPhysicalNode(proxiesMap, p.now);
-            }
-            let delay = 0;
-            if (p.history && p.history.length > 0) {
-                const valid = p.history.filter(h => h.delay > 0);
-                delay = valid.length > 0 ? valid[valid.length - 1].delay : (p.history[p.history.length - 1].delay || 0);
-            }
-            return { name: nodeName, delay };
-        };
+
+        const mainGroup = ProxyGroupDetector.findMainProxyGroup(proxies);
+        const mainGroupName = mainGroup?.name || '🚀 节点选择';
 
         const result = {
             proxy: {
-                name: '🚀 节点选择',
-                now: proxies['🚀 节点选择']?.now || 'DIRECT',
-                realNode: getRealPhysicalNode(proxies, proxies['🚀 节点选择']?.now || 'DIRECT').name,
-                delay: getRealPhysicalNode(proxies, proxies['🚀 节点选择']?.now || 'DIRECT').delay
+                name: mainGroupName,
+                now: proxies[mainGroupName]?.now || 'DIRECT',
+                realNode: ProxyGroupDetector.getRealPhysicalNode(proxies, proxies[mainGroupName]?.now || 'DIRECT').name,
+                delay: ProxyGroupDetector.getRealPhysicalNode(proxies, proxies[mainGroupName]?.now || 'DIRECT').delay
             },
             game: {
                 name: '🎮 游戏加速',
                 now: proxies['🎮 游戏加速']?.now || 'DIRECT',
-                realNode: getRealPhysicalNode(proxies, proxies['🎮 游戏加速']?.now || 'DIRECT').name,
-                delay: getRealPhysicalNode(proxies, proxies['🎮 游戏加速']?.now || 'DIRECT').delay,
+                realNode: ProxyGroupDetector.getRealPhysicalNode(proxies, proxies['🎮 游戏加速']?.now || 'DIRECT').name,
+                delay: ProxyGroupDetector.getRealPhysicalNode(proxies, proxies['🎮 游戏加速']?.now || 'DIRECT').delay,
                 all: []
             },
             ai: {
                 name: '🤖 AI强化',
                 now: proxies['🤖 AI强化']?.now || 'DIRECT',
-                realNode: getRealPhysicalNode(proxies, proxies['🤖 AI强化']?.now || 'DIRECT').name,
-                delay: getRealPhysicalNode(proxies, proxies['🤖 AI强化']?.now || 'DIRECT').delay
+                realNode: ProxyGroupDetector.getRealPhysicalNode(proxies, proxies['🤖 AI强化']?.now || 'DIRECT').name,
+                delay: ProxyGroupDetector.getRealPhysicalNode(proxies, proxies['🤖 AI强化']?.now || 'DIRECT').delay
             }
         };
 
-        // 整理游戏模式的所有可选物理节点 (过滤掉策略组名称和直连，包含名字和历史延迟)
+        // 整理游戏模式的所有可选物理节点
         const filterOutGroups = ['⚡ 游戏自动测速', '🚀 节点选择', '👑 高级节点', 'DIRECT', 'GLOBAL'];
         if (proxies['🎮 游戏加速'] && proxies['🎮 游戏加速'].all) {
             result.game.all = proxies['🎮 游戏加速'].all
@@ -286,8 +270,8 @@ router.post('/select', async (req, res) => {
         if (!group || !node) {
             return res.status(400).json({ status: 'error', message: '缺少 group 或 node 参数' });
         }
-        
-        const success = await ClashService.selectProxyNode(group, node);
+
+        const success = await ClashApiProxy.selectProxyNode(group, node);
         if (success) {
             res.json({ status: 'success' });
         } else {

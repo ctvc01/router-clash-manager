@@ -7,32 +7,18 @@ const Validators = require('../utils/validators');
 const SshService = require('../services/sshService');
 const GameAccService = require('../services/gameAccService');
 const AiBoostService = require('../services/aiBoostService');
+const PersistenceService = require('../services/persistenceService');
 
 const router = express.Router();
 
-// 辅助：读取本地设备别名自定义存储
+// 辅助：读取本地设备别名自定义存储（使用持久化服务）
 function readCustom() {
-    const path = config.paths.custom;
-    try {
-        if (!fs.existsSync(path)) return {};
-        const data = fs.readFileSync(path, 'utf8');
-        return JSON.parse(data || '{}');
-    } catch (err) {
-        Logger.error('Devices', '读取 device_custom.json 失败', err);
-        return {};
-    }
+    return PersistenceService.readJSON(config.paths.custom, {});
 }
 
-// 辅助：写入本地设备别名自定义存储
+// 辅助：写入本地设备别名自定义存储（使用持久化服务）
 function writeCustom(customData) {
-    const path = config.paths.custom;
-    try {
-        fs.writeFileSync(path, JSON.stringify(customData, null, 2), 'utf8');
-        return true;
-    } catch (err) {
-        Logger.error('Devices', '写入 device_custom.json 失败', err);
-        return false;
-    }
+    return PersistenceService.writeJSON(config.paths.custom, customData);
 }
 
 // 1. 获取局域网设备及代理/流量数据 (带 15 秒缓存优化)

@@ -1,6 +1,7 @@
 const app = require('./app');
 const { config, validateEnvironment } = require('./config');
 const Logger = require('./utils/logger');
+const PersistenceService = require('./services/persistenceService');
 const ClashService = require('./services/clashService');
 const ProxyHealthService = require('./services/proxyHealthService');
 const GameAccService = require('./services/gameAccService');
@@ -10,6 +11,10 @@ const StorageCleanupService = require('./services/storageCleanupService');
 
 // 1. 启动前强校验环境变量与核心凭证
 validateEnvironment();
+
+// 1.5 初始化数据持久化框架
+PersistenceService.initializeAll();
+PersistenceService.logIntegrityReport();
 
 // 2. 初始化后台守护进程与定时监控任务
 const activeGameDevices = GameAccService.readGameDevices();

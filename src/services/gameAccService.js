@@ -2,39 +2,24 @@ const fs = require('fs');
 const { config } = require('../config');
 const Logger = require('../utils/logger');
 const ClashService = require('./clashService');
+const PersistenceService = require('./persistenceService');
 
 let gameAccCheckTimer = null;
 let dailyCheckTimer = null;
 let dailyCheckDone = false;
 
 class GameAccService {
-    // 读取已开启加速的设备 MAC 地址
+    // 读取已开启加速的设备 MAC 地址（使用持久化服务）
     static readGameDevices() {
-        const path = config.paths.gameDevices;
-        if (!fs.existsSync(path)) {
-            return [];
-        }
-        try {
-            const data = fs.readFileSync(path, 'utf8');
-            return data.split('\n')
-                .map(line => line.trim().toLowerCase())
-                .filter(line => line.length > 0);
-        } catch (err) {
-            Logger.error('GameAcc', '读取 game_devices 失败', err);
-            return [];
-        }
+        const data = PersistenceService.readText(config.paths.gameDevices, '');
+        return data.split('\n')
+            .map(line => line.trim().toLowerCase())
+            .filter(line => line.length > 0);
     }
 
-    // 写入开启加速的设备 MAC 地址
+    // 写入开启加速的设备 MAC 地址（使用持久化服务）
     static writeGameDevices(devices) {
-        const path = config.paths.gameDevices;
-        try {
-            fs.writeFileSync(path, devices.join('\n') + '\n', 'utf8');
-            return true;
-        } catch (err) {
-            Logger.error('GameAcc', '写入 game_devices 失败', err);
-            return false;
-        }
+        return PersistenceService.writeText(config.paths.gameDevices, devices.join('\n') + '\n');
     }
 
     // 寻找当前最快的游戏节点
