@@ -66,7 +66,7 @@ async function getCurrentNodeInfo() {
 router.get('/status', async (req, res) => {
     try {
         // 1. 探测 Clash Core PID
-        const pidOutput = await SshService.runRemoteCommand('pidof CrashCore || pgrep -f CrashCore');
+        const pidOutput = await SshService.runRemoteCommand('pidof Clash || pidof CrashCore || pgrep -f "CrashCore|clash"');
         const pidMatch = pidOutput.match(/\b(\d+)\b/);
         const pid = pidMatch ? pidMatch[1] : '';
         const isRunning = pid.length > 0;
