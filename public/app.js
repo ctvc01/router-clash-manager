@@ -44,10 +44,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const elNodeDetailModal = document.getElementById('node-detail-modal');
     const elBtnCloseNodeModal = document.getElementById('btn-close-node-modal');
     const elBtnCloseNodeModalOk = document.getElementById('btn-close-node-modal-ok');
-    const elNodeProxyNow = document.getElementById('node-proxy-now');
     const elNodeProxyReal = document.getElementById('node-proxy-real');
     const elNodeProxyDelay = document.getElementById('node-proxy-delay');
-    const elNodeAiNow = document.getElementById('node-ai-now');
     const elNodeAiReal = document.getElementById('node-ai-real');
     const elNodeAiDelay = document.getElementById('node-ai-delay');
     const elNodeGameReal = document.getElementById('node-game-real');
@@ -59,6 +57,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const elIconGameDropdownArrow = document.getElementById('icon-game-dropdown-arrow');
     const elGameNodeDropdownMenu = document.getElementById('game-node-dropdown-menu');
     const elGameDropdownListContainer = document.getElementById('game-dropdown-list-container');
+
+    // AI模式下拉菜单相关 DOM
+    const elBtnToggleAiDropdown = document.getElementById('btn-toggle-ai-dropdown');
+    const elIconAiDropdownArrow = document.getElementById('icon-ai-dropdown-arrow');
+    const elAiNodeDropdownMenu = document.getElementById('ai-node-dropdown-menu');
+    const elAiDropdownListContainer = document.getElementById('ai-dropdown-list-container');
+
+    // 代理模式下拉菜单相关 DOM
+    const elBtnToggleProxyDropdown = document.getElementById('btn-toggle-proxy-dropdown');
+    const elIconProxyDropdownArrow = document.getElementById('icon-proxy-dropdown-arrow');
+    const elProxyNodeDropdownMenu = document.getElementById('proxy-node-dropdown-menu');
+    const elProxyDropdownListContainer = document.getElementById('proxy-dropdown-list-container');
 
     // 自定义确认弹窗相关 DOM
     const elConfirmModal = document.getElementById('confirm-modal');
@@ -964,11 +974,85 @@ document.addEventListener('DOMContentLoaded', () => {
         elIconGameDropdownArrow.textContent = 'expand_more';
     }
 
+    // AI模式下拉菜单操作函数
+    function toggleAiDropdown() {
+        const isClosed = elAiNodeDropdownMenu.style.display === 'none';
+        if (isClosed) {
+            openAiDropdown();
+        } else {
+            closeAiDropdown();
+        }
+    }
+
+    function openAiDropdown() {
+        const triggerRect = elBtnToggleAiDropdown.getBoundingClientRect();
+        const nodeNameRect = elNodeAiReal.getBoundingClientRect();
+
+        elAiNodeDropdownMenu.style.display = 'block';
+        elAiNodeDropdownMenu.style.top = (triggerRect.bottom + 6) + 'px';
+        elAiNodeDropdownMenu.style.left = (nodeNameRect.left - 4) + 'px';
+        elAiNodeDropdownMenu.style.width = Math.max(triggerRect.width, 240) + 'px';
+        elAiNodeDropdownMenu.style.minWidth = '240px';
+        elAiNodeDropdownMenu.style.maxWidth = '90vw';
+
+        elAiNodeDropdownMenu.classList.add('animate-dropdown');
+        elIconAiDropdownArrow.textContent = 'expand_less';
+    }
+
+    function closeAiDropdown() {
+        elAiNodeDropdownMenu.style.display = 'none';
+        elAiNodeDropdownMenu.classList.remove('animate-dropdown');
+        elAiNodeDropdownMenu.style.top = '';
+        elAiNodeDropdownMenu.style.left = '';
+        elAiNodeDropdownMenu.style.width = '';
+        elAiNodeDropdownMenu.style.minWidth = '';
+        elAiNodeDropdownMenu.style.maxWidth = '';
+        elIconAiDropdownArrow.textContent = 'expand_more';
+    }
+
+    // 代理模式下拉菜单操作函数
+    function toggleProxyDropdown() {
+        const isClosed = elProxyNodeDropdownMenu.style.display === 'none';
+        if (isClosed) {
+            openProxyDropdown();
+        } else {
+            closeProxyDropdown();
+        }
+    }
+
+    function openProxyDropdown() {
+        const triggerRect = elBtnToggleProxyDropdown.getBoundingClientRect();
+        const nodeNameRect = elNodeProxyReal.getBoundingClientRect();
+
+        elProxyNodeDropdownMenu.style.display = 'block';
+        elProxyNodeDropdownMenu.style.top = (triggerRect.bottom + 6) + 'px';
+        elProxyNodeDropdownMenu.style.left = (nodeNameRect.left - 4) + 'px';
+        elProxyNodeDropdownMenu.style.width = Math.max(triggerRect.width, 240) + 'px';
+        elProxyNodeDropdownMenu.style.minWidth = '240px';
+        elProxyNodeDropdownMenu.style.maxWidth = '90vw';
+
+        elProxyNodeDropdownMenu.classList.add('animate-dropdown');
+        elIconProxyDropdownArrow.textContent = 'expand_less';
+    }
+
+    function closeProxyDropdown() {
+        elProxyNodeDropdownMenu.style.display = 'none';
+        elProxyNodeDropdownMenu.classList.remove('animate-dropdown');
+        elProxyNodeDropdownMenu.style.top = '';
+        elProxyNodeDropdownMenu.style.left = '';
+        elProxyNodeDropdownMenu.style.width = '';
+        elProxyNodeDropdownMenu.style.minWidth = '';
+        elProxyNodeDropdownMenu.style.maxWidth = '';
+        elIconProxyDropdownArrow.textContent = 'expand_more';
+    }
+
     // [新增] 打开节点详情弹窗函数
     async function openNodeDetailModal() {
         showLoading('正在获取各分流模式的节点详情...');
         // 初始化时，先确保下拉框是折叠的
         closeGameDropdown();
+        closeAiDropdown();
+        closeProxyDropdown();
         
         try {
             const res = await fetch('/api/nodes');
@@ -980,21 +1064,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const proxies = data.proxies;
 
-            // 1. 回显：网页代理
-            elNodeProxyNow.textContent = proxies.proxy.now || '--';
-            elNodeProxyReal.textContent = proxies.proxy.realNode || '--';
-            elNodeProxyDelay.textContent = proxies.proxy.delay > 0 ? `${proxies.proxy.delay} ms` : '-- ms';
-            elNodeProxyDelay.className = `${getDelayClass(proxies.proxy.delay)} flex-shrink-0`;
+            // 防守性检查：确保所有对象存在
+            const proxy = proxies.proxy || {};
+            const ai = proxies.ai || {};
+            const game = proxies.game || {};
+
+            // 1. 回显：网页代理（显示策略组名称）
+            // elNodeProxyNow.textContent = proxy.name || '--';  // 已通过下拉菜单显示策略组名称
+            elNodeProxyReal.textContent = proxy.realNode || '--';
+            elNodeProxyDelay.textContent = proxy.delay > 0 ? `${proxy.delay} ms` : '-- ms';
+            elNodeProxyDelay.className = `${getDelayClass(proxy.delay)} flex-shrink-0`;
 
             // 2. 回显：AI强化
-            elNodeAiNow.textContent = proxies.ai.now || '--';
-            elNodeAiReal.textContent = proxies.ai.realNode || '--';
-            elNodeAiDelay.textContent = proxies.ai.delay > 0 ? `${proxies.ai.delay} ms` : '-- ms';
-            elNodeAiDelay.className = `${getDelayClass(proxies.ai.delay)} flex-shrink-0`;
+            // elNodeAiNow.textContent = ai.name || '--';  // 已通过下拉菜单显示策略组名称
+            elNodeAiReal.textContent = ai.realNode || '--';
+            elNodeAiDelay.textContent = ai.delay > 0 ? `${ai.delay} ms` : '-- ms';
+            elNodeAiDelay.className = `${getDelayClass(ai.delay)} flex-shrink-0`;
 
             // 3. 回显：游戏模式
             // 判断是否手动锁定了物理节点
-            const isCustomLocked = !['⚡ 游戏自动测速', '🚀 节点选择', '👑 高级节点', 'DIRECT'].includes(proxies.game.now);
+            const isCustomLocked = !['⚡ 游戏自动测速', '🚀 节点选择', '👑 高级节点', 'DIRECT'].includes(game.now);
             // 根据锁定状态切换 AUTO / LOCKED 标签
             if (isCustomLocked) {
                 elBadgeGameAuto.textContent = 'LOCKED';
@@ -1007,17 +1096,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 elBadgeGameAuto.style.color = '';
                 elBadgeGameAuto.style.border = '';
             }
-            
-            elNodeGameReal.textContent = proxies.game.realNode || '--';
-            elNodeGameDelay.textContent = proxies.game.delay > 0 ? `${proxies.game.delay} ms` : '-- ms';
-            elNodeGameDelay.className = `${getDelayClass(proxies.game.delay)}`;
+
+            elNodeGameReal.textContent = game.realNode || '--';
+            elNodeGameDelay.textContent = game.delay > 0 ? `${game.delay} ms` : '-- ms';
+            elNodeGameDelay.className = `${getDelayClass(game.delay)}`;
 
             // 缓存当前的锁定节点
-            lastSelectedGameNode = proxies.game.now || '';
+            lastSelectedGameNode = game.now || '';
 
             // 4. 动态渲染自定义游戏节点下拉菜单
             elGameDropdownListContainer.innerHTML = '';
-            
+
             const allCandidates = [];
             // 插入首选项：自动测速
             allCandidates.push({
@@ -1025,15 +1114,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 delay: 0,
                 displayName: '⚡ 自动测速 (自动切换最优延迟节点)'
             });
-            
+
             // 插入可用物理节点（后端已扩展为对象数组）
-            const physicalNodes = proxies.game.all || [];
+            const physicalNodes = game.all || [];
             physicalNodes.forEach(node => {
-                allCandidates.push({
-                    name: node.name,
-                    delay: node.delay,
-                    displayName: node.name
-                });
+                if (node && node.name) {  // 防守性检查
+                    allCandidates.push({
+                        name: node.name,
+                        delay: node.delay || 0,
+                        displayName: node.name
+                    });
+                }
             });
 
             // 如果当前 now 节点不在备选里，为防空白添加临时选项
@@ -1041,7 +1132,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (lastSelectedGameNode && !existInCandidates) {
                 allCandidates.push({
                     name: lastSelectedGameNode,
-                    delay: proxies.game.delay,
+                    delay: game.delay || 0,
                     displayName: lastSelectedGameNode
                 });
             }
@@ -1095,10 +1186,159 @@ document.addEventListener('DOMContentLoaded', () => {
                 elGameDropdownListContainer.appendChild(itemDiv);
             });
 
+            // 5. 动态渲染 AI 节点下拉菜单
+            elAiDropdownListContainer.innerHTML = '';
+            let lastSelectedAiNode = ai.now || '';
+
+            const aiCandidates = [];
+            // 插入可用物理节点
+            const aiPhysicalNodes = ai.all || [];
+            aiPhysicalNodes.forEach(node => {
+                if (node && node.name) {  // 防守性检查
+                    aiCandidates.push({
+                        name: node.name,
+                        delay: node.delay || 0,
+                        displayName: node.name
+                    });
+                }
+            });
+
+            // 如果当前 now 节点不在备选里，为防空白添加临时选项
+            const aiExistInCandidates = aiCandidates.some(c => c.name === lastSelectedAiNode);
+            if (lastSelectedAiNode && !aiExistInCandidates) {
+                aiCandidates.push({
+                    name: lastSelectedAiNode,
+                    delay: ai.delay || 0,
+                    displayName: lastSelectedAiNode
+                });
+            }
+
+            // 渲染 AI 下拉列表
+            aiCandidates.forEach(cand => {
+                const itemDiv = document.createElement('div');
+                itemDiv.className = 'dropdown-item';
+                if (cand.name === lastSelectedAiNode) {
+                    itemDiv.classList.add('selected');
+                }
+
+                const leftDiv = document.createElement('div');
+                leftDiv.className = 'game-dropdown-item-left';
+
+                if (cand.name === lastSelectedAiNode) {
+                    leftDiv.innerHTML = `<span class="material-symbols-outlined icon-selected-check">check_circle</span>`;
+                } else {
+                    leftDiv.innerHTML = `<span class="icon-placeholder"></span>`;
+                }
+
+                const nameSpan = document.createElement('span');
+                nameSpan.className = 'game-dropdown-item-name';
+                nameSpan.textContent = cand.displayName;
+                leftDiv.appendChild(nameSpan);
+                itemDiv.appendChild(leftDiv);
+
+                // 右侧延迟元素
+                const rightSpan = document.createElement('span');
+                if (cand.delay > 0) {
+                    rightSpan.textContent = `${cand.delay} ms`;
+                    rightSpan.className = getDelayClass(cand.delay);
+                } else {
+                    rightSpan.textContent = '超时';
+                    rightSpan.className = 'text-muted';
+                }
+                itemDiv.appendChild(rightSpan);
+
+                // 绑定点击切换事件
+                itemDiv.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    if (cand.name === lastSelectedAiNode) {
+                        closeAiDropdown();
+                        return;
+                    }
+                    await handleAiNodeSelect(cand.name);
+                });
+
+                elAiDropdownListContainer.appendChild(itemDiv);
+            });
+
+            // 6. 动态渲染代理节点下拉菜单
+            elProxyDropdownListContainer.innerHTML = '';
+            let lastSelectedProxyNode = proxy.now || '';
+
+            const proxyCandidates = [];
+            // 插入可用物理节点
+            const proxyPhysicalNodes = proxy.all || [];
+            proxyPhysicalNodes.forEach(node => {
+                if (node && node.name) {  // 防守性检查
+                    proxyCandidates.push({
+                        name: node.name,
+                        delay: node.delay || 0,
+                        displayName: node.name
+                    });
+                }
+            });
+
+            // 如果当前 now 节点不在备选里，为防空白添加临时选项
+            const proxyExistInCandidates = proxyCandidates.some(c => c.name === lastSelectedProxyNode);
+            if (lastSelectedProxyNode && !proxyExistInCandidates) {
+                proxyCandidates.push({
+                    name: lastSelectedProxyNode,
+                    delay: proxy.delay || 0,
+                    displayName: lastSelectedProxyNode
+                });
+            }
+
+            // 渲染代理下拉列表
+            proxyCandidates.forEach(cand => {
+                const itemDiv = document.createElement('div');
+                itemDiv.className = 'dropdown-item';
+                if (cand.name === lastSelectedProxyNode) {
+                    itemDiv.classList.add('selected');
+                }
+
+                const leftDiv = document.createElement('div');
+                leftDiv.className = 'game-dropdown-item-left';
+
+                if (cand.name === lastSelectedProxyNode) {
+                    leftDiv.innerHTML = `<span class="material-symbols-outlined icon-selected-check">check_circle</span>`;
+                } else {
+                    leftDiv.innerHTML = `<span class="icon-placeholder"></span>`;
+                }
+
+                const nameSpan = document.createElement('span');
+                nameSpan.className = 'game-dropdown-item-name';
+                nameSpan.textContent = cand.displayName;
+                leftDiv.appendChild(nameSpan);
+                itemDiv.appendChild(leftDiv);
+
+                // 右侧延迟元素
+                const rightSpan = document.createElement('span');
+                if (cand.delay > 0) {
+                    rightSpan.textContent = `${cand.delay} ms`;
+                    rightSpan.className = getDelayClass(cand.delay);
+                } else {
+                    rightSpan.textContent = '超时';
+                    rightSpan.className = 'text-muted';
+                }
+                itemDiv.appendChild(rightSpan);
+
+                // 绑定点击切换事件
+                itemDiv.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    if (cand.name === lastSelectedProxyNode) {
+                        closeProxyDropdown();
+                        return;
+                    }
+                    await handleProxyNodeSelect(cand.name);
+                });
+
+                elProxyDropdownListContainer.appendChild(itemDiv);
+            });
+
             // 显示 Modal 弹窗
             elNodeDetailModal.classList.add('active');
 
         } catch (err) {
+            console.error('节点详情加载失败:', err);
             showToast('获取节点详情失败: ' + err.message);
         } finally {
             hideLoading();
@@ -1166,7 +1406,79 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // 绑定事件：点击“当前节点”卡片触发详情弹窗
+    // AI 强化模式节点切换逻辑
+    async function handleAiNodeSelect(newVal) {
+        // 关闭下拉框
+        closeAiDropdown();
+        // 发送节点切换请求
+        showLoading('正在切换 AI 强化节点...');
+        try {
+            const res = await fetch('/api/select', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    group: '🤖 AI强化',
+                    node: newVal
+                })
+            });
+
+            if (!res.ok) throw new Error('接口响应错误');
+            const data = await res.json();
+            if (data.status === 'success') {
+                showToast('已成功切换 AI 强化节点！');
+                // 重新刷新详情展示与列表缓存
+                await openNodeDetailModal();
+                // 刷新主页面的当前节点信息
+                await fetchStatus();
+            } else {
+                throw new Error(data.message || '切换失败');
+            }
+        } catch (err) {
+            showToast('切换节点失败: ' + err.message);
+        } finally {
+            hideLoading();
+        }
+    }
+
+    // 代理模式节点切换逻辑
+    async function handleProxyNodeSelect(newVal) {
+        // 关闭下拉框
+        closeProxyDropdown();
+        // 发送节点切换请求
+        showLoading('正在切换代理节点...');
+        try {
+            const res = await fetch('/api/select', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    group: '🚀 节点选择',
+                    node: newVal
+                })
+            });
+
+            if (!res.ok) throw new Error('接口响应错误');
+            const data = await res.json();
+            if (data.status === 'success') {
+                showToast('已成功切换代理节点！');
+                // 重新刷新详情展示与列表缓存
+                await openNodeDetailModal();
+                // 刷新主页面的当前节点信息
+                await fetchStatus();
+            } else {
+                throw new Error(data.message || '切换失败');
+            }
+        } catch (err) {
+            showToast('切换节点失败: ' + err.message);
+        } finally {
+            hideLoading();
+        }
+    }
+
+    // 绑定事件：点击”当前节点”卡片触发详情弹窗
     const elNodeStatusCard = document.getElementById('node-status-card');
     if (elNodeStatusCard) {
         elNodeStatusCard.addEventListener('click', (e) => {
@@ -1183,6 +1495,22 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // 绑定事件：展开/折叠 AI 节点下拉选单触发区
+    if (elBtnToggleAiDropdown) {
+        elBtnToggleAiDropdown.addEventListener('click', (e) => {
+            e.stopPropagation();
+            toggleAiDropdown();
+        });
+    }
+
+    // 绑定事件：展开/折叠代理节点下拉选单触发区
+    if (elBtnToggleProxyDropdown) {
+        elBtnToggleProxyDropdown.addEventListener('click', (e) => {
+            e.stopPropagation();
+            toggleProxyDropdown();
+        });
+    }
+
     // 绑定事件：点击文档其它任意位置时自动折叠下拉框
     document.addEventListener('click', (e) => {
         if (!e.target.closest('#btn-toggle-game-dropdown') && !e.target.closest('#game-node-dropdown-menu')) {
@@ -1190,16 +1518,30 @@ document.addEventListener('DOMContentLoaded', () => {
                 closeGameDropdown();
             }
         }
+        if (!e.target.closest('#btn-toggle-ai-dropdown') && !e.target.closest('#ai-node-dropdown-menu')) {
+            if (elAiNodeDropdownMenu && elAiNodeDropdownMenu.style.display !== 'none') {
+                closeAiDropdown();
+            }
+        }
+        if (!e.target.closest('#btn-toggle-proxy-dropdown') && !e.target.closest('#proxy-node-dropdown-menu')) {
+            if (elProxyNodeDropdownMenu && elProxyNodeDropdownMenu.style.display !== 'none') {
+                closeProxyDropdown();
+            }
+        }
     });
 
     // 绑定事件：关闭节点详情弹窗（同步关闭外部下拉菜单）
     elBtnCloseNodeModal.addEventListener('click', () => {
         closeGameDropdown();
+        closeAiDropdown();
+        closeProxyDropdown();
         elNodeDetailModal.classList.remove('active');
     });
     if (elBtnCloseNodeModalOk) {
         elBtnCloseNodeModalOk.addEventListener('click', () => {
             closeGameDropdown();
+            closeAiDropdown();
+            closeProxyDropdown();
             elNodeDetailModal.classList.remove('active');
         });
     }

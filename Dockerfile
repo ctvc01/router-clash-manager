@@ -1,7 +1,13 @@
 FROM node:20-alpine
 
-# 安装 expect、openssh-client 和 curl 以支持调用 expect 脚本及进行容器健康检查
-RUN apk add --no-cache expect openssh-client curl
+# 安装 expect、openssh-client、curl 和 sshpass（用于SSH密码认证）
+RUN apk add --no-cache expect openssh-client curl sshpass
+
+# 配置 SSH 客户端支持 RSA host keys（老旧路由器兼容性）
+RUN mkdir -p /root/.ssh
+
+COPY ssh_config /root/.ssh/config
+RUN chmod 600 /root/.ssh/config
 
 WORKDIR /app
 
@@ -12,8 +18,8 @@ RUN npm install --registry=https://registry.npmmirror.com
 # 拷贝其余源码（aliases.json 自动在 server.js 中初始化）
 COPY . .
 
-# 赋予 Expect 脚本可执行权限
-RUN chmod +x ssh_exec.exp
+# 赋予 Expect 脚本和 SSH wrapper 可执行权限
+RUN chmod +x ssh_exec.exp ssh_wrapper.sh
 
 EXPOSE 3000
 

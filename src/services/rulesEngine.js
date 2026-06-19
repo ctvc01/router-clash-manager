@@ -10,7 +10,7 @@ const { PROXY_GROUPS, ROUTER_PATHS, SPEEDTEST_URLS } = require('../constants');
 
 class RulesEngine {
     // 核心规则注入与更新引擎
-    static async updateClashRules(gameMacs, aiMacs) {
+    static async updateClashRules(gameMacs, aiMacs, proxyMacs = []) {
         // 动态探测当前配置文件中的 proxy-provider 名称
         let providerName = 'caomei1'; // 默认 fallback
         try {
@@ -37,15 +37,43 @@ class RulesEngine {
                 dhcpLeases[parts[1].toLowerCase()] = parts[2];
             }
         }
-        
+
+        Logger.info('RulesEngine', `✓ DHCP租约读取完毕，共 ${Object.keys(dhcpLeases).length} 条记录`);
+        Logger.info('RulesEngine', `待注入设备: 代理${proxyMacs.length}个, 游戏${gameMacs.length}个, AI${aiMacs.length}个`);
+
         // 构造分流规则
         const ruleLines = [];
+
+        // 0. 注入代理白名单规则（全局代理）
+        ruleLines.push(" # === PROXY WHITELIST START ===");
+        for (const mac of proxyMacs) {
+            const ip = dhcpLeases[mac];
+            if (!ip) {
+                Logger.warn('RulesEngine', `⚠️ 代理设备 ${mac} 在DHCP租约中未找到IP地址，跳过规则注入`);
+                continue;
+            }
+            Logger.info('RulesEngine', `✓ 代理设备 ${mac} → IP ${ip}，将使用 ${PROXY_GROUPS.NODE_SELECT}`);
+            // 局域网直连
+            ruleLines.push(` - AND,((SRC-IP-CIDR,${ip}/32),(IP-CIDR,192.168.0.0/16)),DIRECT`);
+            ruleLines.push(` - AND,((SRC-IP-CIDR,${ip}/32),(IP-CIDR,10.0.0.0/8)),DIRECT`);
+            ruleLines.push(` - AND,((SRC-IP-CIDR,${ip}/32),(IP-CIDR,172.16.0.0/12)),DIRECT`);
+            // 国内直连
+            ruleLines.push(` - AND,((SRC-IP-CIDR,${ip}/32),(GEOSITE,cn)),DIRECT`);
+            ruleLines.push(` - AND,((SRC-IP-CIDR,${ip}/32),(GEOIP,CN)),DIRECT`);
+            // 国外走代理
+            ruleLines.push(` - SRC-IP-CIDR,${ip}/32,${PROXY_GROUPS.NODE_SELECT}`);
+        }
+        ruleLines.push(" # === PROXY WHITELIST END ===");
         
         // 1. 注入游戏加速规则
         ruleLines.push(" # === GAME ACC START ===");
         for (const mac of gameMacs) {
             const ip = dhcpLeases[mac];
-            if (!ip) continue;
+            if (!ip) {
+                Logger.warn('RulesEngine', `⚠️ 游戏设备 ${mac} 在DHCP租约中未找到IP地址，跳过规则注入`);
+                continue;
+            }
+            Logger.info('RulesEngine', `✓ 游戏设备 ${mac} → IP ${ip}`);
                 ruleLines.push(` - AND,((SRC-IP-CIDR,${ip}/32),(IP-CIDR,192.168.0.0/16)),DIRECT`);
                 ruleLines.push(` - AND,((SRC-IP-CIDR,${ip}/32),(IP-CIDR,10.0.0.0/8)),DIRECT`);
                 ruleLines.push(` - AND,((SRC-IP-CIDR,${ip}/32),(IP-CIDR,172.16.0.0/12)),DIRECT`);
@@ -81,7 +109,11 @@ class RulesEngine {
         ruleLines.push(" # === AI ACC START ===");
         for (const mac of aiMacs) {
             const ip = dhcpLeases[mac];
-            if (!ip) continue;
+            if (!ip) {
+                Logger.warn('RulesEngine', `⚠️ AI设备 ${mac} 在DHCP租约中未找到IP地址，跳过规则注入`);
+                continue;
+            }
+            Logger.info('RulesEngine', `✓ AI设备 ${mac} → IP ${ip}`);
                 // 局域网直连拦截
                 ruleLines.push(` - AND,((SRC-IP-CIDR,${ip}/32),(IP-CIDR,192.168.0.0/16)),DIRECT`);
                 ruleLines.push(` - AND,((SRC-IP-CIDR,${ip}/32),(IP-CIDR,10.0.0.0/8)),DIRECT`);
@@ -109,7 +141,12 @@ class RulesEngine {
         // 构造加速策略组
         const groupLines = [];
 
-        // 0. 主代理组延迟测试（总是存在）
+        // 0. 主代理组（节点选择）- 必须存在以支持规则分流
+        groupLines.push("  # === PROXY SELECT START ===");
+        groupLines.push(`  - {name: "🚀 节点选择", type: select, proxies: [DIRECT], use: [${providerName}]}`);
+        groupLines.push("  # === PROXY SELECT END ===");
+
+        // 1. 主代理组延迟测试（总是存在）
         groupLines.push("  # === PROXY SPEEDTEST START ===");
         groupLines.push(`  - {name: "🔍 代理自动测速", type: url-test, url: http://www.gstatic.com/generate_204, interval: 300, tolerance: 30, include-all: true, use: [${providerName}]}`);
         groupLines.push("  # === PROXY SPEEDTEST END ===");
@@ -160,7 +197,10 @@ class RulesEngine {
             
             // 3. 安全地修改配置文件（使用被验证器接受的 sed 命令）
             // 步骤 1: 清理旧的注入段
+            await SshService.runRemoteCommand("sed -i '/# === PROXY SELECT START ===/,/# === PROXY SELECT END ===/d' /data/ShellCrash/yamls/config.yaml");
+            await SshService.runRemoteCommand("sed -i '/# === RULE GROUP START ===/,/# === RULE GROUP END ===/d' /data/ShellCrash/yamls/config.yaml");
             await SshService.runRemoteCommand("sed -i '/# === PROXY SPEEDTEST START ===/,/# === PROXY SPEEDTEST END ===/d' /data/ShellCrash/yamls/config.yaml");
+            await SshService.runRemoteCommand("sed -i '/# === PROXY WHITELIST START ===/,/# === PROXY WHITELIST END ===/d' /data/ShellCrash/yamls/config.yaml");
             await SshService.runRemoteCommand("sed -i '/# === GAME ACC START ===/,/# === GAME ACC END ===/d' /data/ShellCrash/yamls/config.yaml");
             await SshService.runRemoteCommand("sed -i '/# === AI ACC START ===/,/# === AI ACC END ===/d' /data/ShellCrash/yamls/config.yaml");
             await SshService.runRemoteCommand("sed -i '/# === GAME GROUP START ===/,/# === GAME GROUP END ===/d' /data/ShellCrash/yamls/config.yaml");

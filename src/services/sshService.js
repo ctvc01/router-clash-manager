@@ -26,8 +26,14 @@ class SshService {
             .trim();
     }
 
-    // 执行远程命令（带自动重试）
+    // 执行远程命令（带自动重试 + 磁盘检查）
     static runRemoteCommand(command, maxRetries = 3) {
+        // 检查并清理磁盘空间（为关键命令提前释放空间）
+        const StorageCleanupService = require('./storageCleanupService');
+        StorageCleanupService.checkAndCleanupIfNeeded().catch(err => {
+            Logger.debug('SSH', '磁盘检查失败，继续执行命令', err.message);
+        });
+
         return this._executeWithRetry(command, 0, maxRetries);
     }
 

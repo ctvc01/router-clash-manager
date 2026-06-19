@@ -22,7 +22,7 @@ const config = {
         custom: path.join(__dirname, '..', 'device_custom.json'),
         gameDevices: path.join(__dirname, '..', 'game_devices'),
         aiDevices: path.join(__dirname, '..', 'ai_devices'),
-        sshExec: path.join(__dirname, '..', 'ssh_exec.exp')
+        sshExec: path.join(__dirname, '..', 'ssh_wrapper.sh')
     }
 };
 
@@ -30,18 +30,18 @@ const config = {
 function validateEnvironment() {
     const required = {
         ROUTER_IP: config.router.ip,
-        ROUTER_USER: config.router.user,
-        ROUTER_PASSWORD: config.router.password
+        ROUTER_USER: config.router.user
     };
-    
+
+    // ROUTER_PASSWORD 可以为空（root 无需密码）
     const missing = Object.keys(required).filter(key => !required[key]);
-    
+
     if (missing.length > 0) {
         console.error('❌ [Config] 缺少必需的环境变量或配置项:', missing.join(', '));
         console.error('   请在宿主机环境或 Docker Compose 的 environment 中注入这些变量。');
         process.exit(1);
     }
-    
+
     console.log(`✅ [Config] 环境变量校验通过。连接目标: ${config.router.user}@${config.router.ip}`);
 }
 

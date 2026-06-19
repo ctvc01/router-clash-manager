@@ -37,20 +37,18 @@ async function getCurrentNodeInfo() {
         const mainGroup = ProxyGroupDetector.findMainProxyGroup(proxies);
         if (!mainGroup) {
             Logger.debug('Gateway', '无法找到主代理组，返回DIRECT');
-            return { name: 'DIRECT', delay: 0 };
+            return { name: 'DIRECT', delay: 0, mainGroupName: 'DIRECT' };
         }
 
-        const currentNodeName = mainGroup.group.now || 'DIRECT';
-        const realNode = ProxyGroupDetector.getRealPhysicalNode(proxies, currentNodeName);
-
+        // 代理模式：返回策略组名，不递归获取具体节点
         return {
-            name: realNode.name,
-            delay: realNode.delay,
+            name: mainGroup.name,
+            delay: 0,
             mainGroupName: mainGroup.name
         };
     } catch (e) {
         Logger.debug('Gateway', `查询当前节点异常: ${e.message}`);
-        return { name: '未知', delay: 0 };
+        return { name: '未知', delay: 0, mainGroupName: '未知' };
     }
 }
 
@@ -213,25 +211,36 @@ router.get('/nodes', async (req, res) => {
         const mainGroup = ProxyGroupDetector.findMainProxyGroup(proxies);
         const mainGroupName = mainGroup?.name || '🚀 节点选择';
 
+        // 辅助函数：安全获取节点信息
+        const getNodeInfo = (proxies, nodeName) => {
+            const nodeData = ProxyGroupDetector.getRealPhysicalNode(proxies, nodeName);
+            return {
+                name: nodeData?.name || nodeName || '未知',
+                delay: nodeData?.delay || 0
+            };
+        };
+
         const result = {
             proxy: {
                 name: mainGroupName,
                 now: proxies[mainGroupName]?.now || 'DIRECT',
-                realNode: ProxyGroupDetector.getRealPhysicalNode(proxies, proxies[mainGroupName]?.now || 'DIRECT').name,
-                delay: ProxyGroupDetector.getRealPhysicalNode(proxies, proxies[mainGroupName]?.now || 'DIRECT').delay
+                realNode: getNodeInfo(proxies, proxies[mainGroupName]?.now || 'DIRECT').name,
+                delay: getNodeInfo(proxies, proxies[mainGroupName]?.now || 'DIRECT').delay,
+                all: []
             },
             game: {
                 name: '🎮 游戏加速',
                 now: proxies['🎮 游戏加速']?.now || 'DIRECT',
-                realNode: ProxyGroupDetector.getRealPhysicalNode(proxies, proxies['🎮 游戏加速']?.now || 'DIRECT').name,
-                delay: ProxyGroupDetector.getRealPhysicalNode(proxies, proxies['🎮 游戏加速']?.now || 'DIRECT').delay,
+                realNode: getNodeInfo(proxies, proxies['🎮 游戏加速']?.now || 'DIRECT').name,
+                delay: getNodeInfo(proxies, proxies['🎮 游戏加速']?.now || 'DIRECT').delay,
                 all: []
             },
             ai: {
                 name: '🤖 AI强化',
                 now: proxies['🤖 AI强化']?.now || 'DIRECT',
-                realNode: ProxyGroupDetector.getRealPhysicalNode(proxies, proxies['🤖 AI强化']?.now || 'DIRECT').name,
-                delay: ProxyGroupDetector.getRealPhysicalNode(proxies, proxies['🤖 AI强化']?.now || 'DIRECT').delay
+                realNode: getNodeInfo(proxies, proxies['🤖 AI强化']?.now || 'DIRECT').name,
+                delay: getNodeInfo(proxies, proxies['🤖 AI强化']?.now || 'DIRECT').delay,
+                all: []
             }
         };
 
@@ -239,6 +248,37 @@ router.get('/nodes', async (req, res) => {
         const filterOutGroups = ['⚡ 游戏自动测速', '🚀 节点选择', '👑 高级节点', 'DIRECT', 'GLOBAL'];
         if (proxies['🎮 游戏加速'] && proxies['🎮 游戏加速'].all) {
             result.game.all = proxies['🎮 游戏加速'].all
+                .filter(name => !filterOutGroups.includes(name))
+                .map(name => {
+                    const p = proxies[name];
+                    let delay = 0;
+                    if (p && p.history && p.history.length > 0) {
+                        const valid = p.history.filter(h => h.delay > 0);
+                        delay = valid.length > 0 ? valid[valid.length - 1].delay : (p.history[p.history.length - 1].delay || 0);
+                    }
+                    return { name, delay };
+                });
+        }
+
+        // 整理AI模式的所有可选物理节点（与游戏模式相同逻辑）
+        result.ai.all = [];
+        if (proxies['🤖 AI强化'] && proxies['🤖 AI强化'].all) {
+            result.ai.all = proxies['🤖 AI强化'].all
+                .filter(name => !filterOutGroups.includes(name))
+                .map(name => {
+                    const p = proxies[name];
+                    let delay = 0;
+                    if (p && p.history && p.history.length > 0) {
+                        const valid = p.history.filter(h => h.delay > 0);
+                        delay = valid.length > 0 ? valid[valid.length - 1].delay : (p.history[p.history.length - 1].delay || 0);
+                    }
+                    return { name, delay };
+                });
+        }
+
+        // 整理代理模式的所有可选物理节点
+        if (proxies[mainGroupName] && proxies[mainGroupName].all) {
+            result.proxy.all = proxies[mainGroupName].all
                 .filter(name => !filterOutGroups.includes(name))
                 .map(name => {
                     const p = proxies[name];
@@ -406,6 +446,64 @@ router.post('/config/restore', async (req, res) => {
         res.status(500).json({
             status: 'error',
             message: '配置恢复失败',
+            details: err.message
+        });
+    }
+});
+
+// 磁盘空间诊断和清理
+router.get('/diagnostic/storage', async (req, res) => {
+    try {
+        const usage = await StorageCleanupService.getDiskUsage();
+        res.json({
+            status: 'success',
+            diskUsage: usage,
+            message: usage !== null ? `磁盘使用率: ${usage}%` : '无法获取磁盘使用率'
+        });
+    } catch (err) {
+        Logger.error('Gateway', '磁盘诊断失败', err);
+        res.status(500).json({
+            status: 'error',
+            message: '磁盘诊断失败',
+            details: err.message
+        });
+    }
+});
+
+// 手动触发磁盘清理
+router.post('/diagnostic/cleanup', async (req, res) => {
+    try {
+        const { level } = req.body;
+        Logger.info('Gateway', `手动触发清理: level=${level}`);
+
+        let cleanupFn;
+        switch (level) {
+            case 'basic':
+                cleanupFn = () => StorageCleanupService.basicCleanup();
+                break;
+            case 'aggressive':
+                cleanupFn = () => StorageCleanupService.aggressiveCleanup();
+                break;
+            case 'emergency':
+                cleanupFn = () => StorageCleanupService.emergencyCleanup();
+                break;
+            default:
+                cleanupFn = () => StorageCleanupService.cleanupStorage();
+        }
+
+        await cleanupFn();
+
+        const usage = await StorageCleanupService.getDiskUsage();
+        res.json({
+            status: 'success',
+            message: `清理完成，当前磁盘使用率: ${usage}%`,
+            diskUsage: usage
+        });
+    } catch (err) {
+        Logger.error('Gateway', '手动清理失败', err);
+        res.status(500).json({
+            status: 'error',
+            message: '手动清理失败',
             details: err.message
         });
     }

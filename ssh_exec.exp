@@ -26,11 +26,19 @@ set cmd [lindex $argv 0]
 spawn ssh -o StrictHostKeyChecking=no -o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedKeyTypes=+ssh-rsa $user@$ip $cmd
 
 expect {
-    "password:" {
+    -re "(password|Password):" {
+        send "$password\r"
+        exp_continue
+    }
+    "Permission denied" {
         send "$password\r"
         exp_continue
     }
     eof {
         exit 0
+    }
+    timeout {
+        send_user "Timeout waiting for response\n"
+        exit 1
     }
 }

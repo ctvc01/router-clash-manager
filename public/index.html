@@ -325,15 +325,15 @@
                         </div>
                         <span class="badge-status font-proxy">RULE</span>
                     </label>
-                    <div class="node-info-card">
-                        <div class="node-detail-row">
-                            <span class="node-detail-label">策略组</span>
-                            <span id="node-proxy-now" class="node-detail-value">--</span>
-                        </div>
-                        <div class="node-detail-row" style="padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.06);">
+                    <div class="node-info-card" style="position: relative; overflow: visible;">
+                        <!-- 展开触发区：点击这一行触发自定义的下拉菜单展示 -->
+                        <div id="btn-toggle-proxy-dropdown" class="node-detail-row pt-2 cursor-pointer" style="transition: background-color 0.2s ease;">
                             <span class="node-detail-label">当前节点</span>
                             <span id="node-proxy-real" class="node-detail-value font-highlight node-name-scrollable">--</span>
-                            <span id="node-proxy-delay" class="text-green flex-shrink-0" style="flex-shrink: 0;">-- ms</span>
+                            <div style="display: flex; align-items: center; gap: 4px; flex-shrink: 0;">
+                                <span id="node-proxy-delay" class="text-green">-- ms</span>
+                                <span id="icon-proxy-dropdown-arrow" class="material-symbols-outlined font-highlight" style="font-size: 16px;">expand_more</span>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -346,15 +346,15 @@
                         </div>
                         <span class="badge-status font-ai">AI_BOOST</span>
                     </label>
-                    <div class="node-info-card">
-                        <div class="node-detail-row">
-                            <span class="node-detail-label">策略组</span>
-                            <span id="node-ai-now" class="node-detail-value">--</span>
-                        </div>
-                        <div class="node-detail-row" style="padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.06);">
+                    <div class="node-info-card" style="position: relative; overflow: visible;">
+                        <!-- 展开触发区：点击这一行触发自定义的下拉菜单展示 -->
+                        <div id="btn-toggle-ai-dropdown" class="node-detail-row pt-2 cursor-pointer" style="transition: background-color 0.2s ease;">
                             <span class="node-detail-label">当前节点</span>
                             <span id="node-ai-real" class="node-detail-value font-highlight node-name-scrollable">--</span>
-                            <span id="node-ai-delay" class="text-green flex-shrink-0" style="flex-shrink: 0;">-- ms</span>
+                            <div style="display: flex; align-items: center; gap: 4px; flex-shrink: 0;">
+                                <span id="node-ai-delay" class="text-green">-- ms</span>
+                                <span id="icon-ai-dropdown-arrow" class="material-symbols-outlined font-highlight" style="font-size: 16px;">expand_more</span>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -392,6 +392,20 @@
     <!-- 游戏节点自定义浮动式下拉菜单（独立于 modal 外层，避免 transform 包含块影响 fixed 定位） -->
     <div id="game-node-dropdown-menu" class="game-dropdown-menu" style="display: none;">
         <div class="game-dropdown-list" id="game-dropdown-list-container">
+            <!-- 由 JS 动态渲染可用物理节点列表 -->
+        </div>
+    </div>
+
+    <!-- AI节点自定义浮动式下拉菜单（与游戏模式相同结构） -->
+    <div id="ai-node-dropdown-menu" class="game-dropdown-menu" style="display: none;">
+        <div class="game-dropdown-list" id="ai-dropdown-list-container">
+            <!-- 由 JS 动态渲染可用物理节点列表 -->
+        </div>
+    </div>
+
+    <!-- 代理节点自定义浮动式下拉菜单 -->
+    <div id="proxy-node-dropdown-menu" class="game-dropdown-menu" style="display: none;">
+        <div class="game-dropdown-list" id="proxy-dropdown-list-container">
             <!-- 由 JS 动态渲染可用物理节点列表 -->
         </div>
     </div>

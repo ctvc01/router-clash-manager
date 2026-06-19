@@ -31,11 +31,17 @@ router.post('/add', async (req, res) => {
         }
         
         if (listChanged) {
-            await RulesEngine.updateClashRules(gameMacs, aiMacs);
+            const whitelistOutput = await SshService.runRemoteCommand('cat /data/ShellCrash/configs/mac');
+            const proxyMacs = whitelistOutput
+                .split('\n')
+                .map(line => line.trim().toLowerCase())
+                .filter(line => line.length > 0);
+
+            await RulesEngine.updateClashRules(gameMacs, aiMacs, proxyMacs);
             if (gameMacs.length === 0) GameAccService.stopGameAccMonitor();
             if (aiMacs.length === 0) AiBoostService.stopAiBoostMonitor();
         }
-        
+
         const whitelistOutput = await SshService.runRemoteCommand('cat /data/ShellCrash/configs/mac');
         const whitelistMacs = whitelistOutput
             .split('\n')
@@ -48,7 +54,12 @@ router.post('/add', async (req, res) => {
 
         // 写入路由器配置文件
         await SshService.runRemoteCommand(`echo "${mac}" >> /data/ShellCrash/configs/mac`);
-        
+
+        // 重新读取白名单并更新规则
+        const updatedProxyMacs = [...whitelistMacs, mac];
+
+        await RulesEngine.updateClashRules(gameMacs, aiMacs, updatedProxyMacs);
+
         // 安全重启防火墙与 Clash 核心
         await SshService.restartShellCrashSecurely();
 
@@ -87,7 +98,13 @@ router.post('/remove', async (req, res) => {
         }
         
         if (listChanged) {
-            await RulesEngine.updateClashRules(gameMacs, aiMacs);
+            const whitelistOutput = await SshService.runRemoteCommand('cat /data/ShellCrash/configs/mac');
+            const proxyMacs = whitelistOutput
+                .split('\n')
+                .map(line => line.trim().toLowerCase())
+                .filter(line => line.length > 0);
+
+            await RulesEngine.updateClashRules(gameMacs, aiMacs, proxyMacs);
             if (gameMacs.length === 0) GameAccService.stopGameAccMonitor();
             if (aiMacs.length === 0) AiBoostService.stopAiBoostMonitor();
         }
@@ -110,6 +127,9 @@ router.post('/remove', async (req, res) => {
         } else {
             await SshService.runRemoteCommand(`printf "${fileContent}\\n" > /data/ShellCrash/configs/mac`);
         }
+
+        // 重新更新规则（移除后的代理设备列表）
+        await RulesEngine.updateClashRules(gameMacs, aiMacs, newMacList);
 
         // 安全重启防火墙与 Clash 核心
         await SshService.restartShellCrashSecurely();

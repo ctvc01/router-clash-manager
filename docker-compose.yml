@@ -5,20 +5,22 @@ services:
     restart: always
     # 使用 host 网络，以便容器共享 NAS 网络栈，方便通过 192.168.31.1 访问路由器
     network_mode: "host"
+    environment:
+      - ROUTER_IP=192.168.31.1
+      - ROUTER_USER=root
+      - ROUTER_PASSWORD=90c747a2
+      - CLASH_PORT=9999
+      - PROXY_PORT=7890
+      - DNS_PORT=1053
+      - PORT=3000
+      - NODE_ENV=production
+      - SUBSCRIPTION_URL=https://www.cmsub.com/subscribe/WUK1BZDNN7ICBIIB?clash=ssr&trojan
     volumes:
       # 持久化自定义设备名和分类以及游戏与AI加速列表，防止容器重启丢失数据
       - ./device_custom.json:/app/device_custom.json
       - ./game_devices:/app/game_devices
       - ./ai_devices:/app/ai_devices
       - ./aliases.json:/app/aliases.json
-    environment:
-      - ROUTER_IP=${ROUTER_IP:-192.168.31.1}
-      - ROUTER_USER=${ROUTER_USER:-root}
-      - ROUTER_PASSWORD=${ROUTER_PASSWORD}
-      - CLASH_PORT=${CLASH_PORT:-9999}
-      - PROXY_PORT=${PROXY_PORT:-7890}
-      - DNS_PORT=${DNS_PORT:-1053}
-      - DEBUG=${DEBUG:-false}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
       interval: 30s
