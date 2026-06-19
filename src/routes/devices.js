@@ -32,12 +32,19 @@ router.get('/', async (req, res) => {
         }
 
         // 无缓存，从路由器拉取原始数据
-        // 修改：使用 /proc/net/arp 代替 /tmp/dhcp.leases (Xiaomi 路由器兼容)
-        const [arpOutput, hostnamesOutput, whitelistOutput, trafficOutput] = await Promise.all([
-            SshService.runRemoteCommand('cat /proc/net/arp'),
-            SshService.runRemoteCommand('cat /etc/hosts'),
+        // 修改：优先使用 DHCP 租约文件，若不存在则用脚本生成，若都失败则用 ARP 表
+        const [dhcpOutput, whitelistOutput, trafficOutput] = await Promise.all([
+            (async () => {
+                try {
+                    // 方案 1: 读取标准 DHCP 租约文件
+                    return await SshService.runRemoteCommand('cat /tmp/dhcp.leases 2>/dev/null || /tmp/generate_dhcp_leases.sh 2>/dev/null || cat /proc/net/arp');
+                } catch (err) {
+                    Logger.warn('Devices', '读取 DHCP 数据失败，降级使用 ARP', err.message);
+                    return await SshService.runRemoteCommand('cat /proc/net/arp');
+                }
+            })(),
             SshService.runRemoteCommand('cat /data/ShellCrash/configs/mac'),
-            SshService.runRemoteCommand('ubus call trafficd hw').catch(() => '{}') // 降级处理
+            SshService.runRemoteCommand('ubus call trafficd hw').catch(() => '{}')
         ]);
 
         const gameMacs = GameAccService.readGameDevices().map(m => m.toLowerCase());
@@ -46,17 +53,6 @@ router.get('/', async (req, res) => {
             .split('\n')
             .map(line => line.trim().toLowerCase())
             .filter(line => line.length > 0 && !gameMacs.includes(line) && !aiMacs.includes(line));
-
-        // 解析 /etc/hosts 获取 hostname 映射
-        const hostnameMap = {};
-        hostnamesOutput.split('\n').forEach(line => {
-            const trimmed = line.trim();
-            if (!trimmed || trimmed.startsWith('#')) return;
-            const parts = trimmed.split(/\s+/);
-            if (parts.length >= 2) {
-                hostnameMap[parts[0]] = parts[1];
-            }
-        });
 
         let trafficData = {};
         try {
@@ -69,35 +65,45 @@ router.get('/', async (req, res) => {
         const IP_REGEX = /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/;
 
         const lan_devices = [];
-        const arpLines = arpOutput.split('\n');
         const seen = new Set(); // 去重
 
-        for (const line of arpLines) {
+        // 检测输入格式：DHCP 租约格式 或 ARP 表格式
+        const lines = dhcpOutput.split('\n');
+        const isDhcpFormat = lines.some(l => l.trim().match(/^\d+\s+[0-9a-f:]+\s+\d+\.\d+\.\d+\.\d+/));
+
+        for (const line of lines) {
             const parts = line.trim().split(/\s+/);
-            // 格式: IP address | HW type | Flags | HW address | Mask | Device
-            //      0          | 1       | 2     | 3          | 4    | 5
-            if (parts.length >= 4) {
-                const ip = parts[0].trim();
-                const mac = parts[3].trim().toLowerCase();
+            let ip, mac, hostname;
 
-                if (MAC_REGEX.test(mac) && IP_REGEX.test(ip) && !seen.has(mac)) {
-                    seen.add(mac);
-                    const macUpper = mac.toUpperCase();
-                    const trafficInfo = trafficData[macUpper] || {};
-                    const ipList = trafficInfo.ip_list || [];
-                    const matchIpInfo = ipList.find(item => item.ip === ip) || ipList[0] || {};
+            if (isDhcpFormat && parts.length >= 4) {
+                // DHCP 租约格式: timestamp | mac | ip | hostname | *
+                mac = parts[1].trim().toLowerCase();
+                ip = parts[2].trim();
+                hostname = parts[3].trim() === '*' ? '未知设备' : parts[3].trim();
+            } else if (parts.length >= 4 && !parts[0].match(/^IP|^HW|^---/)) {
+                // ARP 表格式: IP | HW type | Flags | MAC | Mask | Device
+                // 或者:      0  | 1        | 2     | 3   | 4    | 5
+                ip = parts[0].trim();
+                mac = parts[3].trim().toLowerCase();
+                hostname = '未知设备';
+            } else {
+                continue; // 跳过头行或无效行
+            }
 
-                    // 尝试从 /etc/hosts 获取 hostname
-                    let hostname = hostnameMap[ip] || '未知设备';
+            if (MAC_REGEX.test(mac) && IP_REGEX.test(ip) && !seen.has(mac)) {
+                seen.add(mac);
+                const macUpper = mac.toUpperCase();
+                const trafficInfo = trafficData[macUpper] || {};
+                const ipList = trafficInfo.ip_list || [];
+                const matchIpInfo = ipList.find(item => item.ip === ip) || ipList[0] || {};
 
-                    lan_devices.push({
-                        mac,
-                        ip,
-                        hostname,
-                        rx_rate: matchIpInfo.rx_rate || 0, // 下行流速
-                        tx_rate: matchIpInfo.tx_rate || 0  // 上行流速
-                    });
-                }
+                lan_devices.push({
+                    mac,
+                    ip,
+                    hostname,
+                    rx_rate: matchIpInfo.rx_rate || 0, // 下行流速
+                    tx_rate: matchIpInfo.tx_rate || 0  // 上行流速
+                });
             }
         }
 
