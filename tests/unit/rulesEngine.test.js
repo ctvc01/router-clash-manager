@@ -61,6 +61,24 @@ proxy-groups:
         expect(finalConfig).toContain('parse-pure-ip-address: true');
     });
 
+    test('如果已存在 dns 配置但 enable 为 false 且监听 53 端口，应该强制改写为 enable: true 且 listen: 0.0.0.0:1053', () => {
+        const hasDnsConfig = `
+mixed-port: 7890
+dns:
+  enable: false
+  listen: 0.0.0.0:53
+  enhanced-mode: fake-ip
+rules:
+  - MATCH,DIRECT
+proxy-groups:
+  - name: 🚀 节点选择
+    type: select
+`;
+        const finalConfig = RulesEngine.modifyConfigText(hasDnsConfig, [], []);
+        expect(finalConfig).toContain('enable: true');
+        expect(finalConfig).toContain('listen: 0.0.0.0:1053');
+    });
+
     test('当传入 AI 设备的 MAC 时，应该成功注入 AI 域名规则和 🤖 AI强化 策略组', () => {
         const finalConfig = RulesEngine.modifyConfigText(baseConfig, [], ['00:11:22:33:44:55']);
         
