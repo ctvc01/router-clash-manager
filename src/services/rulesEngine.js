@@ -1,4 +1,3 @@
-const fs = require('fs');
 const { config } = require('../config');
 const Logger = require('../utils/logger');
 const SshService = require('./sshService');
@@ -6,260 +5,340 @@ const ClashService = require('./clashService');
 const ConfigValidator = require('./configValidator');
 const ChangelogManager = require('./changelogManager');
 const ConfigVersionManager = require('./configVersionManager');
-const { PROXY_GROUPS, ROUTER_PATHS, SPEEDTEST_URLS } = require('../constants');
+const BackupService = require('./backupService');
+const { PROXY_GROUPS, SPEEDTEST_URLS } = require('../constants');
+const fs = require('fs');
+
+let updatePromise = Promise.resolve(); // 串行注入锁
 
 class RulesEngine {
-    // 核心规则注入与更新引擎
+    // 核心逻辑：设备分流由全局 GEOIP 规则处理，RulesEngine 仅负责代理组管理
     static async updateClashRules(gameMacs, aiMacs, proxyMacs = []) {
-        // 动态探测当前配置文件中的 proxy-provider 名称
-        let providerName = 'caomei1'; // 默认 fallback
-        try {
-            const providerOutput = await SshService.runRemoteCommand("grep -A 1 'proxy-providers:' /data/ShellCrash/yamls/config.yaml | tail -n 1 | cut -d: -f1 | tr -d ' '");
-            if (providerOutput && providerOutput.trim().length > 0 && !providerOutput.includes('Error')) {
-                providerName = providerOutput.trim();
-            }
-        } catch (pErr) {
-            Logger.error('RulesEngine', '动态获取 proxy-provider 失败，退回默认 caomei1', pErr);
-        }
-        
-        let leasesOutput = '';
-        try {
-            leasesOutput = await SshService.runRemoteCommand('cat /tmp/dhcp.leases');
-        } catch (err) {
-            Logger.error('RulesEngine', '获取 dhcp.leases 失败，无法进行规则注入', err);
-        }
-        
-        const dhcpLeases = {};
-        const leaseLines = leasesOutput.split('\n');
-        for (const line of leaseLines) {
-            const parts = line.trim().split(/\s+/);
-            if (parts.length >= 3) {
-                dhcpLeases[parts[1].toLowerCase()] = parts[2];
-            }
-        }
+        updatePromise = updatePromise.then(async () => {
+            Logger.info('RulesEngine', `设备统计: 代理${proxyMacs.length}个, 游戏${gameMacs.length}个, AI${aiMacs.length}个 (排队执行中)`);
+            Logger.info('RulesEngine', '分流由全局 GEOIP 规则处理（GEOIP,CN→DIRECT, MATCH→代理）');
 
-        Logger.info('RulesEngine', `✓ DHCP租约读取完毕，共 ${Object.keys(dhcpLeases).length} 条记录`);
-        Logger.info('RulesEngine', `待注入设备: 代理${proxyMacs.length}个, 游戏${gameMacs.length}个, AI${aiMacs.length}个`);
-
-        // 构造分流规则
-        const ruleLines = [];
-
-        // 0. 注入代理白名单规则（全局代理）
-        ruleLines.push(" # === PROXY WHITELIST START ===");
-        for (const mac of proxyMacs) {
-            const ip = dhcpLeases[mac];
-            if (!ip) {
-                Logger.warn('RulesEngine', `⚠️ 代理设备 ${mac} 在DHCP租约中未找到IP地址，跳过规则注入`);
-                continue;
-            }
-            Logger.info('RulesEngine', `✓ 代理设备 ${mac} → IP ${ip}，将使用 ${PROXY_GROUPS.NODE_SELECT}`);
-            // 局域网直连
-            ruleLines.push(` - AND,((SRC-IP-CIDR,${ip}/32),(IP-CIDR,192.168.0.0/16)),DIRECT`);
-            ruleLines.push(` - AND,((SRC-IP-CIDR,${ip}/32),(IP-CIDR,10.0.0.0/8)),DIRECT`);
-            ruleLines.push(` - AND,((SRC-IP-CIDR,${ip}/32),(IP-CIDR,172.16.0.0/12)),DIRECT`);
-            // 国内直连
-            ruleLines.push(` - AND,((SRC-IP-CIDR,${ip}/32),(GEOSITE,cn)),DIRECT`);
-            ruleLines.push(` - AND,((SRC-IP-CIDR,${ip}/32),(GEOIP,CN)),DIRECT`);
-            // 国外走代理
-            ruleLines.push(` - SRC-IP-CIDR,${ip}/32,${PROXY_GROUPS.NODE_SELECT}`);
-        }
-        ruleLines.push(" # === PROXY WHITELIST END ===");
-        
-        // 1. 注入游戏加速规则
-        ruleLines.push(" # === GAME ACC START ===");
-        for (const mac of gameMacs) {
-            const ip = dhcpLeases[mac];
-            if (!ip) {
-                Logger.warn('RulesEngine', `⚠️ 游戏设备 ${mac} 在DHCP租约中未找到IP地址，跳过规则注入`);
-                continue;
-            }
-            Logger.info('RulesEngine', `✓ 游戏设备 ${mac} → IP ${ip}`);
-                ruleLines.push(` - AND,((SRC-IP-CIDR,${ip}/32),(IP-CIDR,192.168.0.0/16)),DIRECT`);
-                ruleLines.push(` - AND,((SRC-IP-CIDR,${ip}/32),(IP-CIDR,10.0.0.0/8)),DIRECT`);
-                ruleLines.push(` - AND,((SRC-IP-CIDR,${ip}/32),(IP-CIDR,172.16.0.0/12)),DIRECT`);
-                
-                // 大陆直连例外（优先放行国内流量/服务/国内 CDN 缓存下载，保障最佳下载速度）
-                ruleLines.push(` - AND,((SRC-IP-CIDR,${ip}/32),(GEOSITE,cn)),DIRECT`);
-                ruleLines.push(` - AND,((SRC-IP-CIDR,${ip}/32),(GEOIP,CN)),DIRECT`);
-                
-                // 视频分流
-                ruleLines.push(` - AND,((SRC-IP-CIDR,${ip}/32),(DOMAIN-KEYWORD,youtube)),${PROXY_GROUPS.NODE_SELECT}`);
-                ruleLines.push(` - AND,((SRC-IP-CIDR,${ip}/32),(DOMAIN-KEYWORD,googlevideo)),${PROXY_GROUPS.NODE_SELECT}`);
-                ruleLines.push(` - AND,((SRC-IP-CIDR,${ip}/32),(DOMAIN-SUFFIX,ytimg.com)),${PROXY_GROUPS.NODE_SELECT}`);
-                ruleLines.push(` - AND,((SRC-IP-CIDR,${ip}/32),(DOMAIN-SUFFIX,ggpht.com)),${PROXY_GROUPS.NODE_SELECT}`);
-                ruleLines.push(` - AND,((SRC-IP-CIDR,${ip}/32),(DOMAIN-SUFFIX,vimeo.com)),${PROXY_GROUPS.NODE_SELECT}`);
-                ruleLines.push(` - AND,((SRC-IP-CIDR,${ip}/32),(DOMAIN-SUFFIX,vimeocdn.com)),${PROXY_GROUPS.NODE_SELECT}`);
-
-                // 任天堂 CDN 优化
-                ruleLines.push(` - AND,((SRC-IP-CIDR,${ip}/32),(DOMAIN-KEYWORD,video.nintendo)),${PROXY_GROUPS.NODE_SELECT}`);
-                ruleLines.push(` - AND,((SRC-IP-CIDR,${ip}/32),(DOMAIN-KEYWORD,medias.nintendo)),${PROXY_GROUPS.NODE_SELECT}`);
-                ruleLines.push(` - AND,((SRC-IP-CIDR,${ip}/32),(DOMAIN-KEYWORD,nintendo-trailer)),${PROXY_GROUPS.NODE_SELECT}`);
-                ruleLines.push(` - AND,((SRC-IP-CIDR,${ip}/32),(DOMAIN-SUFFIX,akamaized.net)),${PROXY_GROUPS.NODE_SELECT}`);
-                ruleLines.push(` - AND,((SRC-IP-CIDR,${ip}/32),(DOMAIN-SUFFIX,edgesuite.net)),${PROXY_GROUPS.NODE_SELECT}`);
-                ruleLines.push(` - AND,((SRC-IP-CIDR,${ip}/32),(DOMAIN-SUFFIX,llnwi.net)),${PROXY_GROUPS.NODE_SELECT}`);
-                
-                // 游戏专线
-                ruleLines.push(` - AND,((SRC-IP-CIDR,${ip}/32),(DOMAIN-SUFFIX,cdn.nintendo.net)),${PROXY_GROUPS.GAME_ACC}`);
-
-                ruleLines.push(` - SRC-IP-CIDR,${ip}/32,${PROXY_GROUPS.GAME_ACC}`);
-        }
-        ruleLines.push(" # === GAME ACC END ===");
-
-        // 2. 注入 AI 强化规则
-        ruleLines.push(" # === AI ACC START ===");
-        for (const mac of aiMacs) {
-            const ip = dhcpLeases[mac];
-            if (!ip) {
-                Logger.warn('RulesEngine', `⚠️ AI设备 ${mac} 在DHCP租约中未找到IP地址，跳过规则注入`);
-                continue;
-            }
-            Logger.info('RulesEngine', `✓ AI设备 ${mac} → IP ${ip}`);
-                // 局域网直连拦截
-                ruleLines.push(` - AND,((SRC-IP-CIDR,${ip}/32),(IP-CIDR,192.168.0.0/16)),DIRECT`);
-                ruleLines.push(` - AND,((SRC-IP-CIDR,${ip}/32),(IP-CIDR,10.0.0.0/8)),DIRECT`);
-                ruleLines.push(` - AND,((SRC-IP-CIDR,${ip}/32),(IP-CIDR,172.16.0.0/12)),DIRECT`);
-                
-                // 大陆直连例外（防止国内网站/服务绕路境外代理，解决如微信公众号上传慢问题）
-                ruleLines.push(` - AND,((SRC-IP-CIDR,${ip}/32),(GEOSITE,cn)),DIRECT`);
-                ruleLines.push(` - AND,((SRC-IP-CIDR,${ip}/32),(GEOIP,CN)),DIRECT`);
-                
-                // 精细化 AI 服务流量分流（只将核心 AI 服务与资源引流到专线，其余常规国外流量落入常规代理）
-                // Google AI 核心域名及交互接口（包含 Web 端、Stitch 以及 API 通道）
-                ruleLines.push(` - AND,((SRC-IP-CIDR,${ip}/32),(DOMAIN-SUFFIX,gemini.google.com)),${PROXY_GROUPS.AI_BOOST}`);
-                ruleLines.push(` - AND,((SRC-IP-CIDR,${ip}/32),(DOMAIN-SUFFIX,labs.google)),${PROXY_GROUPS.AI_BOOST}`);
-                ruleLines.push(` - AND,((SRC-IP-CIDR,${ip}/32),(DOMAIN-SUFFIX,aistudio.google)),${PROXY_GROUPS.AI_BOOST}`);
-                ruleLines.push(` - AND,((SRC-IP-CIDR,${ip}/32),(DOMAIN-SUFFIX,notebooklm.google)),${PROXY_GROUPS.AI_BOOST}`);
-                ruleLines.push(` - AND,((SRC-IP-CIDR,${ip}/32),(DOMAIN,generativelanguage.googleapis.com)),${PROXY_GROUPS.AI_BOOST}`);
-                ruleLines.push(` - AND,((SRC-IP-CIDR,${ip}/32),(DOMAIN,alkalimina-pa.clients6.google.com)),${PROXY_GROUPS.AI_BOOST}`);
-                ruleLines.push(` - AND,((SRC-IP-CIDR,${ip}/32),(DOMAIN,proactivebackend-pa.googleapis.com)),${PROXY_GROUPS.AI_BOOST}`);
-                ruleLines.push(` - AND,((SRC-IP-CIDR,${ip}/32),(GEOSITE,openai)),${PROXY_GROUPS.AI_BOOST}`);
-                ruleLines.push(` - AND,((SRC-IP-CIDR,${ip}/32),(GEOSITE,anthropic)),${PROXY_GROUPS.AI_BOOST}`);
-                ruleLines.push(` - AND,((SRC-IP-CIDR,${ip}/32),(DOMAIN-SUFFIX,claude.ai)),${PROXY_GROUPS.AI_BOOST}`);
-        }
-        ruleLines.push(" # === AI ACC END ===");
-
-        // 构造加速策略组
-        const groupLines = [];
-
-        // 0. 主代理组（节点选择）- 必须存在以支持规则分流
-        groupLines.push("  # === PROXY SELECT START ===");
-        groupLines.push(`  - {name: "🚀 节点选择", type: select, proxies: [DIRECT], use: [${providerName}]}`);
-        groupLines.push("  # === PROXY SELECT END ===");
-
-        // 1. 主代理组延迟测试（总是存在）
-        groupLines.push("  # === PROXY SPEEDTEST START ===");
-        groupLines.push(`  - {name: "🔍 代理自动测速", type: url-test, url: http://www.gstatic.com/generate_204, interval: 300, tolerance: 30, include-all: true, use: [${providerName}]}`);
-        groupLines.push("  # === PROXY SPEEDTEST END ===");
-
-        // 1. 游戏加速策略组
-        groupLines.push("  # === GAME GROUP START ===");
-        if (gameMacs.length > 0) {
-            groupLines.push(`  - {name: ${PROXY_GROUPS.GAME_ACC}, type: select, proxies: [${PROXY_GROUPS.GAME_SPEEDTEST}, ${PROXY_GROUPS.NODE_SELECT}, DIRECT], use: [${providerName}], filter: "(?i)(IPLC|IEPL|game|游戏)"}`);
-            groupLines.push(`  - {name: ${PROXY_GROUPS.GAME_SPEEDTEST}, type: url-test, url: ${SPEEDTEST_URLS.NINTENDO}, interval: 300, tolerance: 30, include-all: true, filter: "(?i)(IPLC|IEPL|game|游戏)"}`);
-        }
-        groupLines.push("  # === GAME GROUP END ===");
-
-        // 2. AI 强化策略组
-        groupLines.push("  # === AI GROUP START ===");
-        if (aiMacs.length > 0) {
-            const aiFilter = "(?i)(IPLC|IEPL).*(Singapore|Japan|JP|USA|US|Korea|KR|Taiwan|TW|AI|GPT|Prime|新加坡|日本|韓|韩|台|美)";
-            groupLines.push(`  - {name: ${PROXY_GROUPS.AI_BOOST}, type: select, proxies: [${PROXY_GROUPS.AI_SPEEDTEST}, ${PROXY_GROUPS.NODE_SELECT}, DIRECT], use: [${providerName}], filter: "${aiFilter}"}`);
-            groupLines.push(`  - {name: ${PROXY_GROUPS.AI_SPEEDTEST}, type: url-test, url: ${SPEEDTEST_URLS.GOOGLE_AI}, interval: 300, tolerance: 30, include-all: true, filter: "${aiFilter}"}`);
-        }
-        groupLines.push("  # === AI GROUP END ===");
-        
-        try {
-            // 1. 备份当前正常运行的配置文件
-            await SshService.runRemoteCommand('cp -f /data/ShellCrash/yamls/config.yaml /tmp/config.yaml.bak');
-            
-            // 2. 写入临时游戏与 AI 规则与策略组
-            await SshService.runRemoteCommand('rm -f /tmp/game_rules.txt /tmp/game_group.txt');
-
-            // 写入规则文件（使用分段追加避免 heredoc 和 Base64 开销）
-            if (ruleLines.length > 0) {
-                for (const line of ruleLines) {
-                    const escapedLine = line.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-                    await SshService.runRemoteCommand(`echo "${escapedLine}" >> /tmp/game_rules.txt`);
-                }
-            } else {
-                await SshService.runRemoteCommand('touch /tmp/game_rules.txt');
-            }
-
-            // 写入策略组文件（使用分段追加）
-            if (groupLines.length > 0) {
-                for (const line of groupLines) {
-                    const escapedLine = line.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-                    await SshService.runRemoteCommand(`echo "${escapedLine}" >> /tmp/game_group.txt`);
-                }
-            } else {
-                await SshService.runRemoteCommand('touch /tmp/game_group.txt');
-            }
-            
-            // 3. 安全地修改配置文件（使用被验证器接受的 sed 命令）
-            // 步骤 1: 清理旧的注入段
-            await SshService.runRemoteCommand("sed -i '/# === PROXY SELECT START ===/,/# === PROXY SELECT END ===/d' /data/ShellCrash/yamls/config.yaml");
-            await SshService.runRemoteCommand("sed -i '/# === RULE GROUP START ===/,/# === RULE GROUP END ===/d' /data/ShellCrash/yamls/config.yaml");
-            await SshService.runRemoteCommand("sed -i '/# === PROXY SPEEDTEST START ===/,/# === PROXY SPEEDTEST END ===/d' /data/ShellCrash/yamls/config.yaml");
-            await SshService.runRemoteCommand("sed -i '/# === PROXY WHITELIST START ===/,/# === PROXY WHITELIST END ===/d' /data/ShellCrash/yamls/config.yaml");
-            await SshService.runRemoteCommand("sed -i '/# === GAME ACC START ===/,/# === GAME ACC END ===/d' /data/ShellCrash/yamls/config.yaml");
-            await SshService.runRemoteCommand("sed -i '/# === AI ACC START ===/,/# === AI ACC END ===/d' /data/ShellCrash/yamls/config.yaml");
-            await SshService.runRemoteCommand("sed -i '/# === GAME GROUP START ===/,/# === GAME GROUP END ===/d' /data/ShellCrash/yamls/config.yaml");
-            await SshService.runRemoteCommand("sed -i '/# === AI GROUP START ===/,/# === AI GROUP END ===/d' /data/ShellCrash/yamls/config.yaml");
-
-            // 步骤 2: 在 rules: 后插入规则（处理 rules: [] 或空 rules: 格式）
-            if (ruleLines.length > 0) {
-                // 先尝试处理 rules: [] 或 rules: {} 格式
-                await SshService.runRemoteCommand("sed -i '/^rules:/s/:.*/:/;/^rules:$/a\\\n' /data/ShellCrash/yamls/config.yaml");
-                // 然后在 rules: 行后插入规则文件内容
-                await SshService.runRemoteCommand("sed -i '/^rules:$/r /tmp/game_rules.txt' /data/ShellCrash/yamls/config.yaml");
-            }
-
-            // 步骤 3: 在 proxy-groups: 后插入代理组
-            if (groupLines.length > 0) {
-                // 先确保有 proxy-groups: 行（如果没有则添加）
-                await SshService.runRemoteCommand("grep -q '^proxy-groups:' /data/ShellCrash/yamls/config.yaml || sed -i '$ a\\\\nproxy-groups:' /data/ShellCrash/yamls/config.yaml");
-                // 然后在 proxy-groups: 行后插入代理组文件内容
-                await SshService.runRemoteCommand("sed -i '/^proxy-groups:$/r /tmp/game_group.txt' /data/ShellCrash/yamls/config.yaml");
-            }
-            
-            // 4. 自检配置语法
+            // 1. 获取路由器当前的主配置文件内容
+            let currentConfig = '';
             try {
-                Logger.info('RulesEngine', '执行规则应用前的预检查...');
-                const preCheckResult = await ConfigValidator.preCheckBeforeApply('/data/ShellCrash/yamls/config.yaml');
+                currentConfig = await SshService.runRemoteCommand('cat /data/ShellCrash/config.yaml');
+            } catch (err) {
+                Logger.error('RulesEngine', '获取路由器主配置失败，无法进行注入', err);
+                throw err;
+            }
 
+            // 自动拉取自愈：如果主配置文件为空，说明已被历史 Bug 截断损坏，自动使用订阅链接紧急拉取
+            if (!currentConfig.trim()) {
+                Logger.warn('RulesEngine', '⚠️ 探测到路由器主配置文件为 0 字节空文件，正在尝试通过订阅链接执行全自动紧急拉取自愈...');
+                try {
+                    await SshService.runRemoteCommand(
+                        `curl -k -o /data/ShellCrash/config.yaml "https://www.cmsub.com/subscribe/WUK1BZDNN7ICBIIB?clash=ssr&trojan"`
+                    );
+                    currentConfig = await SshService.runRemoteCommand('cat /data/ShellCrash/config.yaml');
+                    Logger.info('RulesEngine', '✅ 订阅配置文件自动拉取拉回成功！');
+                } catch (dlErr) {
+                    Logger.error('RulesEngine', '❌ 自动拉取配置文件失败！', dlErr);
+                    throw new Error('路由器主配置文件为空且自动拉取下载失败！');
+                }
+            }
+
+            // 探测 proxy-provider 名称
+            let providerName = 'subscription';
+            const providerMatch = currentConfig.match(/proxy-providers:\s*\n\s*([^:\s]+):/);
+            if (providerMatch && providerMatch[1]) {
+                providerName = providerMatch[1].trim();
+            }
+
+            // 备份当前配置
+            await SshService.runRemoteCommand('cp -f /data/ShellCrash/config.yaml /tmp/config.yaml.bak');
+
+            // 生成本次执行专用的唯一临时文件名，彻底杜绝并发踩踏 Race Condition
+            const uniqueId = `${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+            const workFile = `/tmp/config_work_${uniqueId}.yaml`;
+
+            // 2. 在 Node.js 内存里解析 and 修改配置内容
+            let configLines = currentConfig.split('\n');
+
+            // 强制开启 allow-lan: true，防止被局域网代理阻塞导致断网
+            let allowLanIdx = configLines.findIndex(line => line.trim().startsWith('allow-lan:'));
+            if (allowLanIdx !== -1) {
+                configLines[allowLanIdx] = 'allow-lan: true';
+            } else {
+                let mixedPortIdx = configLines.findIndex(line => line.trim().startsWith('mixed-port:'));
+                if (mixedPortIdx !== -1) {
+                    configLines.splice(mixedPortIdx + 1, 0, 'allow-lan: true');
+                }
+            }
+
+            // 强制将 external-controller 的端口设置为 config.ports.clash (默认 9999)
+            let controllerIdx = configLines.findIndex(line => line.trim().startsWith('external-controller:'));
+            if (controllerIdx !== -1) {
+                configLines[controllerIdx] = `external-controller: '0.0.0.0:${config.ports.clash}'`;
+            } else {
+                let mixedPortIdx = configLines.findIndex(line => line.trim().startsWith('mixed-port:'));
+                if (mixedPortIdx !== -1) {
+                    configLines.splice(mixedPortIdx + 1, 0, `external-controller: '0.0.0.0:${config.ports.clash}'`);
+                }
+            }
+
+            // 2.1 注入 dns 和 sniffer 配置段
+            const hasDns = currentConfig.includes('\ndns:');
+            const hasSniffer = currentConfig.includes('\nsniffer:');
+            let insertIdx = configLines.findIndex(line => line.trim().startsWith('mixed-port:'));
+            
+            if (insertIdx !== -1) {
+                if (!hasDns) {
+                    Logger.info('RulesEngine', '检测到 Clash 配置文件未开启 dns，正在内存中自动注入...');
+                    const dnsLines = [
+                        'dns:',
+                        '  enable: true',
+                        `  listen: 0.0.0.0:${config.ports.dns}`,
+                        '  enhanced-mode: fake-ip',
+                        '  fake-ip-range: 198.18.0.1/16',
+                        '  nameserver:',
+                        '    - 114.114.114.114',
+                        '    - 223.5.5.5',
+                        '    - 8.8.8.8'
+                    ];
+                    configLines.splice(insertIdx + 1, 0, ...dnsLines);
+                    // Update index so sniffer doesn't get injected inside dns block
+                    insertIdx += dnsLines.length;
+                }
+                
+                if (!hasSniffer) {
+                    Logger.info('RulesEngine', '检测到 Clash 配置文件未开启 sniffer，正在内存中自动注入...');
+                    const snifferLines = [
+                        'sniffer:',
+                        '  enable: true',
+                        '  force-dns-mapping: false',
+                        '  parse-pure-ip-address: true'
+                    ];
+                    configLines.splice(insertIdx + 1, 0, ...snifferLines);
+                }
+            }
+
+            // 2.2 清理旧的 AI 分流规则
+            configLines = configLines.filter(line => {
+                const trimmed = line.trim();
+                if (trimmed.includes('AI RULES START')) return false;
+                if (trimmed.includes('AI RULES END')) return false;
+                if (trimmed.includes('🤖 AI强化')) return false;
+                if (trimmed.includes('jinjitu.com,DIRECT')) return false;
+                return true;
+            });
+
+            // 2.3 注入最新的 AI 分流规则
+            if (aiMacs.length > 0) {
+                Logger.info('RulesEngine', '发现开启 AI 强化的设备，正在注入 AI 域名分流规则...');
+                const rulesIdx = configLines.findIndex(line => line.trim() === 'rules:');
+                if (rulesIdx !== -1) {
+                    let rulesIndent = '  '; // default 2 spaces
+                    for (let i = rulesIdx + 1; i < configLines.length; i++) {
+                        const line = configLines[i];
+                        if (line.trim().startsWith('-')) {
+                            const match = line.match(/^(\s*)-/);
+                            if (match) {
+                                rulesIndent = match[1];
+                            }
+                            break;
+                        }
+                        if (line.trim() !== '' && !line.trim().startsWith('#')) {
+                            break;
+                        }
+                    }
+
+                    const baseRuleLines = [
+                        '# === AI RULES START ===',
+                        '- DOMAIN-SUFFIX,openai.com,🤖 AI强化',
+                        '- DOMAIN-SUFFIX,chatgpt.com,🤖 AI强化',
+                        '- DOMAIN-SUFFIX,oaistatic.com,🤖 AI强化',
+                        '- DOMAIN-SUFFIX,oaiusercontent.com,🤖 AI强化',
+                        '- DOMAIN-SUFFIX,claude.ai,🤖 AI强化',
+                        '- DOMAIN-SUFFIX,anthropic.com,🤖 AI强化',
+                        '- DOMAIN-SUFFIX,gemini.google.com,🤖 AI强化',
+                        '- DOMAIN-SUFFIX,generativelanguage.googleapis.com,🤖 AI强化',
+                        '- DOMAIN-SUFFIX,ai.google.dev,🤖 AI强化',
+                        '- DOMAIN-SUFFIX,makersuite.google.com,🤖 AI强化',
+                        '- DOMAIN-SUFFIX,aistudio.google.com,🤖 AI强化',
+                        '- DOMAIN-SUFFIX,deepmind.google,🤖 AI强化',
+                        '- DOMAIN-SUFFIX,deepmind.com,🤖 AI强化',
+                        '- DOMAIN-SUFFIX,generativeai.google,🤖 AI强化',
+                        '- DOMAIN-KEYWORD,colab,🤖 AI强化',
+                        '- DOMAIN-KEYWORD,developer.google.com,🤖 AI强化',
+                        '- DOMAIN-SUFFIX,google.com,🤖 AI强化',
+                        '- DOMAIN-SUFFIX,googleapis.com,🤖 AI强化',
+                        '- DOMAIN-SUFFIX,gstatic.com,🤖 AI强化',
+                        '- DOMAIN-SUFFIX,googleusercontent.com,🤖 AI强化',
+                        '- DOMAIN-SUFFIX,gvt1.com,🤖 AI强化',
+                        '- DOMAIN-SUFFIX,ggpht.com,🤖 AI强化',
+                        '- DOMAIN-SUFFIX,android.com,🤖 AI强化',
+                        '- DOMAIN-SUFFIX,youtube.com,🤖 AI强化',
+                        '- DOMAIN-SUFFIX,youtubei.googleapis.com,🤖 AI强化',
+                        '- DOMAIN-SUFFIX,ytimg.com,🤖 AI强化',
+                        '- DOMAIN-SUFFIX,googlevideo.com,🤖 AI强化',
+                        '- DOMAIN-SUFFIX,youtu.be,🤖 AI强化',
+                        '- DOMAIN-SUFFIX,jinjitu.com,DIRECT',
+                        '# === AI RULES END ==='
+                    ];
+
+                    const ruleLines = baseRuleLines.map(line => {
+                        return `${rulesIndent}${line}`;
+                    });
+
+                    configLines.splice(rulesIdx + 1, 0, ...ruleLines);
+                } else {
+                    Logger.error('RulesEngine', '未找到 rules: 配置段，无法注入规则！');
+                    throw new Error('未找到 rules: 配置段');
+                }
+            }
+
+            // 清理旧的代理组行（防止乱码导致的重复注入）
+            configLines = configLines.filter(line => {
+                const trimmed = line.trim();
+                // 仅清理代理组部分，不影响规则部分（因为规则有专门的清理标记）
+                if (trimmed.startsWith('-') && trimmed.includes('{name:')) {
+                    if (trimmed.includes('AI强化') || trimmed.includes('AI自动测速')) return false;
+                    if (trimmed.includes('游戏加速') || trimmed.includes('游戏自动测速')) return false;
+                }
+                return true;
+            });
+
+            // 因为清理了所有旧的，这里强制设为 false，以确保重新注入全新的
+            const hasGameGroup = false;
+            const hasAiGroup = false;
+
+            // 寻找 proxy-groups: 行
+            const groupsIdx = configLines.findIndex(line => line.trim() === 'proxy-groups:');
+            if (groupsIdx !== -1) {
+                // Detect indentation of the first item
+                let indent = '  '; // default 2 spaces
+                for (let i = groupsIdx + 1; i < configLines.length; i++) {
+                    const line = configLines[i];
+                    if (line.trim().startsWith('-')) {
+                        const match = line.match(/^(\s*)-/);
+                        if (match) {
+                            indent = match[1];
+                        }
+                        break;
+                    }
+                    if (line.trim() !== '' && !line.trim().startsWith('#')) {
+                        // Found a non-empty, non-comment line that isn't a sequence item, stop searching
+                        break;
+                    }
+                }
+
+                const groupLines = [];
+                const hasProviders = currentConfig.includes('proxy-providers:');
+                const selectMatch = currentConfig.match(/name:\s*['"]?([^'"\n]*(?:选择节点|节点选择))['"]?/);
+                const actualNodeSelect = selectMatch ? selectMatch[1] : PROXY_GROUPS.NODE_SELECT;
+
+                // 提取所有带 "自动" 的区域代理组，支持乱码匹配
+                const aiGroupProxies = [actualNodeSelect];
+                const groupMatches = currentConfig.matchAll(/name:\s*['"]?([^'"]*(?:自动|Auto|节点)[^'"]*)['"]?/gi);
+                for (const m of groupMatches) {
+                    const name = m[1];
+                    if (name.includes('说明') || name.includes('提示') || name.includes('官网') || name.includes(':') || name.includes('：')) {
+                        continue;
+                    }
+                    if (name.includes('AI自动') || name.includes('AI强化') || name.includes('游戏自动') || name.includes('游戏加速')) {
+                        continue;
+                    }
+                    if (name !== actualNodeSelect && !aiGroupProxies.includes(name) && !name.includes('香港') && !name.includes('HK')) {
+                        aiGroupProxies.push(name);
+                    }
+                }
+                if (!aiGroupProxies.includes('DIRECT')) aiGroupProxies.push('DIRECT');
+                const aiProxiesStr = aiGroupProxies.map(p => `'${p}'`).join(', ');
+
+                if (gameMacs.length > 0 && !hasGameGroup) {
+                    groupLines.push(`${indent}- {name: '${PROXY_GROUPS.GAME_ACC}', type: select, proxies: ['${actualNodeSelect}', 'DIRECT']}`);
+                }
+
+                if (aiMacs.length > 0 && !hasAiGroup) {
+                    groupLines.push(`${indent}- {name: '${PROXY_GROUPS.AI_BOOST}', type: select, proxies: [${aiProxiesStr}]}`);
+                }
+
+                if (groupLines.length > 0) {
+                    configLines.splice(groupsIdx + 1, 0, ...groupLines);
+                }
+            } else {
+                Logger.error('RulesEngine', '未找到 proxy-groups: 配置段，无法注入代理组！');
+                throw new Error('未找到 proxy-groups: 配置段');
+            }
+
+            // 3. 将修改后的完整配置转换成 base64 并推入路由器的唯一工作文件
+            const finalConfig = configLines.join('\n');
+            
+            // 双重校验：检查全局规则完整性 (兼容新版基于 RULE-SET 的订阅)
+            const hasGeoip = finalConfig.includes('GEOIP') || finalConfig.includes('RULE-SET');
+            const hasMatch = finalConfig.includes('MATCH');
+            if (!hasGeoip || !hasMatch) {
+                Logger.error('RulesEngine', '生成的新配置全局规则不完整，拒绝写入！');
+                throw new Error('全局规则完整性检查失败');
+            }
+
+            const configBase64 = Buffer.from(finalConfig, 'utf8').toString('base64');
+            
+            try {
+                // 将配置写到容器本地临时文件
+                const localWorkFile = `/tmp/local_config_work_${uniqueId}.yaml`;
+                fs.writeFileSync(localWorkFile, finalConfig);
+                
+                // 将本地文件上传到路由器
+                await SshService.uploadFileLocal(localWorkFile, workFile);
+                fs.unlinkSync(localWorkFile);
+
+                // 4. 对工作文件运行验证
+                const preCheckResult = await ConfigValidator.preCheckBeforeApply(workFile);
                 if (!preCheckResult.canApply) {
-                    Logger.error('RulesEngine', '❌ 配置预检查失败，拒绝应用', preCheckResult.reason);
-                    ChangelogManager.logRulesUpdate(gameMacs, aiMacs, false, preCheckResult.reason);
+                    Logger.error('RulesEngine', '配置预检查失败: ' + preCheckResult.reason);
+                    // 恢复清理：验证失败时清理
+                    await SshService.runRemoteCommand(`rm -f ${workFile}`);
                     throw new Error('配置预检查失败: ' + preCheckResult.reason);
                 }
 
                 if (preCheckResult.hasWarnings) {
-                    Logger.warn('RulesEngine', '⚠️ 配置有警告: ' + preCheckResult.warnings.join('; '));
+                    Logger.warn('RulesEngine', '配置有警告: ' + preCheckResult.warnings.join('; '));
                 }
 
-                Logger.info('RulesEngine', '新增规则后 Clash 配置文件自检通过！');
-            } catch (testErr) {
-                Logger.warn('RulesEngine', '新配置文件自检失败，正在执行安全回滚', testErr);
-                await SshService.runRemoteCommand('cp -f /tmp/config.yaml.bak /data/ShellCrash/yamls/config.yaml');
-                await SshService.runRemoteCommand(`curl -s -X PUT -d '{"path": "/data/ShellCrash/yamls/config.yaml"}' http://127.0.0.1:${config.ports.clash}/configs?force=true`);
-                ChangelogManager.logRulesUpdate(gameMacs, aiMacs, false, testErr.message || String(testErr));
-                throw new Error('新配置自检失败，已自动回滚！错误详情: ' + (testErr.stderr || testErr.message || '配置语法错误'));
+                // 5. 顺利通过所有// 检查！现在把工作文件安全写回 /data
+                await SshService.runRemoteCommand(`cp -f ${workFile} /data/ShellCrash/config.yaml`);
+                await SshService.runRemoteCommand(`rm -f ${workFile}`);
+
+                // Cold restart to load new config, using parentheses and stdin redirection to guard against SIGHUP when SSH exits
+                await SshService.runRemoteCommand(
+                    'killall mihomo Clash 2>/dev/null; sleep 2; ( /tmp/ShellCrash/mihomo -d /data/ShellCrash -f /data/ShellCrash/config.yaml </dev/null >/dev/null 2>/dev/null & )'
+                );
+                Logger.info('RulesEngine', '等待 Clash 重启...');
+                await new Promise(r => setTimeout(r, 12000));
+
+                ConfigVersionManager.createSnapshot('/data/ShellCrash/config.yaml', '.applied');
+                try {
+                    const gateway = require('../routes/gateway');
+                    if (gateway && typeof gateway.clearMainGroupCache === 'function') {
+                        gateway.clearMainGroupCache();
+                    }
+                } catch (cacheErr) {
+                    // Ignore
+                }
+                ChangelogManager.logRulesUpdate(gameMacs, aiMacs, true);
+                Logger.info('RulesEngine', '代理组注入成功');
+
+                // 自动异步执行配置备份，不阻塞规则主流程的返回
+                BackupService.performBackup().catch(backupErr => {
+                    Logger.error('RulesEngine', '自动配置备份触发失败', backupErr);
+                });
+            } catch (err) {
+                Logger.error('RulesEngine', '代理组注入异常', err);
+                await SshService.runRemoteCommand(`rm -f ${workFile}`);
+                await SshService.runRemoteCommand('cp -f /tmp/config.yaml.bak /data/ShellCrash/config.yaml 2>/dev/null || true');
+                throw err;
             }
-
-            // 5. 触发 Clash 核心热重载 API
-            await SshService.runRemoteCommand(`curl -s -X PUT -d '{"path": "/data/ShellCrash/yamls/config.yaml"}' http://127.0.0.1:${config.ports.clash}/configs?force=true`);
-
-            // 6. 创建配置快照
-            ConfigVersionManager.createSnapshot('/data/ShellCrash/yamls/config.yaml', '.applied');
-
-            // 7. 记录变更日志
-            ChangelogManager.logRulesUpdate(gameMacs, aiMacs, true);
-
-            Logger.info('RulesEngine', 'NAS端规则同步与 ClashMeta 重载指令下发成功！');
-        } catch (err) {
-            Logger.error('RulesEngine', 'Clash 规则配置文件远程更新异常', err);
+        }).catch(err => {
+            Logger.error('RulesEngine', '串行规则注入执行失败', err);
             throw err;
-        }
+        });
+        return updatePromise;
     }
 }
 

@@ -60,6 +60,23 @@ router.post('/add', async (req, res) => {
 
         await RulesEngine.updateClashRules(gameMacs, aiMacs, updatedProxyMacs);
 
+        // 创建透明代理的 iptables 规则
+        try {
+            // 确保锁定文件存在（解决 iptables 锁定问题）
+            await SshService.runRemoteCommand('mkdir -p /var/run && touch /var/run/xtables.lock 2>/dev/null || true');
+
+            // 从 DHCP 租约中获取设备的 IP
+            const deviceIP = (await SshService.runRemoteCommand(`grep -i "${mac}" /data/dhcp.leases | awk '{print $3}'`)).trim();
+            if (deviceIP && deviceIP.match(/^\d+\.\d+\.\d+\.\d+$/)) {
+                // 添加 HTTP 和 HTTPS 流量重定向到 Clash 代理端口
+                await SshService.runRemoteCommand(`iptables -t nat -I PREROUTING -s ${deviceIP} -p tcp --dport 80 -j REDIRECT --to-port 7890 2>/dev/null || true`);
+                await SshService.runRemoteCommand(`iptables -t nat -I PREROUTING -s ${deviceIP} -p tcp --dport 443 -j REDIRECT --to-port 7890 2>/dev/null || true`);
+                Logger.info('Whitelist', `✓ 为设备 ${deviceIP} (${mac}) 创建了透明代理规则`);
+            }
+        } catch (err) {
+            Logger.warn('Whitelist', '创建透明代理规则失败（非严重错误）', err.message);
+        }
+
         // 安全重启防火墙与 Clash 核心
         await SshService.restartShellCrashSecurely();
 

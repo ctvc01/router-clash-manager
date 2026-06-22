@@ -1,7 +1,7 @@
-FROM node:20-alpine
+FROM node:18-alpine
 
-# 安装 expect、openssh-client、curl 和 sshpass（用于SSH密码认证）
-RUN apk add --no-cache expect openssh-client curl sshpass
+RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.ustc.edu.cn/g' /etc/apk/repositories && \
+    apk add --no-cache expect openssh-client curl sshpass
 
 # 配置 SSH 客户端支持 RSA host keys（老旧路由器兼容性）
 RUN mkdir -p /root/.ssh

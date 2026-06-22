@@ -28,20 +28,22 @@ class AiBoostService {
             Logger.info('AiBoost', '🔍 开始并发测试 AI 节点延迟，寻找最快节点...');
             const proxiesData = await ClashService.getProxies(6000);
             
-            const group = proxiesData.proxies['⚡ AI自动测速'];
+            const group = proxiesData.proxies['🤖 AI强化'];
             if (!group || !group.all || group.all.length === 0) {
-                Logger.warn('AiBoost', '未找到 ⚡ AI自动测速 策略组，无法自动寻优');
+                Logger.warn('AiBoost', '未找到 🤖 AI强化 策略组，无法自动寻优');
                 return null;
             }
             
-            // 过滤掉不支持 AI 的香港节点，避免因低握手延迟而误选不可用 IP
+            // 过滤掉不支持 AI 的香港节点，并排除通用选择节点和直连
             const filteredNodes = group.all.filter(nodeName => {
                 const lowerName = nodeName.toLowerCase();
                 return !lowerName.includes('hk') && 
                        !lowerName.includes('hongkong') && 
                        !lowerName.includes('香港') && 
                        !lowerName.includes('港') &&
-                       !['direct', 'global'].includes(lowerName);
+                       !['direct', 'global'].includes(lowerName) &&
+                       !lowerName.includes('选择节点') &&
+                       !lowerName.includes('节点选择');
             });
 
             if (filteredNodes.length === 0) {

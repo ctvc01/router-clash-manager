@@ -6,9 +6,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const elNodeLatency = document.getElementById('node-latency');
     const elDevicesTotal = document.getElementById('devices-total');
     const elDevicesProxy = document.getElementById('devices-proxy');
-    const elMemoryUsed = document.getElementById('memory-used');
-    const elMemoryTotal = document.getElementById('memory-total');
-    const elMemoryProgress = document.getElementById('memory-progress');
+    const elDiskPercent = document.getElementById('disk-percent');
+    const elDiskUsed = document.getElementById('disk-used');
+    const elDiskTotal = document.getElementById('disk-total');
+    const elDiskProgress = document.getElementById('disk-progress');
+    const elMemorySub = document.getElementById('memory-sub');
     const elTotalDownSpeed = document.getElementById('total-down-speed');
     const elTotalUpSpeed = document.getElementById('total-up-speed');
     const elSearchInput = document.getElementById('search-input');
@@ -300,12 +302,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 }
                 
-                // 内存占用完全真实联动
-                const memStr = data.memory;
-                let usedMB = parseInt(memStr) || 0;
-                const totalMemStr = data.totalMemory || '1024 MB';
-                let totalMB = parseInt(totalMemStr) || 1024;
-                simulateMemoryBar(usedMB, totalMB);
+                // 磁盘占用完全真实联动
+                const diskUsedMB = parseInt(data.diskUsed) || 0;
+                const diskTotalMB = parseInt(data.diskTotal) || 20;
+                const memUsed = data.memory || '';
+                const memTotal = data.totalMemory || '';
+                updateDiskBar(diskUsedMB, diskTotalMB, memUsed, memTotal);
                 
                 // 更新真实的 Uptime
                 if (data.uptime && data.uptime > 0) {
@@ -316,9 +318,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 elFooterVersion.textContent = `内核版本: ${data.version} (Mihomo)`;
                 elFooterCpu.textContent = `CPU: ${data.cpu}`;
             } else {
-                const totalMemStr = data.totalMemory || '1024 MB';
-                let totalMB = parseInt(totalMemStr) || 1024;
-                simulateMemoryBar(0, totalMB);
+                updateDiskBar(0, 20, '--', '--');
                 elStatusText.textContent = '已停止';
                 elStatusText.className = 'card-value text-muted';
                 elStatusMode.innerHTML = `<span class="error-log-link" id="view-error-log" style="color: var(--danger); text-decoration: underline; cursor: pointer; font-size: 11px;">错误日志</span>`;
@@ -332,7 +332,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 elFooterCpu.textContent = 'CPU: 0.0%';
             }
         } catch (e) {
-            simulateMemoryBar(0, 1024);
+            updateDiskBar(0, 20);
             elStatusText.textContent = '离线/未知';
             elStatusText.className = 'card-value text-muted';
             elStatusMode.innerHTML = '无法与后端通信';
@@ -343,32 +343,36 @@ document.addEventListener('DOMContentLoaded', () => {
             
             elFooterVersion.textContent = '内核版本: 离线 (Mihomo)';
             elFooterCpu.textContent = 'CPU: --';
-            elFooterMemory.textContent = '内存: -- / 1024MB';
+            elFooterMemory.textContent = '磁盘: -- / 20MB';
         }
     }
 
-    function simulateMemoryBar(usedMB, totalMB) {
-        totalMB = totalMB || 1024;
-        elMemoryUsed.textContent = `${usedMB}MB`;
-        elMemoryTotal.textContent = `${totalMB}MB`;
+    function updateDiskBar(usedMB, totalMB, memUsed, memTotal) {
+        totalMB = totalMB || 20;
+        elDiskPercent.textContent = Math.round((usedMB / totalMB) * 100) + '%';
+        elDiskUsed.textContent = usedMB;
+        elDiskTotal.textContent = totalMB;
         const percent = Math.round((usedMB / totalMB) * 100);
-        elMemoryProgress.style.width = `${percent}%`;
+        elDiskProgress.style.width = `${percent}%`;
         
         // 动态警示色联动
-        elMemoryProgress.classList.remove('warning-bar', 'danger-bar');
-        elMemoryUsed.classList.remove('text-green', 'text-yellow', 'text-red');
+        elDiskProgress.classList.remove('warning-bar', 'danger-bar');
+        elDiskPercent.classList.remove('text-green', 'text-yellow', 'text-red');
         
-        if (percent >= 80) {
-            elMemoryProgress.classList.add('danger-bar');
-            elMemoryUsed.classList.add('text-red');
-        } else if (percent >= 60) {
-            elMemoryProgress.classList.add('warning-bar');
-            elMemoryUsed.classList.add('text-yellow');
+        if (percent >= 90) {
+            elDiskProgress.classList.add('danger-bar');
+            elDiskPercent.classList.add('text-red');
+        } else if (percent >= 75) {
+            elDiskProgress.classList.add('warning-bar');
+            elDiskPercent.classList.add('text-yellow');
         } else {
-            elMemoryUsed.classList.add('text-green');
+            elDiskPercent.classList.add('text-green');
         }
         
-        elFooterMemory.textContent = `内存: ${usedMB}MB / ${totalMB}MB`;
+        elFooterMemory.textContent = `磁盘: ${usedMB}MB / ${totalMB}MB`;
+        if (elMemorySub) {
+            elMemorySub.textContent = `实时内存 ${memUsed || '--'}MB / ${memTotal || '--'}MB`;
+        }
     }
 
     // 接口：获取加速的游戏设备 MAC 列表
@@ -943,19 +947,17 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function openGameDropdown() {
+        closeAiDropdown();
+        closeProxyDropdown();
+        
         const triggerRect = elBtnToggleGameDropdown.getBoundingClientRect();
-        const nodeNameRect = elNodeGameReal.getBoundingClientRect();
         
         elGameNodeDropdownMenu.style.display = 'block';
         elGameNodeDropdownMenu.style.top = (triggerRect.bottom + 6) + 'px';
+        elGameNodeDropdownMenu.style.left = triggerRect.left + 'px';
         
-        // 下拉列表中，文本距左边缘 36px (14px padding + 14px icon + 8px gap)
-        // 使其文本精确对齐 elNodeGameReal 的左侧
-        const dropdownLeft = Math.max(12, nodeNameRect.left - 36);
-        elGameNodeDropdownMenu.style.left = dropdownLeft + 'px';
-        
-        // 宽度自适应，无需撑满整个 trigger 行
-        elGameNodeDropdownMenu.style.width = 'max-content';
+        // 宽度与触发按钮完全一致，实现完美水平对齐
+        elGameNodeDropdownMenu.style.width = triggerRect.width + 'px';
         elGameNodeDropdownMenu.style.minWidth = '240px';
         elGameNodeDropdownMenu.style.maxWidth = '90vw';
         
@@ -985,13 +987,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function openAiDropdown() {
+        closeGameDropdown();
+        closeProxyDropdown();
+        
         const triggerRect = elBtnToggleAiDropdown.getBoundingClientRect();
-        const nodeNameRect = elNodeAiReal.getBoundingClientRect();
 
         elAiNodeDropdownMenu.style.display = 'block';
         elAiNodeDropdownMenu.style.top = (triggerRect.bottom + 6) + 'px';
-        elAiNodeDropdownMenu.style.left = (nodeNameRect.left - 4) + 'px';
-        elAiNodeDropdownMenu.style.width = Math.max(triggerRect.width, 240) + 'px';
+        elAiNodeDropdownMenu.style.left = triggerRect.left + 'px';
+        elAiNodeDropdownMenu.style.width = triggerRect.width + 'px';
         elAiNodeDropdownMenu.style.minWidth = '240px';
         elAiNodeDropdownMenu.style.maxWidth = '90vw';
 
@@ -1021,13 +1025,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function openProxyDropdown() {
+        closeGameDropdown();
+        closeAiDropdown();
+        
         const triggerRect = elBtnToggleProxyDropdown.getBoundingClientRect();
-        const nodeNameRect = elNodeProxyReal.getBoundingClientRect();
 
         elProxyNodeDropdownMenu.style.display = 'block';
         elProxyNodeDropdownMenu.style.top = (triggerRect.bottom + 6) + 'px';
-        elProxyNodeDropdownMenu.style.left = (nodeNameRect.left - 4) + 'px';
-        elProxyNodeDropdownMenu.style.width = Math.max(triggerRect.width, 240) + 'px';
+        elProxyNodeDropdownMenu.style.left = triggerRect.left + 'px';
+        elProxyNodeDropdownMenu.style.width = triggerRect.width + 'px';
         elProxyNodeDropdownMenu.style.minWidth = '240px';
         elProxyNodeDropdownMenu.style.maxWidth = '90vw';
 
@@ -1129,7 +1135,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // 如果当前 now 节点不在备选里，为防空白添加临时选项
             const existInCandidates = allCandidates.some(c => c.name === lastSelectedGameNode);
-            if (lastSelectedGameNode && !existInCandidates) {
+            if (lastSelectedGameNode && lastSelectedGameNode !== 'DIRECT' && lastSelectedGameNode !== 'GLOBAL' && !existInCandidates) {
                 allCandidates.push({
                     name: lastSelectedGameNode,
                     delay: game.delay || 0,
@@ -1205,7 +1211,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // 如果当前 now 节点不在备选里，为防空白添加临时选项
             const aiExistInCandidates = aiCandidates.some(c => c.name === lastSelectedAiNode);
-            if (lastSelectedAiNode && !aiExistInCandidates) {
+            if (lastSelectedAiNode && lastSelectedAiNode !== 'DIRECT' && lastSelectedAiNode !== 'GLOBAL' && !aiExistInCandidates) {
                 aiCandidates.push({
                     name: lastSelectedAiNode,
                     delay: ai.delay || 0,
@@ -1216,7 +1222,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // 渲染 AI 下拉列表
             aiCandidates.forEach(cand => {
                 const itemDiv = document.createElement('div');
-                itemDiv.className = 'dropdown-item';
+                itemDiv.className = 'game-dropdown-item';
                 if (cand.name === lastSelectedAiNode) {
                     itemDiv.classList.add('selected');
                 }
@@ -1261,78 +1267,108 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             // 6. 动态渲染代理节点下拉菜单
-            elProxyDropdownListContainer.innerHTML = '';
             let lastSelectedProxyNode = proxy.now || '';
 
-            const proxyCandidates = [];
-            // 插入可用物理节点
-            const proxyPhysicalNodes = proxy.all || [];
-            proxyPhysicalNodes.forEach(node => {
-                if (node && node.name) {  // 防守性检查
+            function renderProxyDropdownList(proxyData) {
+                elProxyDropdownListContainer.innerHTML = '';
+                const proxyCandidates = [];
+                // 插入可用物理节点
+                const proxyPhysicalNodes = proxyData.all || [];
+                proxyPhysicalNodes.forEach(node => {
+                    if (node && node.name) {  // 防守性检查
+                        proxyCandidates.push({
+                            name: node.name,
+                            delay: node.delay || 0,
+                            displayName: node.name
+                        });
+                    }
+                });
+
+                // 如果当前 now 节点不在备选里，为防空白添加临时选项
+                const proxyExistInCandidates = proxyCandidates.some(c => c.name === lastSelectedProxyNode);
+                if (lastSelectedProxyNode && lastSelectedProxyNode !== 'DIRECT' && lastSelectedProxyNode !== 'GLOBAL' && !proxyExistInCandidates) {
                     proxyCandidates.push({
-                        name: node.name,
-                        delay: node.delay || 0,
-                        displayName: node.name
+                        name: lastSelectedProxyNode,
+                        delay: proxyData.delay || 0,
+                        displayName: lastSelectedProxyNode
                     });
                 }
-            });
 
-            // 如果当前 now 节点不在备选里，为防空白添加临时选项
-            const proxyExistInCandidates = proxyCandidates.some(c => c.name === lastSelectedProxyNode);
-            if (lastSelectedProxyNode && !proxyExistInCandidates) {
-                proxyCandidates.push({
-                    name: lastSelectedProxyNode,
-                    delay: proxy.delay || 0,
-                    displayName: lastSelectedProxyNode
+                // 渲染代理下拉列表
+                proxyCandidates.forEach(cand => {
+                    const itemDiv = document.createElement('div');
+                    itemDiv.className = 'game-dropdown-item';
+                    if (cand.name === lastSelectedProxyNode) {
+                        itemDiv.classList.add('selected');
+                    }
+
+                    const leftDiv = document.createElement('div');
+                    leftDiv.className = 'game-dropdown-item-left';
+
+                    if (cand.name === lastSelectedProxyNode) {
+                        leftDiv.innerHTML = `<span class="material-symbols-outlined icon-selected-check">check_circle</span>`;
+                    } else {
+                        leftDiv.innerHTML = `<span class="icon-placeholder"></span>`;
+                    }
+
+                    const nameSpan = document.createElement('span');
+                    nameSpan.className = 'game-dropdown-item-name';
+                    nameSpan.textContent = cand.displayName;
+                    leftDiv.appendChild(nameSpan);
+                    itemDiv.appendChild(leftDiv);
+
+                    // 右侧延迟元素
+                    const rightSpan = document.createElement('span');
+                    if (cand.delay > 0) {
+                        rightSpan.textContent = `${cand.delay} ms`;
+                        rightSpan.className = getDelayClass(cand.delay);
+                    } else {
+                        rightSpan.textContent = '超时';
+                        rightSpan.className = 'text-muted';
+                    }
+                    itemDiv.appendChild(rightSpan);
+
+                    // 绑定点击切换事件
+                    itemDiv.addEventListener('click', async (e) => {
+                        e.stopPropagation();
+                        if (cand.name === lastSelectedProxyNode) {
+                            closeProxyDropdown();
+                            return;
+                        }
+                        await handleProxyNodeSelect(cand.name);
+                    });
+
+                    elProxyDropdownListContainer.appendChild(itemDiv);
                 });
+
+                // 如果后端标明还有更多节点可用，在下拉框底部显示“展开全部节点...”按钮
+                if (proxyData.hasMore) {
+                    const moreDiv = document.createElement('div');
+                    moreDiv.className = 'game-dropdown-item show-more-nodes';
+                    moreDiv.style.justifyContent = 'center';
+                    moreDiv.style.color = '#ffb786';
+                    moreDiv.style.cursor = 'pointer';
+                    moreDiv.style.fontWeight = '500';
+                    moreDiv.innerHTML = '<span>展开全部节点...</span>';
+                    moreDiv.addEventListener('click', async (e) => {
+                        e.stopPropagation();
+                        moreDiv.innerHTML = '<span>正在加载全部...</span>';
+                        try {
+                            const res = await fetch('/api/nodes?all=true');
+                            if (!res.ok) throw new Error('加载失败');
+                            const data = await res.json();
+                            if (data.status === 'success' && data.proxies) {
+                                renderProxyDropdownList(data.proxies.proxy || {});
+                            }
+                        } catch (err) {
+                            moreDiv.innerHTML = '<span style="color: #ff6432;">加载失败，请重试</span>';
+                        }
+                    });
+                    elProxyDropdownListContainer.appendChild(moreDiv);
+                }
             }
 
-            // 渲染代理下拉列表
-            proxyCandidates.forEach(cand => {
-                const itemDiv = document.createElement('div');
-                itemDiv.className = 'dropdown-item';
-                if (cand.name === lastSelectedProxyNode) {
-                    itemDiv.classList.add('selected');
-                }
-
-                const leftDiv = document.createElement('div');
-                leftDiv.className = 'game-dropdown-item-left';
-
-                if (cand.name === lastSelectedProxyNode) {
-                    leftDiv.innerHTML = `<span class="material-symbols-outlined icon-selected-check">check_circle</span>`;
-                } else {
-                    leftDiv.innerHTML = `<span class="icon-placeholder"></span>`;
-                }
-
-                const nameSpan = document.createElement('span');
-                nameSpan.className = 'game-dropdown-item-name';
-                nameSpan.textContent = cand.displayName;
-                leftDiv.appendChild(nameSpan);
-                itemDiv.appendChild(leftDiv);
-
-                // 右侧延迟元素
-                const rightSpan = document.createElement('span');
-                if (cand.delay > 0) {
-                    rightSpan.textContent = `${cand.delay} ms`;
-                    rightSpan.className = getDelayClass(cand.delay);
-                } else {
-                    rightSpan.textContent = '超时';
-                    rightSpan.className = 'text-muted';
-                }
-                itemDiv.appendChild(rightSpan);
-
-                // 绑定点击切换事件
-                itemDiv.addEventListener('click', async (e) => {
-                    e.stopPropagation();
-                    if (cand.name === lastSelectedProxyNode) {
-                        closeProxyDropdown();
-                        return;
-                    }
-                    await handleProxyNodeSelect(cand.name);
-                });
-
-                elProxyDropdownListContainer.appendChild(itemDiv);
-            });
+            renderProxyDropdownList(proxy);
 
             // 显示 Modal 弹窗
             elNodeDetailModal.classList.add('active');

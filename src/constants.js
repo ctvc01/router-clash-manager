@@ -27,9 +27,9 @@ const DEVICE_CATEGORIES = {
 const ROUTER_PATHS = {
     DHCP_LEASES: '/tmp/dhcp.leases',
     MAC_WHITELIST: '/data/ShellCrash/configs/mac',
-    CLASH_CONFIG: '/data/ShellCrash/yamls/config.yaml',
+    CLASH_CONFIG: '/data/ShellCrash/config.yaml',
     CLASH_CONFIG_BACKUP: '/tmp/config.yaml.bak',
-    CRASH_CORE: '/tmp/ShellCrash/CrashCore'
+    CRASH_CORE: '/tmp/ShellCrash/mihomo'
 };
 
 const SPEEDTEST_URLS = {

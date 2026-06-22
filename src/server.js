@@ -13,6 +13,7 @@ const ConfigVersionManager = require('./services/configVersionManager');
 const ChangelogManager = require('./services/changelogManager');
 const SystemValidator = require('./services/systemValidator');
 const SshService = require('./services/sshService');
+const { ROUTER_PATHS } = require('./constants');
 
 // 1. 启动前强校验环境变量与核心凭证
 validateEnvironment();
@@ -52,6 +53,15 @@ Logger.info('Server', '✅ 配置版本管理系统已初始化');
         Logger.warn('Server', '读取代理白名单失败，将跳过代理设备规则注入', err);
     }
 
+    // 重建 iptables 规则（路由器重启后会丢失）
+    if (activeProxyDevices.length > 0) {
+        try {
+            await SshService.ensureIptablesRules();
+        } catch (iptablesErr) {
+            Logger.warn('Server', 'iptables 规则初始化失败（稍后重启 Clash 时会重试）', iptablesErr);
+        }
+    }
+
     // 如果有活跃的加速设备，启动时自动初始化规则注入
     if (activeGameDevices.length > 0 || activeAiDevices.length > 0 || activeProxyDevices.length > 0) {
         Logger.info('Daemon', `检测到当前有 ${activeProxyDevices.length} 个代理设备 + ${activeGameDevices.length} 个游戏设备 + ${activeAiDevices.length} 个 AI 设备，正在初始化规则注入...`);
@@ -86,7 +96,7 @@ Logger.info('Server', '✅ 配置版本管理系统已初始化');
     StorageCleanupService.startDailyCleanup();
 
     // 启动自动配置备份任务
-    ConfigVersionManager.startAutoBackup('/data/ShellCrash/yamls/config.yaml');
+    ConfigVersionManager.startAutoBackup(ROUTER_PATHS.CLASH_CONFIG);
     Logger.info('Server', '✅ 自动配置备份任务已启动');
 })();
 

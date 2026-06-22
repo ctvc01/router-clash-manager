@@ -21,6 +21,11 @@ services:
       - ./game_devices:/app/game_devices
       - ./ai_devices:/app/ai_devices
       - ./aliases.json:/app/aliases.json
+      # 挂载备份文件，实现开机自愈补全
+      - ./Clash:/app/clash_backup/Clash
+      - ./Country.mmdb:/app/clash_backup/Country.mmdb
+      # 持久化整个配置备份文件夹，用于灾备恢复与 Git commit 归档
+      - ./configs_backup:/app/configs_backup
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
       interval: 30s

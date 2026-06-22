@@ -36,8 +36,8 @@ router.get('/', async (req, res) => {
         const [dhcpOutput, whitelistOutput, trafficOutput] = await Promise.all([
             (async () => {
                 try {
-                    // 方案 1: 读取标准 DHCP 租约文件
-                    return await SshService.runRemoteCommand('cat /tmp/dhcp.leases 2>/dev/null || /tmp/generate_dhcp_leases.sh 2>/dev/null || cat /proc/net/arp');
+                    // 方案：从 /data 读取（持久），失败则从 /tmp 读取，再失败则从 ARP
+                    return await SshService.runRemoteCommand('cat /data/dhcp.leases 2>/dev/null || /tmp/generate_dhcp_leases.sh 2>/dev/null || cat /proc/net/arp');
                 } catch (err) {
                     Logger.warn('Devices', '读取 DHCP 数据失败，降级使用 ARP', err.message);
                     return await SshService.runRemoteCommand('cat /proc/net/arp');

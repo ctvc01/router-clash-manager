@@ -1,0 +1,34 @@
+{
+  "a0:b1:c2:d3:e4:f5": {
+    "name": "Test MacBook Pro",
+    "category": "pc"
+  },
+  "c0:84:ff:c5:da:f8": {
+    "name": "Office PC",
+    "category": "pc"
+  },
+  "68:ab:bc:78:f2:cb": {
+    "name": "NAS Device",
+    "category": "iot"
+  },
+  "ae:f6:a9:aa:1c:f0": {
+    "name": "iPhone_Cheng",
+    "category": "phone"
+  },
+  "40:44:f7:0c:bd:9e": {
+    "name": "Nintendo Switch 2",
+    "category": "game"
+  },
+  "c4:12:34:de:36:2f": {
+    "name": "iPad_Cheng",
+    "category": "tablet"
+  },
+  "cc:08:fa:9c:5b:84": {
+    "name": "Macbook Air",
+    "category": "pc"
+  },
+  "10:7c:61:0e:11:df": {
+    "name": "台式机PC",
+    "category": "pc"
+  }
+}

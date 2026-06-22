@@ -64,7 +64,8 @@ describe('Validators 单元测试', () => {
                 'cat /tmp/dhcp.leases',
                 'pidof CrashCore',
                 'ubus call trafficd hw',
-                '/etc/init.d/shellcrash status'
+                '/etc/init.d/shellcrash status',
+                'pid=$(pidof mihomo || pidof Clash); echo "PID:$pid"'
             ];
             safeCommands.forEach(cmd => {
                 expect(Validators.validateSSHCommand(cmd)).toBe(cmd);

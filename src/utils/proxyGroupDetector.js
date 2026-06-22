@@ -3,6 +3,7 @@ const Logger = require('../utils/logger');
 class ProxyGroupDetector {
     // 候选代理组名称（按优先级排序）
     static PROXY_GROUP_CANDIDATES = [
+        '🚀 选择节点',
         '🚀 节点选择',
         '🌍 选择代理',
         'GLOBAL',

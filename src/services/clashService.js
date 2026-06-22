@@ -2,6 +2,11 @@ const axios = require('axios');
 const { config } = require('../config');
 const Logger = require('../utils/logger');
 
+let cachedProxies = null;
+let lastProxiesFetchTime = 0;
+let pendingProxiesPromise = null;
+const PROXIES_CACHE_TTL = 10000; // 10秒缓存
+
 class ClashService {
     // 获取 Clash (Mihomo) HTTP 客户端实例
     static _getClient(timeoutMs = 5000) {
@@ -43,13 +48,38 @@ class ClashService {
         throw new Error(`获取配置失败，API 返回状态码: ${res.status}`);
     }
 
-    // 获取所有代理节点信息
+    // 获取所有代理节点信息 (带有 10 秒防抖和合并请求缓存，防止路由器 OOM)
     static async getProxies(timeoutMs = 5000) {
-        const res = await this._request('GET', '/proxies', null, timeoutMs);
-        if (res.status === 200) {
-            return res.data;
+        const now = Date.now();
+        if (cachedProxies && (now - lastProxiesFetchTime < PROXIES_CACHE_TTL)) {
+            return cachedProxies;
         }
-        throw new Error(`获取代理节点失败，API 返回状态码: ${res.status}`);
+        if (pendingProxiesPromise) {
+            return pendingProxiesPromise;
+        }
+
+        pendingProxiesPromise = (async () => {
+            try {
+                const res = await this._request('GET', '/proxies', null, timeoutMs);
+                if (res.status === 200) {
+                    cachedProxies = res.data;
+                    lastProxiesFetchTime = Date.now();
+                    return cachedProxies;
+                }
+                throw new Error(`获取代理节点失败，API 返回状态码: ${res.status}`);
+            } finally {
+                pendingProxiesPromise = null;
+            }
+        })();
+
+        return pendingProxiesPromise;
+    }
+
+    // 清除代理信息缓存
+    static clearProxiesCache() {
+        cachedProxies = null;
+        lastProxiesFetchTime = 0;
+        Logger.info('ClashAPI', '已清除节点 proxies 缓存');
     }
 
     // 测试单个节点延迟
@@ -80,6 +110,7 @@ class ClashService {
     // 轮询等待 Clash 核心就绪 (1053/9999 端口恢复响应)
     static async waitClashReady(maxAttempts = 15) {
         Logger.info('ClashAPI', '开始轮询等待 Clash 核心就绪...');
+        this.clearProxiesCache(); // 强制清理旧的节点缓存
         for (let i = 0; i < maxAttempts; i++) {
             try {
                 const data = await this.getVersion(800);

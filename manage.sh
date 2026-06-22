@@ -186,6 +186,41 @@ action_menu() {
     expect "${SCRIPT_DIR}/run_interactive.exp"
 }
 
+# 动作：备份配置 (NAS 和 路由器)
+action_backup() {
+    echo -e "${C_BLUE}[*] 正在创建本地备份目录 configs_backup/...${C_RESET}"
+    mkdir -p configs_backup/router configs_backup/nas
+
+    # 1. 探测内网或外网 SSH 连通性
+    local nas_host="192.168.31.66"
+    local local_ip="192.168.31.66"
+    local domain_host="dev.jinjitu.com"
+
+    echo -e "${C_CYAN}[*] 正在探测 NAS 连通性...${C_RESET}"
+    # 使用 curl 检测内网 HTTP 端口是否响应，比 nc 检测 22 握手在外部防火墙下更为精准可靠
+    if curl -s -o /dev/null --connect-timeout 2 "http://${local_ip}:3000/health"; then
+        nas_host="${local_ip}"
+        echo -e "${C_GREEN}● [LAN] 探测成功，正在使用局域网直连 IP: ${nas_host}${C_RESET}"
+    else
+        nas_host="${domain_host}"
+        echo -e "${C_YELLOW}● [WAN] 局域网不可达，正在使用外网域名映射: ${nas_host}${C_RESET}"
+    fi
+
+    # 2. 从 NAS 通过 rsync 协议拉取最新的 configs_backup 镜像
+    echo -e "${C_BLUE}[*] 正在从 ${nas_host} 同步备份数据包...${C_RESET}"
+    
+    rsync -avz --delete \
+        -e "ssh -o StrictHostKeyChecking=no" \
+        ctpdrqm@${nas_host}:/vol1/1000/router-clash-manager/configs_backup/ ./configs_backup/
+        
+    if [ $? -eq 0 ]; then
+        echo -e "\n${C_BOLD}${C_GREEN}✔ 所有备份同步已完成！备份文件保存在 configs_backup/ 目录下，可直接进行 Git 存档。${C_RESET}\n"
+    else
+        echo -e "${C_RED}❌ [ERROR] 同步备份数据包失败，请检查网络或 SSH 凭证。${C_RESET}"
+        return 1
+    fi
+}
+
 # 动作：帮助文档
 show_help() {
     print_banner
@@ -200,6 +235,7 @@ show_help() {
     echo -e "  ${C_GREEN}proxies${C_RESET}    - 列出当前所有代理策略组的节点选择状态"
     echo -e "  ${C_GREEN}logs${C_RESET}       - 实时流式监控和查看 Clash 的请求分流日志 (彩色)"
     echo -e "  ${C_GREEN}menu${C_RESET}       - 登录路由器直接运行 ShellCrash 原生交互菜单"
+    echo -e "  ${C_GREEN}backup${C_RESET}     - 备份路由器和 NAS 端当前的全部配置文件到 configs_backup/"
     echo -e "  ${C_GREEN}help${C_RESET}       - 显示本帮助文档"
     echo ""
 }
@@ -236,6 +272,10 @@ case "$1" in
         ;;
     menu)
         action_menu
+        ;;
+    backup)
+        print_banner
+        action_backup
         ;;
     help|*)
         show_help

@@ -71,6 +71,10 @@ game_devices
 ai_devices
 aliases.json
 
+# 允许追踪本地备份目录 configs_backup/ 里的配置文件，避免被上方规则阻断
+!configs_backup/
+!configs_backup/**
+
 # 忽略 Figma 节点抓取的本地数据与临时文件
 figma_nodes.json
 figma_nodes.md
@@ -85,3 +89,7 @@ deploy.sh
 .env.deploy.local
 DEPLOYMENT.md
 .memory_bank/
+
+# --- Clash Binaries & DB backups ---
+Clash
+Country.mmdb

@@ -91,7 +91,7 @@ class SystemValidator {
     // 验证代理白名单
     static async validateProxyWhitelist(dhcpLeases) {
         try {
-            const whitelistOutput = await SshService.runRemoteCommand('cat /data/ShellCrash/configs/mac');
+            const whitelistOutput = await SshService.runRemoteCommand('cat /data/ShellCrash/configs/mac').catch(() => '');
             const proxyMacs = whitelistOutput
                 .split('\n')
                 .map(line => line.trim().toLowerCase())
@@ -120,29 +120,23 @@ class SystemValidator {
     // 验证Clash配置中的规则注入
     static async validateClashConfiguration() {
         try {
-            const config = await SshService.runRemoteCommand('cat /data/ShellCrash/yamls/config.yaml');
+            const { ROUTER_PATHS } = require('../constants');
+            const config = await SshService.runRemoteCommand(`cat ${ROUTER_PATHS.CLASH_CONFIG}`);
 
-            const hasProxyRules = config.includes('# === PROXY WHITELIST START ===');
-            const hasGameRules = config.includes('# === GAME ACC START ===');
-            const hasAiRules = config.includes('# === AI ACC START ===');
+            const hasAiRules = config.includes('# === AI RULES START ===');
 
             const gameDevices = GameAccService.readGameDevices();
             const aiDevices = AiBoostService.readAiDevices();
 
             // 检查白名单
-            const whitelistOutput = await SshService.runRemoteCommand('cat /data/ShellCrash/configs/mac');
-            const proxyCount = whitelistOutput.split('\n').filter(l => l.trim().length > 0).length;
+            const whitelistOutput = await SshService.runRemoteCommand('cat /data/ShellCrash/configs/mac').catch(() => '');
+            const proxyMacs = whitelistOutput
+                .split('\n')
+                .map(line => line.trim().toLowerCase())
+                .filter(line => line.length > 0);
 
             // 验证规则匹配
             const issues = [];
-
-            if (proxyCount > 0 && !hasProxyRules) {
-                issues.push(`代理白名单有${proxyCount}个设备，但规则未注入`);
-            }
-
-            if (gameDevices.length > 0 && !hasGameRules) {
-                issues.push(`游戏加速有${gameDevices.length}个设备，但规则未注入`);
-            }
 
             if (aiDevices.length > 0 && !hasAiRules) {
                 issues.push(`AI强化有${aiDevices.length}个设备，但规则未注入`);
@@ -153,17 +147,11 @@ class SystemValidator {
                 Logger.warn('Validator', '正在触发规则重新注入...');
 
                 // 触发规则重新注入
-                const dhcpLeases = await this.getDhcpLeases();
-                const proxyMacs = whitelistOutput
-                    .split('\n')
-                    .map(line => line.trim().toLowerCase())
-                    .filter(line => line.length > 0);
-
                 await RulesEngine.updateClashRules(gameDevices, aiDevices, proxyMacs);
                 Logger.info('Validator', '✓ 规则已重新注入');
             } else {
                 const rulesSummary = [
-                    proxyCount > 0 && `代理${proxyCount}个`,
+                    proxyMacs.length > 0 && `代理${proxyMacs.length}个`,
                     gameDevices.length > 0 && `游戏${gameDevices.length}个`,
                     aiDevices.length > 0 && `AI${aiDevices.length}个`
                 ].filter(Boolean).join(', ') || '无';

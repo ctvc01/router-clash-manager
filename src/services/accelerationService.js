@@ -26,12 +26,8 @@ class AccelerationService {
             Logger.info(label, `开启${modeName}：由于设备 ${mac} 原本在${otherModeName}模式，已自动将其从中移除。`);
         }
 
-        if (!macs.includes(mac)) {
-            macs.push(mac);
-            service.writeAccelerationDevices?.(macs) || service.writeGameDevices?.(macs) || service.writeAiDevices(macs);
-        }
-
-        // 1. 写入 MAC 白名单
+        // 检查是否需要重启 Clash（只在 MAC 白名单变化时）
+        let needsRestart = false;
         const whitelistOutput = await SshService.runRemoteCommand('cat /data/ShellCrash/configs/mac');
         const whitelistMacs = whitelistOutput
             .split('\n')
@@ -40,20 +36,34 @@ class AccelerationService {
 
         if (!whitelistMacs.includes(mac)) {
             await SshService.runRemoteCommand(`echo "${mac}" >> /data/ShellCrash/configs/mac`);
-            await SshService.restartShellCrashSecurely();
-            Logger.info(label, `已将设备 ${mac} 物理写入 MAC 白名单并重启 ShellCrash！`);
-            const isReady = await ClashService.waitClashReady(20);
-            if (!isReady) {
-                Logger.warn(label, 'Clash 核心在 20s 内未就绪，规则注入可能受影响');
-            }
+            needsRestart = true;
+            Logger.info(label, `已将设备 ${mac} 写入 MAC 白名单`);
         }
 
-        // 2. 更新规则
-        const gameMacs = GameAccService.readGameDevices();
-        const aiMacs = AiBoostService.readAiDevices();
+        // 内存中添加新设备供 RulesEngine 使用（先不写 file）
+        if (!macs.includes(mac)) {
+            macs.push(mac);
+        }
+
+        // 无条件重建/恢复路由器的 iptables 规则以防止其因防火墙重启等原因而失效
+        try {
+            await SshService.runRemoteCommand('sh /data/ShellCrash/setup_iptables.sh');
+            Logger.info(label, '已执行 setup_iptables.sh 重建路由器 MAC 劫持规则');
+        } catch (e) {
+            Logger.warn(label, '更新防火墙规则失败', e.message);
+        }
+
+        // Read game+ai devices for RulesEngine
+        let gameMacs = GameAccService.readGameDevices();
+        let aiMacs = AiBoostService.readAiDevices();
+        if (!aiMacs.includes(mac) && type === 'ai') aiMacs = [...aiMacs, mac];
+        if (!gameMacs.includes(mac) && type === 'game') gameMacs = [...gameMacs, mac];
         await RulesEngine.updateClashRules(gameMacs, aiMacs);
 
-        // 3. 异步测速锁定
+        // RulesEngine 成功后再持久化到文件
+        service.writeAccelerationDevices?.(macs) || service.writeGameDevices?.(macs) || service.writeAiDevices(macs);
+
+        // 异步测速锁定
         this._startAsyncSpeedtest(mac, type, isGame ? 'game' : 'ai');
 
         // 清理互斥的守护进程
@@ -78,30 +88,32 @@ class AccelerationService {
             service.writeAccelerationDevices?.(macs) || service.writeGameDevices?.(macs) || service.writeAiDevices(macs);
         }
 
-        // 1. 更新规则（移除该设备）
+        // 更新规则（先更新，再判断是否需要清理白名单）
         const gameMacs = GameAccService.readGameDevices();
         const aiMacs = AiBoostService.readAiDevices();
         await RulesEngine.updateClashRules(gameMacs, aiMacs);
 
-        // 2. 清除 MAC 白名单
-        const whitelistOutput = await SshService.runRemoteCommand('cat /data/ShellCrash/configs/mac');
-        const whitelistMacs = whitelistOutput
-            .split('\n')
-            .map(line => line.trim().toLowerCase())
-            .filter(line => line.length > 0);
+        // 检查是否需要从白名单移除（只有 game/ai 都不包含该 MAC 时才移除）
+        if (!gameMacs.includes(mac) && !aiMacs.includes(mac)) {
+            const whitelistOutput = await SshService.runRemoteCommand('cat /data/ShellCrash/configs/mac');
+            const whitelistMacs = whitelistOutput
+                .split('\n')
+                .map(line => line.trim().toLowerCase())
+                .filter(line => line.length > 0);
 
-        if (whitelistMacs.includes(mac)) {
-            const updatedMacs = whitelistMacs.filter(m => m !== mac);
-            if (updatedMacs.length === 0) {
-                await SshService.runRemoteCommand('true > /data/ShellCrash/configs/mac');
-            } else {
-                await SshService.runRemoteCommand(`printf "${updatedMacs.join('\\n')}\\n" > /data/ShellCrash/configs/mac`);
+            if (whitelistMacs.includes(mac)) {
+                const updatedMacs = whitelistMacs.filter(m => m !== mac);
+                if (updatedMacs.length === 0) {
+                    await SshService.runRemoteCommand('true > /data/ShellCrash/configs/mac');
+                } else {
+                    await SshService.runRemoteCommand(`printf "${updatedMacs.join('\\n')}\\n" > /data/ShellCrash/configs/mac`);
+                }
+                await SshService.restartShellCrashSecurely();
+                Logger.info(label, `已从路由物理 MAC 白名单清除设备 ${mac} 并重启 ShellCrash！`);
             }
-            await SshService.restartShellCrashSecurely();
-            Logger.info(label, `已从路由物理 MAC 白名单清除设备 ${mac} 并重启 ShellCrash！`);
         }
 
-        // 3. 停止守护进程
+        // 停止守护进程
         const remainingMacs = service.readAccelerationDevices?.() || service.readGameDevices?.() || service.readAiDevices();
         if (remainingMacs.length === 0) {
             service.stopAccelerationMonitor?.() || (isGame ? GameAccService.stopGameAccMonitor() : AiBoostService.stopAiBoostMonitor());

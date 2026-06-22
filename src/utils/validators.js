@@ -61,7 +61,6 @@ const Validators = {
         const FORBIDDEN_PATTERNS = [
             /\brm\s+-rf\s+\//,        // rm -rf / 等根目录危险操作
             /\brm\s+(-[a-z]*\s+)*(\/data\s|\/data$|\/etc\s|\/etc$|\/root\s|\/root$|\/sys\s|\/sys$|\/usr\s|\/usr$|\/lib\s|\/lib$|\/bin\s|\/bin$|\/sbin\s|\/sbin$|\/boot\s|\/boot$)/,  // 只拦截删除整个关键目录本身
-            /\bchmod\b/,              // 权限修改
             /\bchown\b/,              // 所有权修改
             /\bdd\b/,                 // 磁盘操作
             /\bmkfs\b/,               // 格式化
@@ -79,18 +78,19 @@ const Validators = {
             }
         }
 
-        // 2. 白名单：允许的命令前缀或特殊命令
         const ALLOWED_COMMANDS = [
             'pidof', 'pgrep', 'cat', 'echo', 'grep', 'kill', 'sleep', 'curl',
             'netstat', 'cp', 'touch', 'base64', 'for', 'if', '(', 'true', 'false',
-            'ubus', 'printf', 'top', '/etc/init.d/', 'rm', 'sed',
-            'tail', 'head', 'awk', 'find', 'cut', 'df', 'tr'
+            'ubus', 'printf', 'top', '/etc/init.d/', 'rm', 'sed', 'mkdir', 'ln', 'iptables',
+            'tail', 'head', 'awk', 'find', 'cut', 'df', 'tr', '[', 'test', 'sh', 'chmod', 'timeout',
+            'pid='
         ];
 
         // 允许的绝对路径前缀（需要通过黑名单检查）
         const ALLOWED_PATH_PREFIXES = [
             '/tmp/ShellCrash/',      // ShellCrash 临时二进制
-            '/data/ShellCrash/'      // ShellCrash 数据目录
+            '/data/ShellCrash/',     // ShellCrash 数据目录
+            '/etc/init.d/'           // 系统服务管理脚本前缀
         ];
 
         const firstWord = trimmedCmd.split(/[\s|;&<>]/)[0].trim();

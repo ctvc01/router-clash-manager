@@ -68,7 +68,7 @@ class ProxyHealthService {
             }
 
             // 1. 检查 Clash Core 进程（支持多种进程名）
-            const pidOutput = await SshService.runRemoteCommand('pidof CrashCore || pidof crashcore || pidof Clash || pgrep -f "CrashCore|crashcore" || true');
+            const pidOutput = await SshService.runRemoteCommand('pidof mihomo || pidof Clash || pidof CrashCore || pgrep -x mihomo || pgrep -x Clash || pgrep -x CrashCore');
             const isProcessRunning = pidOutput.trim().length > 0 && !pidOutput.includes('Error');
 
             if (!isProcessRunning) {
@@ -98,15 +98,45 @@ class ProxyHealthService {
             // 3. 检查海外代理链路可用性
             const isProxyWorking = await this.testProxyConnectivity(config.ports.proxy, 'http://cp.cloudflare.com/generate_204', 4000);
             if (!isProxyWorking) {
-                Logger.warn('ProxyDaemon', '⚠️ 检测到网页代理链路超时阻断！已触发机场节点重新并发测速以引导自动节点漂移自愈...');
+                Logger.warn('ProxyDaemon', '⚠️ 检测到网页代理链路超时阻断！启动高并发自愈测速...');
+                
+                // 1) 优先方案：高并发测速 ⚡ 最快线路 的前 15 个物理核心节点，驱动自动漂移自愈
+                try {
+                    const testGroupName = '⚡ 最快线路';
+                    const proxiesData = await ClashService.getProxies();
+                    const groupInfo = proxiesData && proxiesData.proxies ? proxiesData.proxies[testGroupName] : null;
+                    
+                    if (groupInfo && groupInfo.all && groupInfo.all.length > 0) {
+                        // 挑选出前 15 个主要高质节点进行刷新
+                        const targetNodes = groupInfo.all.slice(0, 15);
+                        Logger.info('ProxyDaemon', `已自动识别到 [${testGroupName}] 下的 ${targetNodes.length} 个核心节点，开始并发测速...`);
+                        
+                        // 发起并发延迟更新（不阻塞心跳线程）
+                        Promise.all(targetNodes.map(node => 
+                            ClashService.testNodeDelay(node, 4000, 'http://www.gstatic.com/generate_204')
+                                .then(delay => {
+                                    Logger.debug('ProxyDaemon', `  节点 [${node}] 测速就绪: ${delay}ms`);
+                                    return { node, delay };
+                                })
+                                .catch(() => ({ node, delay: 0 }))
+                        )).then(results => {
+                            const activeCount = results.filter(r => r.delay > 0).length;
+                            Logger.info('ProxyDaemon', `🎉 网页代理核心测速自愈并发完成，已成功激活并更新了 ${activeCount} 个可用节点的延迟历史！`);
+                        });
+                    }
+                } catch (gErr) {
+                    Logger.error('ProxyDaemon', '并发最快线路自愈测速失败，转向后备方案', gErr);
+                }
+
+                // 2) 后备方案：触发原有的 provider 重测自愈（如 caomei1 等）
                 let providerName = 'caomei1';
                 try {
-                    const providerOutput = await SshService.runRemoteCommand("grep -A 1 'proxy-providers:' /data/ShellCrash/yamls/config.yaml | tail -n 1 | cut -d: -f1 | tr -d ' '");
+                    const providerOutput = await SshService.runRemoteCommand("grep -A 1 'proxy-providers:' /data/ShellCrash/config.yaml | tail -n 1 | cut -d: -f1 | tr -d ' '");
                     if (providerOutput && providerOutput.trim().length > 0 && !providerOutput.includes('Error')) {
                         providerName = providerOutput.trim();
                     }
                 } catch (pErr) {
-                    Logger.warn('ProxyDaemon', '自愈程序获取 proxy-provider 失败，使用 caomei1', pErr);
+                    // 忽略
                 }
                 await this.triggerProviderHealthCheck(providerName);
                 consecutiveFailures = 0;
@@ -115,8 +145,7 @@ class ProxyHealthService {
                 Logger.debug('ProxyDaemon', '✅ 全部检测通过');
             }
         } catch (err) {
-            Logger.error('ProxyDaemon', '自愈守护进程心跳检测发生异常', err);
-            consecutiveFailures++;
+            Logger.error('ProxyDaemon', '自愈守护进程心跳检测发生异常（不计入进程故障次数，避免网络瞬间闪断引发误重启）', err);
         }
     }
 

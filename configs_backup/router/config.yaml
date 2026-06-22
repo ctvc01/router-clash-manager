@@ -1,0 +1,1433 @@
+#---------------------------------------------------#
+## 更新时间：2026-06-22 01:30:31
+## 链接地址：
+#---------------------------------------------------#
+
+# Mixed-port 代理端口
+mixed-port: 7890 
+
+# Linux 和 macOS 的 redir 代理端口
+redir-port: 7892 
+
+# 允许局域网的连接
+allow-lan: true
+
+ipv6: true
+
+# 规则模式：Rule（规则） / Global（全局代理）/ Direct（全局直连）
+mode: Rule
+
+# 设置日志输出级别 (默认级别：silent，即不输出任何内容，以避免因日志内容过大而导致程序内存溢出）。
+# 5 个级别：silent / info / warning / error / debug。级别越高日志输出量越大，越倾向于调试，若需要请自行开启。
+log-level: silent
+# Clash 的 RESTful API
+external-controller: '0.0.0.0:9999'
+
+# RESTful API 的口令
+secret: '' 
+
+# 您可以将静态网页资源（如 clash-dashboard）放置在一个目录中，clash 将会服务于 `RESTful API/ui`
+# 参数应填写配置目录的相对路径或绝对路径。
+# external-ui: folder
+
+profile:
+  store-selected: true                                                  # 保存选择  记住上次选择的节点和策略组
+  store-fake-ip: true                                                   # 保存映射  Fake-IP 映射以加快 DNS 命中
+
+# 嗅探功能
+sniffer:
+  enable: true                                                          # 启用嗅探  提升分流准确性
+  override-destination: true                                            # 成功解析  使用嗅探到的域名覆盖原始目标地址
+  parse-pure-ip: true                                                   # 反向解析  解析纯 IP 连接（尝试反向解析获得域名）
+  force-dns-mapping: true                                               # 强制映射  DNS 映射（对纯 IP 连接尝试 DNS 映射）
+  sniff:
+    QUIC:
+      ports: [443]                                                      # 嗅探参数  QUIC 协议流量（HTTP/3 常用端口）
+    TLS:
+      ports: [443, 8443]                                                # 嗅探参数  HTTPS（TLS）常用及备用端口
+    HTTP:
+      ports: [80, 8080-8880]                                            # 嗅探参数  HTTP 及常见 Web / 代理端口段
+      override-destination: true                                        # 嗅探成功  HTTP 嗅探成功后覆盖目标地址
+  force-domain:
+    - "+.netflix.com"                                                   # 强制嗅探  Netflix 主域名
+    - "+.nflxvideo.net"                                                 # 强制嗅探  Netflix CDN
+    - "+.amazonaws.com"                                                 # 强制嗅探  AWS 云服务
+    - "+.media.dssott.com"                                              # 强制嗅探  Disney+ 流媒体
+  skip-domain:
+    - "+.apple.com"                                                     # 跳过嗅探  苹果服务
+    - Mijia Cloud                                                       # 跳过嗅探  米家云服务
+    - dlg.io.mi.com                                                     # 跳过嗅探  小米设备通信
+    - "+.oray.com"                                                      # 跳过嗅探  花生壳服务
+    - "+.sunlogin.net"                                                  # 跳过嗅探  向日葵远程控制
+    - "+.push.apple.com"                                                # 跳过嗅探  苹果推送服务
+
+# TUN配置
+tun:
+  enable: true                                                          # 网卡模式  是否启用 TUN 虚拟网卡模式  
+  stack: system                                                         # 协议类型  网络栈：system（系统栈）/ gvisor（内置用户态栈）/ mixed（混合）
+  dns-hijack: [0.0.0.0:53]                                              # 劫持请求  劫持所有 UDP/TCP 53 端口的 DNS 请求
+  auto-detect-interface: true                                           # 自动出口  自动识别默认出口网络接口 （仅内核模式有效）
+  auto-route: true                                                      # 自动路由  自动添加系统路由表      （仅内核模式有效）
+  auto-redirect: true                                                   # 自动定向  自动将流量重定向至 TUN  （仅内核模式有效）
+  strict-route: false                                                   # 路由模式  严格路由模式
+  endpoint-independent-nat: true                                        # 端点无关  NAT（提高 NAT 类型兼容性，适用于 P2P 和游戏）
+
+dns:
+  enable: true
+  ipv6: true
+  use-system-hosts: false
+  listen: 0.0.0.0:53
+  enhanced-mode: fake-ip
+  fake-ip-range: 198.18.0.1/16
+  fake-ip-filter:
+    - "*.lan"
+    - "stun.*.*.*"
+    - "stun.*.*"
+    - "time.windows.com"
+    - "time.nist.gov"
+    - "time.apple.com"
+    - "time.asia.apple.com"
+    - "*.ntp.org.cn"
+    - "*.openwrt.pool.ntp.org"
+    - "time1.cloud.tencent.com"
+    - "time.ustc.edu.cn"
+    - "pool.ntp.org"
+    - "ntp.ubuntu.com"
+    - "ntp.aliyun.com"
+    - "ntp1.aliyun.com"
+    - "ntp2.aliyun.com"
+    - "ntp3.aliyun.com"
+    - "ntp4.aliyun.com"
+    - "ntp5.aliyun.com"
+    - "ntp6.aliyun.com"
+    - "ntp7.aliyun.com"
+    - "time1.aliyun.com"
+    - "time2.aliyun.com"
+    - "time3.aliyun.com"
+    - "time4.aliyun.com"
+    - "time5.aliyun.com"
+    - "time6.aliyun.com"
+    - "time7.aliyun.com"
+    - "*.time.edu.cn"
+    - "time1.apple.com"
+    - "time2.apple.com"
+    - "time3.apple.com"
+    - "time4.apple.com"
+    - "time5.apple.com"
+    - "time6.apple.com"
+    - "time7.apple.com"
+    - "time1.google.com"
+    - "time2.google.com"
+    - "time3.google.com"
+    - "time4.google.com"
+    - "music.163.com"
+    - "*.music.163.com"
+    - "*.126.net"
+    - "musicapi.taihe.com"
+    - "music.taihe.com"
+    - "songsearch.kugou.com"
+    - "trackercdn.kugou.com"
+    - "*.kuwo.cn"
+    - "api-jooxtt.sanook.com"
+    - "api.joox.com"
+    - "joox.com"
+    - "y.qq.com"
+    - "*.y.qq.com"
+    - "streamoc.music.tc.qq.com"
+    - "mobileoc.music.tc.qq.com"
+    - "isure.stream.qqmusic.qq.com"
+    - "dl.stream.qqmusic.qq.com"
+    - "aqqmusic.tc.qq.com"
+    - "amobile.music.tc.qq.com"
+    - "*.xiami.com"
+    - "*.music.migu.cn"
+    - "music.migu.cn"
+    - "*.msftconnecttest.com"
+    - "*.msftncsi.com"
+    - "localhost.ptlogin2.qq.com"
+    - "*.*.*.srv.nintendo.net"
+    - "*.*.stun.playstation.net"
+    - "xbox.*.*.microsoft.com"
+    - "*.ipv6.microsoft.com"
+    - "*.*.xboxlive.com"
+    - "speedtest.cros.wr.pvp.net"
+    - "rule-set:cn_domain"
+  default-nameserver:
+    - system
+    - 180.76.76.76
+    - 182.254.118.118
+    - 8.8.8.8
+    - 180.184.2.2
+    - 223.5.5.5
+    - '2400:3200::1'
+  nameserver:
+    - https://223.5.5.5/dns-query#skip-cert-verify=true
+    - https://doh.pub/dns-query#skip-cert-verify=true
+    - https://dns.alidns.com/dns-query#skip-cert-verify=true
+    - tls://223.5.5.5#skip-cert-verify=true
+    - tls://dot.pub#skip-cert-verify=true
+    - tls://dns.alidns.com#skip-cert-verify=true
+    - https://223.6.6.6/dns-query#skip-cert-verify=true&h3=true
+    - https://cloudflare-dns.com/dns-query#skip-cert-verify=true
+  proxy-server-nameserver:
+    - https://223.5.5.5/dns-query#skip-cert-verify=true
+    - https://doh.pub/dns-query#skip-cert-verify=true
+    - https://dns.alidns.com/dns-query#skip-cert-verify=true
+  fallback-filter:
+    geoip: true
+    ipcidr:
+      - 240.0.0.0/4
+      - 0.0.0.0/32
+      - 127.0.0.1/32
+    domain:
+      - "+.google.com"
+      - "+.facebook.com"
+      - "+.twitter.com"
+      - "+.youtube.com"
+      - "+.xn--ngstr-lra8j.com"
+      - "+.google.cn"
+      - "+.googleapis.cn"
+      - "+.googleapis.com"
+      - "+.gvt1.com"
+
+proxies:
+  - {"name":"🇸🇬 IPLC-gRPC｜AI-Prime [1.0]","type":"trojan","server":"gtm-6wr2p27i310-ng.gocmydns.com","port":764,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇭🇰 IPLC-gRPC｜HongKong [1.0][家寬][Gemini]","type":"trojan","server":"gtm-6wr2p27i310-ng.gocmydns.com","port":768,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇯🇵 IPLC-gRPC｜Japan [1.0][原生]","type":"trojan","server":"gtm-6wr2p27i310-ng.gocmydns.com","port":769,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇯🇵 IPLC-gRPC｜JP Game&Media [1.0][家寬][限速]","type":"trojan","server":"gtm-6wr2p27i310-ng.gocmydns.com","port":762,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇰🇷 IPLC-gRPC｜Korea [1.0][原生]","type":"trojan","server":"gtm-6wr2p27i310-ng.gocmydns.com","port":763,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇸🇬 IPLC-gRPC｜Singapore [1.0][原生]","type":"trojan","server":"gtm-6wr2p27i310-ng.gocmydns.com","port":764,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇼🇸 IPLC-gRPC｜Taiwan [1.0][家寬]","type":"trojan","server":"gtm-6wr2p27i310-ng.gocmydns.com","port":767,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇺🇸 IPLC-gRPC｜USA [1.0][原生]","type":"trojan","server":"gtm-6wr2p27i310-ng.gocmydns.com","port":766,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇸🇬 IPLC｜AI-Prime [A-2.0][GPT]","type":"ssr","server":"gtm-6wr2p27i307-am.gocmydns.com","port":764,"cipher":"rc4-md5","password":"caomeijump.com","protocol":"auth_aes128_md5","protocolparam":"45776:4e54ee82-5f14-3efe-a0d8-71bcfa1da4fa","protocol-param":"45776:4e54ee82-5f14-3efe-a0d8-71bcfa1da4fa","obfs":"http_simple","obfsparam":"ajax.microsoft.com","obfs-param":"ajax.microsoft.com","udp":true}
+  - {"name":"🇭🇰 IPLC｜HongKong [A-2.0][家寬][Gemini]","type":"ssr","server":"gtm-6wr2p27i307-am.gocmydns.com","port":768,"cipher":"rc4-md5","password":"caomeijump.com","protocol":"auth_aes128_md5","protocolparam":"45776:4e54ee82-5f14-3efe-a0d8-71bcfa1da4fa","protocol-param":"45776:4e54ee82-5f14-3efe-a0d8-71bcfa1da4fa","obfs":"http_simple","obfsparam":"ajax.microsoft.com","obfs-param":"ajax.microsoft.com","udp":true}
+  - {"name":"🇯🇵 IPLC｜Japan [A-2.0][原生]","type":"ssr","server":"gtm-6wr2p27i307-am.gocmydns.com","port":769,"cipher":"rc4-md5","password":"caomeijump.com","protocol":"auth_aes128_md5","protocolparam":"45776:4e54ee82-5f14-3efe-a0d8-71bcfa1da4fa","protocol-param":"45776:4e54ee82-5f14-3efe-a0d8-71bcfa1da4fa","obfs":"http_simple","obfsparam":"ajax.microsoft.com","obfs-param":"ajax.microsoft.com","udp":true}
+  - {"name":"🇯🇵 IPLC｜JP Game&Media [A-4.0][家寬][限速]","type":"ssr","server":"gtm-6wr2p27i307-am.gocmydns.com","port":762,"cipher":"rc4-md5","password":"caomeijump.com","protocol":"auth_aes128_md5","protocolparam":"45776:4e54ee82-5f14-3efe-a0d8-71bcfa1da4fa","protocol-param":"45776:4e54ee82-5f14-3efe-a0d8-71bcfa1da4fa","obfs":"http_simple","obfsparam":"ajax.microsoft.com","obfs-param":"ajax.microsoft.com","udp":true}
+  - {"name":"🇰🇷 IPLC｜Korea [A-2.0]","type":"ssr","server":"gtm-6wr2p27i307-am.gocmydns.com","port":763,"cipher":"rc4-md5","password":"caomeijump.com","protocol":"auth_aes128_md5","protocolparam":"45776:4e54ee82-5f14-3efe-a0d8-71bcfa1da4fa","protocol-param":"45776:4e54ee82-5f14-3efe-a0d8-71bcfa1da4fa","obfs":"http_simple","obfsparam":"ajax.microsoft.com","obfs-param":"ajax.microsoft.com","udp":true}
+  - {"name":"🇸🇬 IPLC｜Singapore [A-2.0][原生]","type":"ssr","server":"gtm-6wr2p27i307-am.gocmydns.com","port":764,"cipher":"rc4-md5","password":"caomeijump.com","protocol":"auth_aes128_md5","protocolparam":"45776:4e54ee82-5f14-3efe-a0d8-71bcfa1da4fa","protocol-param":"45776:4e54ee82-5f14-3efe-a0d8-71bcfa1da4fa","obfs":"http_simple","obfsparam":"ajax.microsoft.com","obfs-param":"ajax.microsoft.com","udp":true}
+  - {"name":"🇼🇸 IPLC｜Taiwan [A-2.0][家寬]","type":"ssr","server":"gtm-6wr2p27i307-am.gocmydns.com","port":767,"cipher":"rc4-md5","password":"caomeijump.com","protocol":"auth_aes128_md5","protocolparam":"45776:4e54ee82-5f14-3efe-a0d8-71bcfa1da4fa","protocol-param":"45776:4e54ee82-5f14-3efe-a0d8-71bcfa1da4fa","obfs":"http_simple","obfsparam":"ajax.microsoft.com","obfs-param":"ajax.microsoft.com","udp":true}
+  - {"name":"🇺🇸 IPLC｜US-Home [A-5.0][家寬][限速]","type":"ssr","server":"gtm-6wr2p27i307-am.gocmydns.com","port":760,"cipher":"rc4-md5","password":"caomeijump.com","protocol":"auth_aes128_md5","protocolparam":"45776:4e54ee82-5f14-3efe-a0d8-71bcfa1da4fa","protocol-param":"45776:4e54ee82-5f14-3efe-a0d8-71bcfa1da4fa","obfs":"http_simple","obfsparam":"ajax.microsoft.com","obfs-param":"ajax.microsoft.com","udp":true}
+  - {"name":"🇺🇸 IPLC｜USA [A-2.0][原生]","type":"ssr","server":"gtm-6wr2p27i307-am.gocmydns.com","port":766,"cipher":"rc4-md5","password":"caomeijump.com","protocol":"auth_aes128_md5","protocolparam":"45776:4e54ee82-5f14-3efe-a0d8-71bcfa1da4fa","protocol-param":"45776:4e54ee82-5f14-3efe-a0d8-71bcfa1da4fa","obfs":"http_simple","obfsparam":"ajax.microsoft.com","obfs-param":"ajax.microsoft.com","udp":true}
+  - {"name":"🇷🇺 特殊｜俄羅斯-A [0.5][gRPC]","type":"trojan","server":"kaizen-ru-1.gocmydns.com","port":668,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇷🇺 特殊｜俄羅斯-B [0.5][gRPC]","type":"trojan","server":"kaizen-ru-2.gocmydns.com","port":690,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇨🇦 特殊｜加拿大-A [1.0][gRPC]","type":"trojan","server":"special-ca-1.gocmydns.com","port":882,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇮🇳 特殊｜印度-A [1.0][gRPC]","type":"trojan","server":"zhilian-in-a.gocmydns.com","port":613,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇮🇳 特殊｜印度尼西亞-A [1.0][gRPC]","type":"trojan","server":"zhilian-id-a.gocmydns.com","port":698,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇹🇷 特殊｜土耳其-A [2.0][家寬][gRPC]","type":"trojan","server":"l2-tr-a.gocmydns.com","port":671,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"特殊｜墨西哥-A [1.0][gRPC]","type":"trojan","server":"special-mx-a.gocmydns.com","port":443,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇧🇷 特殊｜巴西-A [3.0][gRPC]","type":"trojan","server":"zhilian-br-a.gocmydns.com","port":671,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇩🇪 特殊｜德國-A [1.5][gRPC]","type":"trojan","server":"zhilian-de-a.gocmydns.com","port":671,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇮🇹 特殊｜意大利-A [1.0][gRPC]","type":"trojan","server":"special-es-a.gocmydns.com","port":443,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇯🇵 特殊｜日本-A [2.0][gRPC][家寬]","type":"trojan","server":"special-jp-a.gocmydns.com","port":443,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"特殊｜沙特阿拉伯-A [1.0][原生]","type":"trojan","server":"special-sa-a.gocmydns.com","port":667,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇹🇭 特殊｜泰國-A [1.0][家寬][gRPC]","type":"trojan","server":"zhilian-th-a.gocmydns.com","port":661,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇹🇭 特殊｜泰國-B [A-1.5][家寬][gRPC]","type":"trojan","server":"zhilian-th-b.gocmydns.com","port":782,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇦🇺 特殊｜澳大利亞-A [1.5][gRPC]","type":"trojan","server":"zhilian-au-a.gocmydns.com","port":443,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇲🇴 特殊｜澳門-A [2.0][gRPC]","type":"trojan","server":"special-mo-a.gocmydns.com","port":667,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇺🇸 特殊｜美國-A [5.0][gRPC][家寬]","type":"trojan","server":"special-us-a.gocmydns.com","port":667,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇬🇧 特殊｜英國-A [1.5][gRPC]","type":"trojan","server":"l2-uk-a.gocmydns.com","port":668,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"特殊｜荷蘭-A [1.0][gRPC]","type":"trojan","server":"special-nl-a.gocmydns.com","port":443,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇵🇭 特殊｜菲律宾-A [3.0][gRPC]","type":"trojan","server":"special-ph-a.gocmydns.com","port":443,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇻🇳 特殊｜越南-A [1.0][gRPC]","type":"trojan","server":"l2-vn-a.gocmydns.com","port":443,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇦🇪 特殊｜迪拜-A [2.0][gRPC]","type":"trojan","server":"zhilian-ae-a.gocmydns.com","port":443,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇦🇷 特殊｜阿根廷-A [2.0][gRPC]","type":"trojan","server":"zhilian-ar-a.gocmydns.com","port":443,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇲🇾 特殊｜馬來西亞-A [2.0][原生][gRPC]","type":"trojan","server":"special-my-1.gocmydns.com","port":1063,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇲🇾 特殊｜馬來西亞-B [A-3.0][原生][gRPC]","type":"trojan","server":"special-my-2.gocmydns.com","port":1063,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇼🇸 直連｜台灣-01 [1.0][家寬][Reality]","type":"trojan","server":"kaizen-tw-1.gocmydns.com","port":443,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"academy.nvidia.com","flow":"xtls-rprx-vision","client-fingerprint":"chrome","reality-opts":{"public-key":"VQPlquZq6gtTD37RtBUJ879hwPnk8phX6DFOU3NNVFw","short-id":"e544fe9c249dcd1e"}}
+  - {"name":"🇼🇸 直連｜台灣-02 [1.0][家寬][Reality]","type":"trojan","server":"kaizen-tw-2.cmycmydns.com","port":443,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"academy.nvidia.com","flow":"xtls-rprx-vision","client-fingerprint":"chrome","reality-opts":{"public-key":"VQPlquZq6gtTD37RtBUJ879hwPnk8phX6DFOU3NNVFw","short-id":"e544fe9c249dcd1e"}}
+  - {"name":"🇼🇸 直連｜台灣-03 [1.0][家寬][gRPC]","type":"trojan","server":"kaizen-tw-3.gocmydns.com","port":443,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇼🇸 直連｜台灣-04 [1.0][家寬][Reality]","type":"trojan","server":"kaizen-tw-4.gocmydns.com","port":443,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"images.apple.com","flow":"xtls-rprx-vision","client-fingerprint":"chrome","reality-opts":{"public-key":"VQPlquZq6gtTD37RtBUJ879hwPnk8phX6DFOU3NNVFw","short-id":"e544fe9c249dcd1e"}}
+  - {"name":"🇼🇸 直連｜台灣-05 [1.0][家寬][Reality]","type":"trojan","server":"kaizen-tw-5.gocmydns.com","port":443,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"academy.nvidia.com","flow":"xtls-rprx-vision","client-fingerprint":"chrome","reality-opts":{"public-key":"VQPlquZq6gtTD37RtBUJ879hwPnk8phX6DFOU3NNVFw","short-id":"e544fe9c249dcd1e"}}
+  - {"name":"🇼🇸 直連｜台灣-06 [1.0][家寬][gRPC]","type":"trojan","server":"kaizen-tw-6.paolu.co","port":443,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇼🇸 直連｜台灣-07 [1.0][家寬][gRPC]","type":"trojan","server":"kaizen-tw-7.gocmydns.com","port":443,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇼🇸 直連｜台灣-08 [1.0][家寬][gRPC]","type":"trojan","server":"kaizen-tw-8.gocmydns.com","port":443,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇼🇸 直連｜台灣-10 [1.0][家寬][試用][gRPC]","type":"trojan","server":"kaizen-tw-10.gocmydns.com","port":443,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇸🇬 直連｜新加坡-01 [1.0][原生][gRPC]","type":"trojan","server":"kaizen-sg-01.gocmydns.com","port":443,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇸🇬 直連｜新加坡-02 [1.0][原生][gRPC]","type":"trojan","server":"kaizen-sg-02.gocmydns.com","port":691,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇯🇵 直連｜日本-01 [1.0][Reality][電信优化]","type":"trojan","server":"kaizen-jp-1.gocmydns.com","port":443,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"images.apple.com","flow":"xtls-rprx-vision","client-fingerprint":"chrome","reality-opts":{"public-key":"VQPlquZq6gtTD37RtBUJ879hwPnk8phX6DFOU3NNVFw","short-id":"e544fe9c249dcd1e"}}
+  - {"name":"🇯🇵 直連｜日本-02 [1.0][Reality]","type":"trojan","server":"kaizen-jp-2.gocmydns.com","port":443,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"images.apple.com","flow":"xtls-rprx-vision","client-fingerprint":"chrome","reality-opts":{"public-key":"VQPlquZq6gtTD37RtBUJ879hwPnk8phX6DFOU3NNVFw","short-id":"e544fe9c249dcd1e"}}
+  - {"name":"🇺🇸 直連｜美國-01 [1.0][Reality]","type":"trojan","server":"kaizen-us-01.gocmydns.com","port":443,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"academy.nvidia.com","flow":"xtls-rprx-vision","client-fingerprint":"chrome","reality-opts":{"public-key":"VQPlquZq6gtTD37RtBUJ879hwPnk8phX6DFOU3NNVFw","short-id":"e544fe9c249dcd1e"}}
+  - {"name":"🇺🇸 直連｜美國-02 [1.0][Reality]","type":"trojan","server":"kaizen-us-02.gocmydns.com","port":443,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"academy.nvidia.com","flow":"xtls-rprx-vision","client-fingerprint":"chrome","reality-opts":{"public-key":"VQPlquZq6gtTD37RtBUJ879hwPnk8phX6DFOU3NNVFw","short-id":"e544fe9c249dcd1e"}}
+  - {"name":"🇺🇸 直連｜美國-03 [2.0][Reality][原生]","type":"trojan","server":"kaizen-us-03.gocmydns.com","port":443,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"academy.nvidia.com","flow":"xtls-rprx-vision","client-fingerprint":"chrome","reality-opts":{"public-key":"VQPlquZq6gtTD37RtBUJ879hwPnk8phX6DFOU3NNVFw","short-id":"e544fe9c249dcd1e"}}
+  - {"name":"🇺🇸 直連｜美國-04 [2.0][Reality][原生]","type":"trojan","server":"kaizen-us-04.gocmydns.com","port":443,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"academy.nvidia.com","flow":"xtls-rprx-vision","client-fingerprint":"chrome","reality-opts":{"public-key":"VQPlquZq6gtTD37RtBUJ879hwPnk8phX6DFOU3NNVFw","short-id":"e544fe9c249dcd1e"}}
+  - {"name":"🇺🇸 直連｜美國-05 [2.0][gRPC][原生]","type":"trojan","server":"kaizen-us-05.gocmydns.com","port":885,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇺🇸 直連｜美國-06 [2.0][gRPC][原生]","type":"trojan","server":"kaizen-us-06.gocmydns.com","port":885,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇺🇸 直連｜美國-07 [1.5][gRPC]","type":"trojan","server":"kaizen-us-07.gocmydns.com","port":443,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇺🇸 直連｜美國-08 [1.5][gRPC]","type":"trojan","server":"kaizen-us-08.gocmydns.com","port":443,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇺🇸 直連｜美國-09 [1.5][gRPC]","type":"trojan","server":"kaizen-us-09.gocmydns.com","port":443,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇺🇸 直連｜美國-10 [1.5][gRPC]","type":"trojan","server":"kaizen-us-10.gocmydns.com","port":443,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇺🇸 直連｜美國-11 [1.0][gRPC]","type":"trojan","server":"kaizen-us-11.gocmydns.com","port":443,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇺🇸 直連｜美國-12 [1.0][gRPC]","type":"trojan","server":"kaizen-us-12.gocmydns.com","port":443,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇺🇸 直連｜美國-13 [1.5][gRPC]","type":"trojan","server":"kaizen-us-13.gocmydns.com","port":443,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇺🇸 直連｜美國-14 [1.5][Reality]","type":"trojan","server":"kaizen-us-14.gocmydns.com","port":443,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"academy.nvidia.com","flow":"xtls-rprx-vision","client-fingerprint":"chrome","reality-opts":{"public-key":"VQPlquZq6gtTD37RtBUJ879hwPnk8phX6DFOU3NNVFw","short-id":"e544fe9c249dcd1e"}}
+  - {"name":"🇺🇸 直連｜美國-15 [1.5][gRPC]","type":"trojan","server":"kaizen-us-15.gocmydns.com","port":443,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇺🇸 直連｜美國-16 [1.5][gRPC][原生]","type":"trojan","server":"kaizen-us-16.gocmydns.com","port":443,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇺🇸 直連｜美國-21 [2.0][gRPC]","type":"trojan","server":"kaizen-us-21.gocmydns.com","port":443,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇺🇸 直連｜美國-22 [2.0][gRPC]","type":"trojan","server":"kaizen-us-22.gocmydns.com","port":443,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇺🇸 直連｜美國-23 [1.5][gRPC]","type":"trojan","server":"kaizen-us-23.gocmydns.com","port":443,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇭🇰 直連｜香港-01 [1.0][家寬][gRPC]","type":"trojan","server":"kaizen-hk-1.gocmydns.com","port":443,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇭🇰 直連｜香港-02 [1.0][家寬][gRPC]","type":"trojan","server":"kaizen-hk-2.gocmydns.com","port":443,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇭🇰 直連｜香港-03 [1.0][gRPC][家寬]","type":"trojan","server":"kaizen-hk-3.gocmydns.com","port":443,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇭🇰 直連｜香港-07 [1.0][家寬][gRPC]","type":"trojan","server":"kaizen-hk-7.gocmydns.com","port":667,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇭🇰 直連｜香港-08 [1.0][gRPC][家宽]","type":"trojan","server":"kaizen-hk-8.gocmydns.com","port":443,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇭🇰 直連｜香港-09 [1.0][gRPC][家寬]","type":"trojan","server":"kaizen-hk-9.gocmydns.com","port":443,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"www.zueuqnpjvcllc.co","network":"grpc","grpc-opts":{"grpc-service-name":"mm_grpc"},"alpn":["h2"]}
+  - {"name":"🇭🇰 直連｜香港-10 [1.0][家寬][Reality]","type":"trojan","server":"kaizen-hk-10.gocmydns.com","port":443,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"images.apple.com","flow":"xtls-rprx-vision","client-fingerprint":"chrome","reality-opts":{"public-key":"VQPlquZq6gtTD37RtBUJ879hwPnk8phX6DFOU3NNVFw","short-id":"e544fe9c249dcd1e"}}
+  - {"name":"🇭🇰 直連｜香港-11 [1.0][家寬][試用][Reality]","type":"trojan","server":"kaizen-hk-11.gocmydns.com","port":443,"password":"4e54ee82-5f14-3efe-a0d8-71bcfa1da4facmynw","udp":true,"sni":"images.apple.com","flow":"xtls-rprx-vision","client-fingerprint":"chrome","reality-opts":{"public-key":"VQPlquZq6gtTD37RtBUJ879hwPnk8phX6DFOU3NNVFw","short-id":"e544fe9c249dcd1e"}}
+
+proxy-groups:
+- {name: '🤖 AI强化', type: select, proxies: ['🚀 选择节点', '🇼🇸 台湾自动', '🇯🇵 日本自动', '🇰🇷 韩国自动', '🇸🇬 新加坡自动', '🇺🇸 美国自动', '🇪🇺 欧洲自动', 'DIRECT']}
+-
+  name: '🚀 选择节点'
+  type: select
+  proxies:
+    - '⚡ 最快线路'
+    - '🇭🇰 香港自动'
+    - '🇼🇸 台湾自动'
+    - '🇯🇵 日本自动'
+    - '🇰🇷 韩国自动'
+    - '🇸🇬 新加坡自动'
+    - '🇺🇸 美国自动'
+    - '🇪🇺 欧洲自动'
+    - '🇭🇰 香港故转'
+    - '🇼🇸 台湾故转'
+    - '🇯🇵 日本故转'
+    - '🇰🇷 韩国故转'
+    - '🇸🇬 新加坡故转'
+    - '🇺🇸 美国故转'
+    - '🇪🇺 欧洲故转'
+    - '🇭🇰 香港手动'
+    - '🇼🇸 台湾手动'
+    - '🇯🇵 日本手动'
+    - '🇰🇷 韩国手动'
+    - '🇸🇬 新加坡手动'
+    - '🇺🇸 美国手动'
+    - '🇪🇺 欧洲手动'
+    - '🍁 其他手动'
+    - '🔑 所有手动'
+    - DIRECT
+-
+  name: '⚡ 最快线路'
+  type: url-test
+  proxies:
+    - '🇸🇬 IPLC-gRPC｜AI-Prime [1.0]'
+    - '🇭🇰 IPLC-gRPC｜HongKong [1.0][家寬][Gemini]'
+    - '🇯🇵 IPLC-gRPC｜Japan [1.0][原生]'
+    - '🇯🇵 IPLC-gRPC｜JP Game&Media [1.0][家寬][限速]'
+    - '🇰🇷 IPLC-gRPC｜Korea [1.0][原生]'
+    - '🇸🇬 IPLC-gRPC｜Singapore [1.0][原生]'
+    - '🇼🇸 IPLC-gRPC｜Taiwan [1.0][家寬]'
+    - '🇺🇸 IPLC-gRPC｜USA [1.0][原生]'
+    - '🇸🇬 IPLC｜AI-Prime [A-2.0][GPT]'
+    - '🇭🇰 IPLC｜HongKong [A-2.0][家寬][Gemini]'
+    - '🇯🇵 IPLC｜Japan [A-2.0][原生]'
+    - '🇯🇵 IPLC｜JP Game&Media [A-4.0][家寬][限速]'
+    - '🇰🇷 IPLC｜Korea [A-2.0]'
+    - '🇸🇬 IPLC｜Singapore [A-2.0][原生]'
+    - '🇼🇸 IPLC｜Taiwan [A-2.0][家寬]'
+    - '🇺🇸 IPLC｜US-Home [A-5.0][家寬][限速]'
+    - '🇺🇸 IPLC｜USA [A-2.0][原生]'
+    - '🇷🇺 特殊｜俄羅斯-A [0.5][gRPC]'
+    - '🇷🇺 特殊｜俄羅斯-B [0.5][gRPC]'
+    - '🇨🇦 特殊｜加拿大-A [1.0][gRPC]'
+    - '🇮🇳 特殊｜印度-A [1.0][gRPC]'
+    - '🇮🇳 特殊｜印度尼西亞-A [1.0][gRPC]'
+    - '🇹🇷 特殊｜土耳其-A [2.0][家寬][gRPC]'
+    - '特殊｜墨西哥-A [1.0][gRPC]'
+    - '🇧🇷 特殊｜巴西-A [3.0][gRPC]'
+    - '🇩🇪 特殊｜德國-A [1.5][gRPC]'
+    - '🇮🇹 特殊｜意大利-A [1.0][gRPC]'
+    - '🇯🇵 特殊｜日本-A [2.0][gRPC][家寬]'
+    - '特殊｜沙特阿拉伯-A [1.0][原生]'
+    - '🇹🇭 特殊｜泰國-A [1.0][家寬][gRPC]'
+    - '🇹🇭 特殊｜泰國-B [A-1.5][家寬][gRPC]'
+    - '🇦🇺 特殊｜澳大利亞-A [1.5][gRPC]'
+    - '🇲🇴 特殊｜澳門-A [2.0][gRPC]'
+    - '🇺🇸 特殊｜美國-A [5.0][gRPC][家寬]'
+    - '🇬🇧 特殊｜英國-A [1.5][gRPC]'
+    - '特殊｜荷蘭-A [1.0][gRPC]'
+    - '🇵🇭 特殊｜菲律宾-A [3.0][gRPC]'
+    - '🇻🇳 特殊｜越南-A [1.0][gRPC]'
+    - '🇦🇪 特殊｜迪拜-A [2.0][gRPC]'
+    - '🇦🇷 特殊｜阿根廷-A [2.0][gRPC]'
+    - '🇲🇾 特殊｜馬來西亞-A [2.0][原生][gRPC]'
+    - '🇲🇾 特殊｜馬來西亞-B [A-3.0][原生][gRPC]'
+    - '🇼🇸 直連｜台灣-01 [1.0][家寬][Reality]'
+    - '🇼🇸 直連｜台灣-02 [1.0][家寬][Reality]'
+    - '🇼🇸 直連｜台灣-03 [1.0][家寬][gRPC]'
+    - '🇼🇸 直連｜台灣-04 [1.0][家寬][Reality]'
+    - '🇼🇸 直連｜台灣-05 [1.0][家寬][Reality]'
+    - '🇼🇸 直連｜台灣-06 [1.0][家寬][gRPC]'
+    - '🇼🇸 直連｜台灣-07 [1.0][家寬][gRPC]'
+    - '🇼🇸 直連｜台灣-08 [1.0][家寬][gRPC]'
+    - '🇼🇸 直連｜台灣-10 [1.0][家寬][試用][gRPC]'
+    - '🇸🇬 直連｜新加坡-01 [1.0][原生][gRPC]'
+    - '🇸🇬 直連｜新加坡-02 [1.0][原生][gRPC]'
+    - '🇯🇵 直連｜日本-01 [1.0][Reality][電信优化]'
+    - '🇯🇵 直連｜日本-02 [1.0][Reality]'
+    - '🇺🇸 直連｜美國-01 [1.0][Reality]'
+    - '🇺🇸 直連｜美國-02 [1.0][Reality]'
+    - '🇺🇸 直連｜美國-03 [2.0][Reality][原生]'
+    - '🇺🇸 直連｜美國-04 [2.0][Reality][原生]'
+    - '🇺🇸 直連｜美國-05 [2.0][gRPC][原生]'
+    - '🇺🇸 直連｜美國-06 [2.0][gRPC][原生]'
+    - '🇺🇸 直連｜美國-07 [1.5][gRPC]'
+    - '🇺🇸 直連｜美國-08 [1.5][gRPC]'
+    - '🇺🇸 直連｜美國-09 [1.5][gRPC]'
+    - '🇺🇸 直連｜美國-10 [1.5][gRPC]'
+    - '🇺🇸 直連｜美國-11 [1.0][gRPC]'
+    - '🇺🇸 直連｜美國-12 [1.0][gRPC]'
+    - '🇺🇸 直連｜美國-13 [1.5][gRPC]'
+    - '🇺🇸 直連｜美國-14 [1.5][Reality]'
+    - '🇺🇸 直連｜美國-15 [1.5][gRPC]'
+    - '🇺🇸 直連｜美國-16 [1.5][gRPC][原生]'
+    - '🇺🇸 直連｜美國-21 [2.0][gRPC]'
+    - '🇺🇸 直連｜美國-22 [2.0][gRPC]'
+    - '🇺🇸 直連｜美國-23 [1.5][gRPC]'
+    - '🇭🇰 直連｜香港-01 [1.0][家寬][gRPC]'
+    - '🇭🇰 直連｜香港-02 [1.0][家寬][gRPC]'
+    - '🇭🇰 直連｜香港-03 [1.0][gRPC][家寬]'
+    - '🇭🇰 直連｜香港-07 [1.0][家寬][gRPC]'
+    - '🇭🇰 直連｜香港-08 [1.0][gRPC][家宽]'
+    - '🇭🇰 直連｜香港-09 [1.0][gRPC][家寬]'
+    - '🇭🇰 直連｜香港-10 [1.0][家寬][Reality]'
+    - '🇭🇰 直連｜香港-11 [1.0][家寬][試用][Reality]'
+    - REJECT
+  url: 'http://www.gstatic.com/generate_204'
+  interval: 300
+-
+  name: '🏠 官网地址'
+  type: select
+  proxies:
+    - '🔗 官网: gotocmy.com'
+    - 'ℹ️ 说明: 故轉 = 節點自動故障轉移'
+    - 'ℹ️ 说明: 自动 = 自动優先最快節點'
+    - '💡 提示: 手动 = 手動選擇固定節點'
+    - '🚀 选择节点'
+    - DIRECT
+-
+  name: '🇭🇰 香港故转'
+  type: fallback
+  proxies:
+    - '🇭🇰 IPLC-gRPC｜HongKong [1.0][家寬][Gemini]'
+    - '🇭🇰 IPLC｜HongKong [A-2.0][家寬][Gemini]'
+    - '🇭🇰 直連｜香港-01 [1.0][家寬][gRPC]'
+    - '🇭🇰 直連｜香港-02 [1.0][家寬][gRPC]'
+    - '🇭🇰 直連｜香港-03 [1.0][gRPC][家寬]'
+    - '🇭🇰 直連｜香港-07 [1.0][家寬][gRPC]'
+    - '🇭🇰 直連｜香港-08 [1.0][gRPC][家宽]'
+    - '🇭🇰 直連｜香港-09 [1.0][gRPC][家寬]'
+    - '🇭🇰 直連｜香港-10 [1.0][家寬][Reality]'
+    - '🇭🇰 直連｜香港-11 [1.0][家寬][試用][Reality]'
+    - REJECT
+  url: 'http://www.gstatic.com/generate_204'
+  interval: 300
+-
+  name: '🇭🇰 香港手动'
+  type: select
+  proxies:
+    - '🇭🇰 IPLC-gRPC｜HongKong [1.0][家寬][Gemini]'
+    - '🇭🇰 IPLC｜HongKong [A-2.0][家寬][Gemini]'
+    - '🇭🇰 直連｜香港-01 [1.0][家寬][gRPC]'
+    - '🇭🇰 直連｜香港-02 [1.0][家寬][gRPC]'
+    - '🇭🇰 直連｜香港-03 [1.0][gRPC][家寬]'
+    - '🇭🇰 直連｜香港-07 [1.0][家寬][gRPC]'
+    - '🇭🇰 直連｜香港-08 [1.0][gRPC][家宽]'
+    - '🇭🇰 直連｜香港-09 [1.0][gRPC][家寬]'
+    - '🇭🇰 直連｜香港-10 [1.0][家寬][Reality]'
+    - '🇭🇰 直連｜香港-11 [1.0][家寬][試用][Reality]'
+    - REJECT
+-
+  name: '🇭🇰 香港自动'
+  type: url-test
+  proxies:
+    - '🇭🇰 IPLC-gRPC｜HongKong [1.0][家寬][Gemini]'
+    - '🇭🇰 IPLC｜HongKong [A-2.0][家寬][Gemini]'
+    - '🇭🇰 直連｜香港-01 [1.0][家寬][gRPC]'
+    - '🇭🇰 直連｜香港-02 [1.0][家寬][gRPC]'
+    - '🇭🇰 直連｜香港-03 [1.0][gRPC][家寬]'
+    - '🇭🇰 直連｜香港-07 [1.0][家寬][gRPC]'
+    - '🇭🇰 直連｜香港-08 [1.0][gRPC][家宽]'
+    - '🇭🇰 直連｜香港-09 [1.0][gRPC][家寬]'
+    - '🇭🇰 直連｜香港-10 [1.0][家寬][Reality]'
+    - '🇭🇰 直連｜香港-11 [1.0][家寬][試用][Reality]'
+    - REJECT
+  url: 'http://www.gstatic.com/generate_204'
+  interval: 300
+-
+  name: '🇼🇸 台湾故转'
+  type: fallback
+  proxies:
+    - '🇼🇸 IPLC-gRPC｜Taiwan [1.0][家寬]'
+    - '🇼🇸 IPLC｜Taiwan [A-2.0][家寬]'
+    - '🇼🇸 直連｜台灣-01 [1.0][家寬][Reality]'
+    - '🇼🇸 直連｜台灣-02 [1.0][家寬][Reality]'
+    - '🇼🇸 直連｜台灣-03 [1.0][家寬][gRPC]'
+    - '🇼🇸 直連｜台灣-04 [1.0][家寬][Reality]'
+    - '🇼🇸 直連｜台灣-05 [1.0][家寬][Reality]'
+    - '🇼🇸 直連｜台灣-06 [1.0][家寬][gRPC]'
+    - '🇼🇸 直連｜台灣-07 [1.0][家寬][gRPC]'
+    - '🇼🇸 直連｜台灣-08 [1.0][家寬][gRPC]'
+    - '🇼🇸 直連｜台灣-10 [1.0][家寬][試用][gRPC]'
+    - REJECT
+  url: 'http://www.gstatic.com/generate_204'
+  interval: 300
+-
+  name: '🇼🇸 台湾手动'
+  type: select
+  proxies:
+    - '🇼🇸 IPLC-gRPC｜Taiwan [1.0][家寬]'
+    - '🇼🇸 IPLC｜Taiwan [A-2.0][家寬]'
+    - '🇼🇸 直連｜台灣-01 [1.0][家寬][Reality]'
+    - '🇼🇸 直連｜台灣-02 [1.0][家寬][Reality]'
+    - '🇼🇸 直連｜台灣-03 [1.0][家寬][gRPC]'
+    - '🇼🇸 直連｜台灣-04 [1.0][家寬][Reality]'
+    - '🇼🇸 直連｜台灣-05 [1.0][家寬][Reality]'
+    - '🇼🇸 直連｜台灣-06 [1.0][家寬][gRPC]'
+    - '🇼🇸 直連｜台灣-07 [1.0][家寬][gRPC]'
+    - '🇼🇸 直連｜台灣-08 [1.0][家寬][gRPC]'
+    - '🇼🇸 直連｜台灣-10 [1.0][家寬][試用][gRPC]'
+    - REJECT
+-
+  name: '🇼🇸 台湾自动'
+  type: url-test
+  proxies:
+    - '🇼🇸 IPLC-gRPC｜Taiwan [1.0][家寬]'
+    - '🇼🇸 IPLC｜Taiwan [A-2.0][家寬]'
+    - '🇼🇸 直連｜台灣-01 [1.0][家寬][Reality]'
+    - '🇼🇸 直連｜台灣-02 [1.0][家寬][Reality]'
+    - '🇼🇸 直連｜台灣-03 [1.0][家寬][gRPC]'
+    - '🇼🇸 直連｜台灣-04 [1.0][家寬][Reality]'
+    - '🇼🇸 直連｜台灣-05 [1.0][家寬][Reality]'
+    - '🇼🇸 直連｜台灣-06 [1.0][家寬][gRPC]'
+    - '🇼🇸 直連｜台灣-07 [1.0][家寬][gRPC]'
+    - '🇼🇸 直連｜台灣-08 [1.0][家寬][gRPC]'
+    - '🇼🇸 直連｜台灣-10 [1.0][家寬][試用][gRPC]'
+    - REJECT
+  url: 'http://www.gstatic.com/generate_204'
+  interval: 300
+-
+  name: '🇯🇵 日本故转'
+  type: fallback
+  proxies:
+    - '🇯🇵 IPLC-gRPC｜Japan [1.0][原生]'
+    - '🇯🇵 IPLC-gRPC｜JP Game&Media [1.0][家寬][限速]'
+    - '🇯🇵 IPLC｜Japan [A-2.0][原生]'
+    - '🇯🇵 IPLC｜JP Game&Media [A-4.0][家寬][限速]'
+    - '🇯🇵 特殊｜日本-A [2.0][gRPC][家寬]'
+    - '🇯🇵 直連｜日本-01 [1.0][Reality][電信优化]'
+    - '🇯🇵 直連｜日本-02 [1.0][Reality]'
+    - REJECT
+  url: 'http://www.gstatic.com/generate_204'
+  interval: 300
+-
+  name: '🇯🇵 日本手动'
+  type: select
+  proxies:
+    - '🇯🇵 IPLC-gRPC｜Japan [1.0][原生]'
+    - '🇯🇵 IPLC-gRPC｜JP Game&Media [1.0][家寬][限速]'
+    - '🇯🇵 IPLC｜Japan [A-2.0][原生]'
+    - '🇯🇵 IPLC｜JP Game&Media [A-4.0][家寬][限速]'
+    - '🇯🇵 特殊｜日本-A [2.0][gRPC][家寬]'
+    - '🇯🇵 直連｜日本-01 [1.0][Reality][電信优化]'
+    - '🇯🇵 直連｜日本-02 [1.0][Reality]'
+    - REJECT
+-
+  name: '🇯🇵 日本自动'
+  type: url-test
+  proxies:
+    - '🇯🇵 IPLC-gRPC｜Japan [1.0][原生]'
+    - '🇯🇵 IPLC-gRPC｜JP Game&Media [1.0][家寬][限速]'
+    - '🇯🇵 IPLC｜Japan [A-2.0][原生]'
+    - '🇯🇵 IPLC｜JP Game&Media [A-4.0][家寬][限速]'
+    - '🇯🇵 特殊｜日本-A [2.0][gRPC][家寬]'
+    - '🇯🇵 直連｜日本-01 [1.0][Reality][電信优化]'
+    - '🇯🇵 直連｜日本-02 [1.0][Reality]'
+    - REJECT
+  url: 'http://www.gstatic.com/generate_204'
+  interval: 300
+-
+  name: '🇰🇷 韩国故转'
+  type: fallback
+  proxies:
+    - '🇰🇷 IPLC-gRPC｜Korea [1.0][原生]'
+    - '🇰🇷 IPLC｜Korea [A-2.0]'
+    - REJECT
+  url: 'http://www.gstatic.com/generate_204'
+  interval: 300
+-
+  name: '🇰🇷 韩国手动'
+  type: select
+  proxies:
+    - '🇰🇷 IPLC-gRPC｜Korea [1.0][原生]'
+    - '🇰🇷 IPLC｜Korea [A-2.0]'
+    - REJECT
+-
+  name: '🇰🇷 韩国自动'
+  type: url-test
+  proxies:
+    - '🇰🇷 IPLC-gRPC｜Korea [1.0][原生]'
+    - '🇰🇷 IPLC｜Korea [A-2.0]'
+    - REJECT
+  url: 'http://www.gstatic.com/generate_204'
+  interval: 300
+-
+  name: '🇸🇬 新加坡故转'
+  type: fallback
+  proxies:
+    - '🇸🇬 IPLC-gRPC｜AI-Prime [1.0]'
+    - '🇸🇬 IPLC-gRPC｜Singapore [1.0][原生]'
+    - '🇸🇬 IPLC｜AI-Prime [A-2.0][GPT]'
+    - '🇸🇬 IPLC｜Singapore [A-2.0][原生]'
+    - '🇸🇬 直連｜新加坡-01 [1.0][原生][gRPC]'
+    - '🇸🇬 直連｜新加坡-02 [1.0][原生][gRPC]'
+    - REJECT
+  url: 'http://www.gstatic.com/generate_204'
+  interval: 300
+-
+  name: '🇸🇬 新加坡手动'
+  type: select
+  proxies:
+    - '🇸🇬 IPLC-gRPC｜AI-Prime [1.0]'
+    - '🇸🇬 IPLC-gRPC｜Singapore [1.0][原生]'
+    - '🇸🇬 IPLC｜AI-Prime [A-2.0][GPT]'
+    - '🇸🇬 IPLC｜Singapore [A-2.0][原生]'
+    - '🇸🇬 直連｜新加坡-01 [1.0][原生][gRPC]'
+    - '🇸🇬 直連｜新加坡-02 [1.0][原生][gRPC]'
+    - REJECT
+-
+  name: '🇸🇬 新加坡自动'
+  type: url-test
+  proxies:
+    - '🇸🇬 IPLC-gRPC｜AI-Prime [1.0]'
+    - '🇸🇬 IPLC-gRPC｜Singapore [1.0][原生]'
+    - '🇸🇬 IPLC｜AI-Prime [A-2.0][GPT]'
+    - '🇸🇬 IPLC｜Singapore [A-2.0][原生]'
+    - '🇸🇬 直連｜新加坡-01 [1.0][原生][gRPC]'
+    - '🇸🇬 直連｜新加坡-02 [1.0][原生][gRPC]'
+    - REJECT
+  url: 'http://www.gstatic.com/generate_204'
+  interval: 300
+-
+  name: '🇺🇸 美国故转'
+  type: fallback
+  proxies:
+    - '🇺🇸 IPLC-gRPC｜USA [1.0][原生]'
+    - '🇺🇸 IPLC｜US-Home [A-5.0][家寬][限速]'
+    - '🇺🇸 IPLC｜USA [A-2.0][原生]'
+    - '🇺🇸 特殊｜美國-A [5.0][gRPC][家寬]'
+    - '🇺🇸 直連｜美國-01 [1.0][Reality]'
+    - '🇺🇸 直連｜美國-02 [1.0][Reality]'
+    - '🇺🇸 直連｜美國-03 [2.0][Reality][原生]'
+    - '🇺🇸 直連｜美國-04 [2.0][Reality][原生]'
+    - '🇺🇸 直連｜美國-05 [2.0][gRPC][原生]'
+    - '🇺🇸 直連｜美國-06 [2.0][gRPC][原生]'
+    - '🇺🇸 直連｜美國-07 [1.5][gRPC]'
+    - '🇺🇸 直連｜美國-08 [1.5][gRPC]'
+    - '🇺🇸 直連｜美國-09 [1.5][gRPC]'
+    - '🇺🇸 直連｜美國-10 [1.5][gRPC]'
+    - '🇺🇸 直連｜美國-11 [1.0][gRPC]'
+    - '🇺🇸 直連｜美國-12 [1.0][gRPC]'
+    - '🇺🇸 直連｜美國-13 [1.5][gRPC]'
+    - '🇺🇸 直連｜美國-14 [1.5][Reality]'
+    - '🇺🇸 直連｜美國-15 [1.5][gRPC]'
+    - '🇺🇸 直連｜美國-16 [1.5][gRPC][原生]'
+    - '🇺🇸 直連｜美國-21 [2.0][gRPC]'
+    - '🇺🇸 直連｜美國-22 [2.0][gRPC]'
+    - '🇺🇸 直連｜美國-23 [1.5][gRPC]'
+    - REJECT
+  url: 'http://www.gstatic.com/generate_204'
+  interval: 300
+-
+  name: '🇺🇸 美国手动'
+  type: select
+  proxies:
+    - '🇺🇸 IPLC-gRPC｜USA [1.0][原生]'
+    - '🇺🇸 IPLC｜US-Home [A-5.0][家寬][限速]'
+    - '🇺🇸 IPLC｜USA [A-2.0][原生]'
+    - '🇺🇸 特殊｜美國-A [5.0][gRPC][家寬]'
+    - '🇺🇸 直連｜美國-01 [1.0][Reality]'
+    - '🇺🇸 直連｜美國-02 [1.0][Reality]'
+    - '🇺🇸 直連｜美國-03 [2.0][Reality][原生]'
+    - '🇺🇸 直連｜美國-04 [2.0][Reality][原生]'
+    - '🇺🇸 直連｜美國-05 [2.0][gRPC][原生]'
+    - '🇺🇸 直連｜美國-06 [2.0][gRPC][原生]'
+    - '🇺🇸 直連｜美國-07 [1.5][gRPC]'
+    - '🇺🇸 直連｜美國-08 [1.5][gRPC]'
+    - '🇺🇸 直連｜美國-09 [1.5][gRPC]'
+    - '🇺🇸 直連｜美國-10 [1.5][gRPC]'
+    - '🇺🇸 直連｜美國-11 [1.0][gRPC]'
+    - '🇺🇸 直連｜美國-12 [1.0][gRPC]'
+    - '🇺🇸 直連｜美國-13 [1.5][gRPC]'
+    - '🇺🇸 直連｜美國-14 [1.5][Reality]'
+    - '🇺🇸 直連｜美國-15 [1.5][gRPC]'
+    - '🇺🇸 直連｜美國-16 [1.5][gRPC][原生]'
+    - '🇺🇸 直連｜美國-21 [2.0][gRPC]'
+    - '🇺🇸 直連｜美國-22 [2.0][gRPC]'
+    - '🇺🇸 直連｜美國-23 [1.5][gRPC]'
+    - REJECT
+-
+  name: '🇺🇸 美国自动'
+  type: url-test
+  proxies:
+    - '🇺🇸 IPLC-gRPC｜USA [1.0][原生]'
+    - '🇺🇸 IPLC｜US-Home [A-5.0][家寬][限速]'
+    - '🇺🇸 IPLC｜USA [A-2.0][原生]'
+    - '🇺🇸 特殊｜美國-A [5.0][gRPC][家寬]'
+    - '🇺🇸 直連｜美國-01 [1.0][Reality]'
+    - '🇺🇸 直連｜美國-02 [1.0][Reality]'
+    - '🇺🇸 直連｜美國-03 [2.0][Reality][原生]'
+    - '🇺🇸 直連｜美國-04 [2.0][Reality][原生]'
+    - '🇺🇸 直連｜美國-05 [2.0][gRPC][原生]'
+    - '🇺🇸 直連｜美國-06 [2.0][gRPC][原生]'
+    - '🇺🇸 直連｜美國-07 [1.5][gRPC]'
+    - '🇺🇸 直連｜美國-08 [1.5][gRPC]'
+    - '🇺🇸 直連｜美國-09 [1.5][gRPC]'
+    - '🇺🇸 直連｜美國-10 [1.5][gRPC]'
+    - '🇺🇸 直連｜美國-11 [1.0][gRPC]'
+    - '🇺🇸 直連｜美國-12 [1.0][gRPC]'
+    - '🇺🇸 直連｜美國-13 [1.5][gRPC]'
+    - '🇺🇸 直連｜美國-14 [1.5][Reality]'
+    - '🇺🇸 直連｜美國-15 [1.5][gRPC]'
+    - '🇺🇸 直連｜美國-16 [1.5][gRPC][原生]'
+    - '🇺🇸 直連｜美國-21 [2.0][gRPC]'
+    - '🇺🇸 直連｜美國-22 [2.0][gRPC]'
+    - '🇺🇸 直連｜美國-23 [1.5][gRPC]'
+    - REJECT
+  url: 'http://www.gstatic.com/generate_204'
+  interval: 300
+-
+  name: '🇪🇺 欧洲故转'
+  type: fallback
+  proxies:
+    - '🇷🇺 特殊｜俄羅斯-A [0.5][gRPC]'
+    - '🇷🇺 特殊｜俄羅斯-B [0.5][gRPC]'
+    - '🇩🇪 特殊｜德國-A [1.5][gRPC]'
+    - '🇮🇹 特殊｜意大利-A [1.0][gRPC]'
+    - '🇬🇧 特殊｜英國-A [1.5][gRPC]'
+    - '特殊｜荷蘭-A [1.0][gRPC]'
+    - REJECT
+  url: 'http://www.gstatic.com/generate_204'
+  interval: 300
+-
+  name: '🇪🇺 欧洲手动'
+  type: select
+  proxies:
+    - '🇷🇺 特殊｜俄羅斯-A [0.5][gRPC]'
+    - '🇷🇺 特殊｜俄羅斯-B [0.5][gRPC]'
+    - '🇩🇪 特殊｜德國-A [1.5][gRPC]'
+    - '🇮🇹 特殊｜意大利-A [1.0][gRPC]'
+    - '🇬🇧 特殊｜英國-A [1.5][gRPC]'
+    - '特殊｜荷蘭-A [1.0][gRPC]'
+    - REJECT
+-
+  name: '🇪🇺 欧洲自动'
+  type: url-test
+  proxies:
+    - '🇷🇺 特殊｜俄羅斯-A [0.5][gRPC]'
+    - '🇷🇺 特殊｜俄羅斯-B [0.5][gRPC]'
+    - '🇩🇪 特殊｜德國-A [1.5][gRPC]'
+    - '🇮🇹 特殊｜意大利-A [1.0][gRPC]'
+    - '🇬🇧 特殊｜英國-A [1.5][gRPC]'
+    - '特殊｜荷蘭-A [1.0][gRPC]'
+    - REJECT
+  url: 'http://www.gstatic.com/generate_204'
+  interval: 300
+-
+  name: '🍁 其他手动'
+  type: select
+  proxies:
+    - '🇸🇬 IPLC-gRPC｜AI-Prime [1.0]'
+    - '🇼🇸 IPLC-gRPC｜Taiwan [1.0][家寬]'
+    - '🇸🇬 IPLC｜AI-Prime [A-2.0][GPT]'
+    - '🇼🇸 IPLC｜Taiwan [A-2.0][家寬]'
+    - '🇷🇺 特殊｜俄羅斯-A [0.5][gRPC]'
+    - '🇷🇺 特殊｜俄羅斯-B [0.5][gRPC]'
+    - '🇨🇦 特殊｜加拿大-A [1.0][gRPC]'
+    - '🇮🇳 特殊｜印度-A [1.0][gRPC]'
+    - '🇮🇳 特殊｜印度尼西亞-A [1.0][gRPC]'
+    - '🇹🇷 特殊｜土耳其-A [2.0][家寬][gRPC]'
+    - '特殊｜墨西哥-A [1.0][gRPC]'
+    - '🇧🇷 特殊｜巴西-A [3.0][gRPC]'
+    - '特殊｜沙特阿拉伯-A [1.0][原生]'
+    - '🇹🇭 特殊｜泰國-A [1.0][家寬][gRPC]'
+    - '🇹🇭 特殊｜泰國-B [A-1.5][家寬][gRPC]'
+    - '🇦🇺 特殊｜澳大利亞-A [1.5][gRPC]'
+    - '🇲🇴 特殊｜澳門-A [2.0][gRPC]'
+    - '🇵🇭 特殊｜菲律宾-A [3.0][gRPC]'
+    - '🇻🇳 特殊｜越南-A [1.0][gRPC]'
+    - '🇦🇪 特殊｜迪拜-A [2.0][gRPC]'
+    - '🇦🇷 特殊｜阿根廷-A [2.0][gRPC]'
+    - '🇲🇾 特殊｜馬來西亞-A [2.0][原生][gRPC]'
+    - '🇲🇾 特殊｜馬來西亞-B [A-3.0][原生][gRPC]'
+    - REJECT
+-
+  name: '🔑 所有手动'
+  type: select
+  proxies:
+    - '🇸🇬 IPLC-gRPC｜AI-Prime [1.0]'
+    - '🇭🇰 IPLC-gRPC｜HongKong [1.0][家寬][Gemini]'
+    - '🇯🇵 IPLC-gRPC｜Japan [1.0][原生]'
+    - '🇯🇵 IPLC-gRPC｜JP Game&Media [1.0][家寬][限速]'
+    - '🇰🇷 IPLC-gRPC｜Korea [1.0][原生]'
+    - '🇸🇬 IPLC-gRPC｜Singapore [1.0][原生]'
+    - '🇼🇸 IPLC-gRPC｜Taiwan [1.0][家寬]'
+    - '🇺🇸 IPLC-gRPC｜USA [1.0][原生]'
+    - '🇸🇬 IPLC｜AI-Prime [A-2.0][GPT]'
+    - '🇭🇰 IPLC｜HongKong [A-2.0][家寬][Gemini]'
+    - '🇯🇵 IPLC｜Japan [A-2.0][原生]'
+    - '🇯🇵 IPLC｜JP Game&Media [A-4.0][家寬][限速]'
+    - '🇰🇷 IPLC｜Korea [A-2.0]'
+    - '🇸🇬 IPLC｜Singapore [A-2.0][原生]'
+    - '🇼🇸 IPLC｜Taiwan [A-2.0][家寬]'
+    - '🇺🇸 IPLC｜US-Home [A-5.0][家寬][限速]'
+    - '🇺🇸 IPLC｜USA [A-2.0][原生]'
+    - '🇷🇺 特殊｜俄羅斯-A [0.5][gRPC]'
+    - '🇷🇺 特殊｜俄羅斯-B [0.5][gRPC]'
+    - '🇨🇦 特殊｜加拿大-A [1.0][gRPC]'
+    - '🇮🇳 特殊｜印度-A [1.0][gRPC]'
+    - '🇮🇳 特殊｜印度尼西亞-A [1.0][gRPC]'
+    - '🇹🇷 特殊｜土耳其-A [2.0][家寬][gRPC]'
+    - '特殊｜墨西哥-A [1.0][gRPC]'
+    - '🇧🇷 特殊｜巴西-A [3.0][gRPC]'
+    - '🇩🇪 特殊｜德國-A [1.5][gRPC]'
+    - '🇮🇹 特殊｜意大利-A [1.0][gRPC]'
+    - '🇯🇵 特殊｜日本-A [2.0][gRPC][家寬]'
+    - '特殊｜沙特阿拉伯-A [1.0][原生]'
+    - '🇹🇭 特殊｜泰國-A [1.0][家寬][gRPC]'
+    - '🇹🇭 特殊｜泰國-B [A-1.5][家寬][gRPC]'
+    - '🇦🇺 特殊｜澳大利亞-A [1.5][gRPC]'
+    - '🇲🇴 特殊｜澳門-A [2.0][gRPC]'
+    - '🇺🇸 特殊｜美國-A [5.0][gRPC][家寬]'
+    - '🇬🇧 特殊｜英國-A [1.5][gRPC]'
+    - '特殊｜荷蘭-A [1.0][gRPC]'
+    - '🇵🇭 特殊｜菲律宾-A [3.0][gRPC]'
+    - '🇻🇳 特殊｜越南-A [1.0][gRPC]'
+    - '🇦🇪 特殊｜迪拜-A [2.0][gRPC]'
+    - '🇦🇷 特殊｜阿根廷-A [2.0][gRPC]'
+    - '🇲🇾 特殊｜馬來西亞-A [2.0][原生][gRPC]'
+    - '🇲🇾 特殊｜馬來西亞-B [A-3.0][原生][gRPC]'
+    - '🇼🇸 直連｜台灣-01 [1.0][家寬][Reality]'
+    - '🇼🇸 直連｜台灣-02 [1.0][家寬][Reality]'
+    - '🇼🇸 直連｜台灣-03 [1.0][家寬][gRPC]'
+    - '🇼🇸 直連｜台灣-04 [1.0][家寬][Reality]'
+    - '🇼🇸 直連｜台灣-05 [1.0][家寬][Reality]'
+    - '🇼🇸 直連｜台灣-06 [1.0][家寬][gRPC]'
+    - '🇼🇸 直連｜台灣-07 [1.0][家寬][gRPC]'
+    - '🇼🇸 直連｜台灣-08 [1.0][家寬][gRPC]'
+    - '🇼🇸 直連｜台灣-10 [1.0][家寬][試用][gRPC]'
+    - '🇸🇬 直連｜新加坡-01 [1.0][原生][gRPC]'
+    - '🇸🇬 直連｜新加坡-02 [1.0][原生][gRPC]'
+    - '🇯🇵 直連｜日本-01 [1.0][Reality][電信优化]'
+    - '🇯🇵 直連｜日本-02 [1.0][Reality]'
+    - '🇺🇸 直連｜美國-01 [1.0][Reality]'
+    - '🇺🇸 直連｜美國-02 [1.0][Reality]'
+    - '🇺🇸 直連｜美國-03 [2.0][Reality][原生]'
+    - '🇺🇸 直連｜美國-04 [2.0][Reality][原生]'
+    - '🇺🇸 直連｜美國-05 [2.0][gRPC][原生]'
+    - '🇺🇸 直連｜美國-06 [2.0][gRPC][原生]'
+    - '🇺🇸 直連｜美國-07 [1.5][gRPC]'
+    - '🇺🇸 直連｜美國-08 [1.5][gRPC]'
+    - '🇺🇸 直連｜美國-09 [1.5][gRPC]'
+    - '🇺🇸 直連｜美國-10 [1.5][gRPC]'
+    - '🇺🇸 直連｜美國-11 [1.0][gRPC]'
+    - '🇺🇸 直連｜美國-12 [1.0][gRPC]'
+    - '🇺🇸 直連｜美國-13 [1.5][gRPC]'
+    - '🇺🇸 直連｜美國-14 [1.5][Reality]'
+    - '🇺🇸 直連｜美國-15 [1.5][gRPC]'
+    - '🇺🇸 直連｜美國-16 [1.5][gRPC][原生]'
+    - '🇺🇸 直連｜美國-21 [2.0][gRPC]'
+    - '🇺🇸 直連｜美國-22 [2.0][gRPC]'
+    - '🇺🇸 直連｜美國-23 [1.5][gRPC]'
+    - '🇭🇰 直連｜香港-01 [1.0][家寬][gRPC]'
+    - '🇭🇰 直連｜香港-02 [1.0][家寬][gRPC]'
+    - '🇭🇰 直連｜香港-03 [1.0][gRPC][家寬]'
+    - '🇭🇰 直連｜香港-07 [1.0][家寬][gRPC]'
+    - '🇭🇰 直連｜香港-08 [1.0][gRPC][家宽]'
+    - '🇭🇰 直連｜香港-09 [1.0][gRPC][家寬]'
+    - '🇭🇰 直連｜香港-10 [1.0][家寬][Reality]'
+    - '🇭🇰 直連｜香港-11 [1.0][家寬][試用][Reality]'
+    - DIRECT
+-
+  name: '🎮 游戏平台'
+  type: select
+  proxies:
+    - DIRECT
+    - '🚀 选择节点'
+-
+  name: '🍎 Apple'
+  type: select
+  proxies:
+    - DIRECT
+    - '🚀 选择节点'
+-
+  name: '🇨🇳 中国大陆'
+  type: select
+  proxies:
+    - DIRECT
+    - '🚀 选择节点'
+-
+  name: '🛑 拦截广告'
+  type: select
+  proxies:
+    - REJECT
+    - DIRECT
+    - '🚀 选择节点'
+-
+  name: '📥 下载软件'
+  type: select
+  proxies:
+    - DIRECT
+    - '🚀 选择节点'
+-
+  name: '☁️ OneDrive'
+  type: select
+  proxies:
+    - DIRECT
+    - '🚀 选择节点'
+-
+  name: 'Ⓜ️ Microsoft'
+  type: select
+  proxies:
+    - DIRECT
+    - '🚀 选择节点'
+-
+  name: '🅱️ 哔哩哔哩'
+  type: select
+  proxies:
+    - DIRECT
+    - '🚀 选择节点'
+-
+  name: '📹 YouTube'
+  type: select
+  proxies:
+    - '🚀 选择节点'
+    - '⚡ 最快线路'
+    - '🇭🇰 香港自动'
+    - '🇼🇸 台湾自动'
+    - '🇯🇵 日本自动'
+    - '🇰🇷 韩国自动'
+    - '🇸🇬 新加坡自动'
+    - '🇺🇸 美国自动'
+    - '🇪🇺 欧洲自动'
+    - '🇭🇰 香港故转'
+    - '🇼🇸 台湾故转'
+    - '🇯🇵 日本故转'
+    - '🇰🇷 韩国故转'
+    - '🇸🇬 新加坡故转'
+    - '🇺🇸 美国故转'
+    - '🇪🇺 欧洲故转'
+    - '🇭🇰 香港手动'
+    - '🇼🇸 台湾手动'
+    - '🇯🇵 日本手动'
+    - '🇰🇷 韩国手动'
+    - '🇸🇬 新加坡手动'
+    - '🇺🇸 美国手动'
+    - '🇪🇺 欧洲手动'
+    - '🍁 其他手动'
+    - '🔑 所有手动'
+    - DIRECT
+    - REJECT
+-
+  name: '📹 Google'
+  type: select
+  proxies:
+    - '🚀 选择节点'
+    - '⚡ 最快线路'
+    - '🇭🇰 香港自动'
+    - '🇼🇸 台湾自动'
+    - '🇯🇵 日本自动'
+    - '🇰🇷 韩国自动'
+    - '🇸🇬 新加坡自动'
+    - '🇺🇸 美国自动'
+    - '🇪🇺 欧洲自动'
+    - '🇭🇰 香港故转'
+    - '🇼🇸 台湾故转'
+    - '🇯🇵 日本故转'
+    - '🇰🇷 韩国故转'
+    - '🇸🇬 新加坡故转'
+    - '🇺🇸 美国故转'
+    - '🇪🇺 欧洲故转'
+    - '🇭🇰 香港手动'
+    - '🇼🇸 台湾手动'
+    - '🇯🇵 日本手动'
+    - '🇰🇷 韩国手动'
+    - '🇸🇬 新加坡手动'
+    - '🇺🇸 美国手动'
+    - '🇪🇺 欧洲手动'
+    - '🍁 其他手动'
+    - '🔑 所有手动'
+    - DIRECT
+    - REJECT
+-
+  name: '🤖 AI平台'
+  type: select
+  proxies:
+    - '🚀 选择节点'
+    - '⚡ 最快线路'
+    - '🇭🇰 香港自动'
+    - '🇼🇸 台湾自动'
+    - '🇯🇵 日本自动'
+    - '🇰🇷 韩国自动'
+    - '🇸🇬 新加坡自动'
+    - '🇺🇸 美国自动'
+    - '🇪🇺 欧洲自动'
+    - '🇭🇰 香港故转'
+    - '🇼🇸 台湾故转'
+    - '🇯🇵 日本故转'
+    - '🇰🇷 韩国故转'
+    - '🇸🇬 新加坡故转'
+    - '🇺🇸 美国故转'
+    - '🇪🇺 欧洲故转'
+    - '🇭🇰 香港手动'
+    - '🇼🇸 台湾手动'
+    - '🇯🇵 日本手动'
+    - '🇰🇷 韩国手动'
+    - '🇸🇬 新加坡手动'
+    - '🇺🇸 美国手动'
+    - '🇪🇺 欧洲手动'
+    - '🍁 其他手动'
+    - '🔑 所有手动'
+    - DIRECT
+    - REJECT
+-
+  name: '🐙 GitHub'
+  type: select
+  proxies:
+    - '🚀 选择节点'
+    - '⚡ 最快线路'
+    - '🇭🇰 香港自动'
+    - '🇼🇸 台湾自动'
+    - '🇯🇵 日本自动'
+    - '🇰🇷 韩国自动'
+    - '🇸🇬 新加坡自动'
+    - '🇺🇸 美国自动'
+    - '🇪🇺 欧洲自动'
+    - '🇭🇰 香港故转'
+    - '🇼🇸 台湾故转'
+    - '🇯🇵 日本故转'
+    - '🇰🇷 韩国故转'
+    - '🇸🇬 新加坡故转'
+    - '🇺🇸 美国故转'
+    - '🇪🇺 欧洲故转'
+    - '🇭🇰 香港手动'
+    - '🇼🇸 台湾手动'
+    - '🇯🇵 日本手动'
+    - '🇰🇷 韩国手动'
+    - '🇸🇬 新加坡手动'
+    - '🇺🇸 美国手动'
+    - '🇪🇺 欧洲手动'
+    - '🍁 其他手动'
+    - '🔑 所有手动'
+    - DIRECT
+    - REJECT
+-
+  name: '📺 Apple TV'
+  type: select
+  proxies:
+    - '🚀 选择节点'
+    - '⚡ 最快线路'
+    - '🇭🇰 香港自动'
+    - '🇼🇸 台湾自动'
+    - '🇯🇵 日本自动'
+    - '🇰🇷 韩国自动'
+    - '🇸🇬 新加坡自动'
+    - '🇺🇸 美国自动'
+    - '🇪🇺 欧洲自动'
+    - '🇭🇰 香港故转'
+    - '🇼🇸 台湾故转'
+    - '🇯🇵 日本故转'
+    - '🇰🇷 韩国故转'
+    - '🇸🇬 新加坡故转'
+    - '🇺🇸 美国故转'
+    - '🇪🇺 欧洲故转'
+    - '🇭🇰 香港手动'
+    - '🇼🇸 台湾手动'
+    - '🇯🇵 日本手动'
+    - '🇰🇷 韩国手动'
+    - '🇸🇬 新加坡手动'
+    - '🇺🇸 美国手动'
+    - '🇪🇺 欧洲手动'
+    - '🍁 其他手动'
+    - '🔑 所有手动'
+    - DIRECT
+    - REJECT
+-
+  name: '🎼 TikTok'
+  type: select
+  proxies:
+    - '🚀 选择节点'
+    - '⚡ 最快线路'
+    - '🇭🇰 香港自动'
+    - '🇼🇸 台湾自动'
+    - '🇯🇵 日本自动'
+    - '🇰🇷 韩国自动'
+    - '🇸🇬 新加坡自动'
+    - '🇺🇸 美国自动'
+    - '🇪🇺 欧洲自动'
+    - '🇭🇰 香港故转'
+    - '🇼🇸 台湾故转'
+    - '🇯🇵 日本故转'
+    - '🇰🇷 韩国故转'
+    - '🇸🇬 新加坡故转'
+    - '🇺🇸 美国故转'
+    - '🇪🇺 欧洲故转'
+    - '🇭🇰 香港手动'
+    - '🇼🇸 台湾手动'
+    - '🇯🇵 日本手动'
+    - '🇰🇷 韩国手动'
+    - '🇸🇬 新加坡手动'
+    - '🇺🇸 美国手动'
+    - '🇪🇺 欧洲手动'
+    - '🍁 其他手动'
+    - '🔑 所有手动'
+    - DIRECT
+    - REJECT
+-
+  name: '🐦 Twitter'
+  type: select
+  proxies:
+    - '🚀 选择节点'
+    - '⚡ 最快线路'
+    - '🇭🇰 香港自动'
+    - '🇼🇸 台湾自动'
+    - '🇯🇵 日本自动'
+    - '🇰🇷 韩国自动'
+    - '🇸🇬 新加坡自动'
+    - '🇺🇸 美国自动'
+    - '🇪🇺 欧洲自动'
+    - '🇭🇰 香港故转'
+    - '🇼🇸 台湾故转'
+    - '🇯🇵 日本故转'
+    - '🇰🇷 韩国故转'
+    - '🇸🇬 新加坡故转'
+    - '🇺🇸 美国故转'
+    - '🇪🇺 欧洲故转'
+    - '🇭🇰 香港手动'
+    - '🇼🇸 台湾手动'
+    - '🇯🇵 日本手动'
+    - '🇰🇷 韩国手动'
+    - '🇸🇬 新加坡手动'
+    - '🇺🇸 美国手动'
+    - '🇪🇺 欧洲手动'
+    - '🍁 其他手动'
+    - '🔑 所有手动'
+    - DIRECT
+    - REJECT
+-
+  name: '📲 Telegram'
+  type: select
+  proxies:
+    - '🚀 选择节点'
+    - '⚡ 最快线路'
+    - '🇭🇰 香港自动'
+    - '🇼🇸 台湾自动'
+    - '🇯🇵 日本自动'
+    - '🇰🇷 韩国自动'
+    - '🇸🇬 新加坡自动'
+    - '🇺🇸 美国自动'
+    - '🇪🇺 欧洲自动'
+    - '🇭🇰 香港故转'
+    - '🇼🇸 台湾故转'
+    - '🇯🇵 日本故转'
+    - '🇰🇷 韩国故转'
+    - '🇸🇬 新加坡故转'
+    - '🇺🇸 美国故转'
+    - '🇪🇺 欧洲故转'
+    - '🇭🇰 香港手动'
+    - '🇼🇸 台湾手动'
+    - '🇯🇵 日本手动'
+    - '🇰🇷 韩国手动'
+    - '🇸🇬 新加坡手动'
+    - '🇺🇸 美国手动'
+    - '🇪🇺 欧洲手动'
+    - '🍁 其他手动'
+    - '🔑 所有手动'
+    - DIRECT
+    - REJECT
+-
+  name: '🎥 Netflix'
+  type: select
+  proxies:
+    - '🚀 选择节点'
+    - '⚡ 最快线路'
+    - '🇭🇰 香港自动'
+    - '🇼🇸 台湾自动'
+    - '🇯🇵 日本自动'
+    - '🇰🇷 韩国自动'
+    - '🇸🇬 新加坡自动'
+    - '🇺🇸 美国自动'
+    - '🇪🇺 欧洲自动'
+    - '🇭🇰 香港故转'
+    - '🇼🇸 台湾故转'
+    - '🇯🇵 日本故转'
+    - '🇰🇷 韩国故转'
+    - '🇸🇬 新加坡故转'
+    - '🇺🇸 美国故转'
+    - '🇪🇺 欧洲故转'
+    - '🇭🇰 香港手动'
+    - '🇼🇸 台湾手动'
+    - '🇯🇵 日本手动'
+    - '🇰🇷 韩国手动'
+    - '🇸🇬 新加坡手动'
+    - '🇺🇸 美国手动'
+    - '🇪🇺 欧洲手动'
+    - '🍁 其他手动'
+    - '🔑 所有手动'
+    - DIRECT
+    - REJECT
+-
+  name: '🎬 Disney+'
+  type: select
+  proxies:
+    - '🚀 选择节点'
+    - '⚡ 最快线路'
+    - '🇭🇰 香港自动'
+    - '🇼🇸 台湾自动'
+    - '🇯🇵 日本自动'
+    - '🇰🇷 韩国自动'
+    - '🇸🇬 新加坡自动'
+    - '🇺🇸 美国自动'
+    - '🇪🇺 欧洲自动'
+    - '🇭🇰 香港故转'
+    - '🇼🇸 台湾故转'
+    - '🇯🇵 日本故转'
+    - '🇰🇷 韩国故转'
+    - '🇸🇬 新加坡故转'
+    - '🇺🇸 美国故转'
+    - '🇪🇺 欧洲故转'
+    - '🇭🇰 香港手动'
+    - '🇼🇸 台湾手动'
+    - '🇯🇵 日本手动'
+    - '🇰🇷 韩国手动'
+    - '🇸🇬 新加坡手动'
+    - '🇺🇸 美国手动'
+    - '🇪🇺 欧洲手动'
+    - '🍁 其他手动'
+    - '🔑 所有手动'
+    - DIRECT
+    - REJECT
+-
+  name: '🎵 Spotify'
+  type: select
+  proxies:
+    - '🚀 选择节点'
+    - '⚡ 最快线路'
+    - '🇭🇰 香港自动'
+    - '🇼🇸 台湾自动'
+    - '🇯🇵 日本自动'
+    - '🇰🇷 韩国自动'
+    - '🇸🇬 新加坡自动'
+    - '🇺🇸 美国自动'
+    - '🇪🇺 欧洲自动'
+    - '🇭🇰 香港故转'
+    - '🇼🇸 台湾故转'
+    - '🇯🇵 日本故转'
+    - '🇰🇷 韩国故转'
+    - '🇸🇬 新加坡故转'
+    - '🇺🇸 美国故转'
+    - '🇪🇺 欧洲故转'
+    - '🇭🇰 香港手动'
+    - '🇼🇸 台湾手动'
+    - '🇯🇵 日本手动'
+    - '🇰🇷 韩国手动'
+    - '🇸🇬 新加坡手动'
+    - '🇺🇸 美国手动'
+    - '🇪🇺 欧洲手动'
+    - '🍁 其他手动'
+    - '🔑 所有手动'
+    - DIRECT
+    - REJECT
+-
+  name: '🐟 漏网之鱼'
+  type: select
+  proxies:
+    - '🚀 选择节点'
+    - '⚡ 最快线路'
+    - '🇭🇰 香港自动'
+    - '🇼🇸 台湾自动'
+    - '🇯🇵 日本自动'
+    - '🇰🇷 韩国自动'
+    - '🇸🇬 新加坡自动'
+    - '🇺🇸 美国自动'
+    - '🇪🇺 欧洲自动'
+    - '🇭🇰 香港故转'
+    - '🇼🇸 台湾故转'
+    - '🇯🇵 日本故转'
+    - '🇰🇷 韩国故转'
+    - '🇸🇬 新加坡故转'
+    - '🇺🇸 美国故转'
+    - '🇪🇺 欧洲故转'
+    - '🇭🇰 香港手动'
+    - '🇼🇸 台湾手动'
+    - '🇯🇵 日本手动'
+    - '🇰🇷 韩国手动'
+    - '🇸🇬 新加坡手动'
+    - '🇺🇸 美国手动'
+    - '🇪🇺 欧洲手动'
+    - '🍁 其他手动'
+    - '🔑 所有手动'
+    - DIRECT
+    - REJECT
+-
+  name: '🔗 官网: gotocmy.com'
+  type: select
+  proxies:
+    - DIRECT
+-
+  name: 'ℹ️ 说明: 故轉 = 節點自動故障轉移'
+  type: select
+  proxies:
+    - DIRECT
+-
+  name: 'ℹ️ 说明: 自动 = 自动優先最快節點'
+  type: select
+  proxies:
+    - DIRECT
+-
+  name: '💡 提示: 手动 = 手動選擇固定節點'
+  type: select
+  proxies:
+    - DIRECT
+
+
+
+# 规则
+rule-anchor:
+  domain: &Anchor_DN
+    type: http
+    interval: 86400
+    behavior: domain
+    format: mrs
+  ip: &Anchor_IP
+    type: http
+    interval: 86400
+    behavior: ipcidr
+    format: mrs
+
+rule-providers: 
+  private_domain:    { <<: *Anchor_DN, url: "https://ghfast.top/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/private.mrs" }
+  ai:                { <<: *Anchor_DN, url: "https://ghfast.top/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/category-ai-!cn.mrs" }
+  github_domain:     { <<: *Anchor_DN, url: "https://ghfast.top/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/github.mrs" }
+  youtube_domain:    { <<: *Anchor_DN, url: "https://ghfast.top/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/youtube.mrs" }
+  google_domain:     { <<: *Anchor_DN, url: "https://ghfast.top/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/google.mrs" }
+  onedrive_domain:   { <<: *Anchor_DN, url: "https://ghfast.top/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/onedrive.mrs" }
+  microsoft_domain:  { <<: *Anchor_DN, url: "https://ghfast.top/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/microsoft.mrs" }
+  appletv_domain:    { <<: *Anchor_DN, url: "https://ghfast.top/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/apple-tvplus.mrs" }
+  apple_domain:      { <<: *Anchor_DN, url: "https://ghfast.top/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/apple.mrs" }
+  tiktok_domain:     { <<: *Anchor_DN, url: "https://ghfast.top/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/tiktok.mrs" }
+  twitter_domain:    { <<: *Anchor_DN, url: "https://ghfast.top/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/twitter.mrs" }
+  telegram_domain:   { <<: *Anchor_DN, url: "https://ghfast.top/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/telegram.mrs" }
+  netflix_domain:    { <<: *Anchor_DN, url: "https://ghfast.top/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/netflix.mrs" }
+  disney_domain:     { <<: *Anchor_DN, url: "https://ghfast.top/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/disney.mrs" }
+  spotify_domain:    { <<: *Anchor_DN, url: "https://ghfast.top/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/spotify.mrs" }
+  
+  steam_domain:      { <<: *Anchor_DN, url: "https://ghfast.top/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/steam.mrs" }
+  epic_domain:       { <<: *Anchor_DN, url: "https://ghfast.top/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/epicgames.mrs" }
+  ea_domain:         { <<: *Anchor_DN, url: "https://ghfast.top/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/ea.mrs" }
+  blizzard_domain:   { <<: *Anchor_DN, url: "https://ghfast.top/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/blizzard.mrs" }
+  ubisoft_domain:    { <<: *Anchor_DN, url: "https://ghfast.top/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/ubisoft.mrs" }
+  nintendo_domain:   { <<: *Anchor_DN, url: "https://ghfast.top/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/nintendo.mrs" }
+  playstation_domain: { <<: *Anchor_DN, url: "https://ghfast.top/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/playstation.mrs" }
+  xbox_domain:       { <<: *Anchor_DN, url: "https://ghfast.top/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/xbox.mrs" }
+
+  download_domain:   { <<: *Anchor_DN, url: "https://ghfast.top/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/category-download.mrs" }
+  bilibili_domain:   { <<: *Anchor_DN, url: "https://ghfast.top/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/bilibili.mrs" }
+  geolocation-!cn:   { <<: *Anchor_DN, url: "https://ghfast.top/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/geolocation-!cn.mrs" }
+  cn_domain:         { <<: *Anchor_DN, url: "https://ghfast.top/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/cn.mrs" }
+  anti_ad_domain:    { <<: *Anchor_DN, url: "https://ghfast.top/https://raw.githubusercontent.com/privacy-protection-tools/anti-ad.github.io/master/docs/mihomo.mrs" }
+
+    
+  apple_ip:          { <<: *Anchor_IP, url: "https://ghfast.top/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo-lite/geoip/apple.mrs" }
+  private_ip:        { <<: *Anchor_IP, url: "https://ghfast.top/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geoip/private.mrs" }
+  google_ip:         { <<: *Anchor_IP, url: "https://ghfast.top/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geoip/google.mrs" }
+  telegram_ip:       { <<: *Anchor_IP, url: "https://ghfast.top/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geoip/telegram.mrs" }
+  twitter_ip:        { <<: *Anchor_IP, url: "https://ghfast.top/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geoip/twitter.mrs" }
+  netflix_ip:        { <<: *Anchor_IP, url: "https://ghfast.top/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geoip/netflix.mrs" }
+  
+  steam_ip:          { <<: *Anchor_IP, url: "https://ghfast.top/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geoip/steam.mrs" }
+  
+  cn_ip:             { <<: *Anchor_IP, url: "https://ghfast.top/https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geoip/cn.mrs" }
+
+
+rules:
+  # === AI RULES START ===
+  - DOMAIN-SUFFIX,openai.com,🤖 AI强化
+  - DOMAIN-SUFFIX,chatgpt.com,🤖 AI强化
+  - DOMAIN-SUFFIX,oaistatic.com,🤖 AI强化
+  - DOMAIN-SUFFIX,oaiusercontent.com,🤖 AI强化
+  - DOMAIN-SUFFIX,claude.ai,🤖 AI强化
+  - DOMAIN-SUFFIX,anthropic.com,🤖 AI强化
+  - DOMAIN-SUFFIX,gemini.google.com,🤖 AI强化
+  - DOMAIN-SUFFIX,generativelanguage.googleapis.com,🤖 AI强化
+  - DOMAIN-SUFFIX,ai.google.dev,🤖 AI强化
+  - DOMAIN-SUFFIX,makersuite.google.com,🤖 AI强化
+  - DOMAIN-SUFFIX,aistudio.google.com,🤖 AI强化
+  - DOMAIN-SUFFIX,deepmind.google,🤖 AI强化
+  - DOMAIN-SUFFIX,deepmind.com,🤖 AI强化
+  - DOMAIN-SUFFIX,generativeai.google,🤖 AI强化
+  - DOMAIN-KEYWORD,colab,🤖 AI强化
+  - DOMAIN-KEYWORD,developer.google.com,🤖 AI强化
+  - DOMAIN-SUFFIX,google.com,🤖 AI强化
+  - DOMAIN-SUFFIX,googleapis.com,🤖 AI强化
+  - DOMAIN-SUFFIX,gstatic.com,🤖 AI强化
+  - DOMAIN-SUFFIX,googleusercontent.com,🤖 AI强化
+  - DOMAIN-SUFFIX,gvt1.com,🤖 AI强化
+  - DOMAIN-SUFFIX,ggpht.com,🤖 AI强化
+  - DOMAIN-SUFFIX,android.com,🤖 AI强化
+  - DOMAIN-SUFFIX,youtube.com,🤖 AI强化
+  - DOMAIN-SUFFIX,youtubei.googleapis.com,🤖 AI强化
+  - DOMAIN-SUFFIX,ytimg.com,🤖 AI强化
+  - DOMAIN-SUFFIX,googlevideo.com,🤖 AI强化
+  - DOMAIN-SUFFIX,youtu.be,🤖 AI强化
+  - DOMAIN-SUFFIX,jinjitu.com,DIRECT
+  # === AI RULES END ===
+  # 拦截广告 (必须放在最前面)
+  - RULE-SET,anti_ad_domain,🛑 拦截广告
+  # 常规服务分流
+  - RULE-SET,private_ip,DIRECT,no-resolve
+  - RULE-SET,private_domain,DIRECT
+  - RULE-SET,ai,🤖 AI平台
+  - RULE-SET,github_domain,🐙 GitHub
+  - RULE-SET,youtube_domain,📹 YouTube
+  - RULE-SET,google_domain,📹 Google
+  
+  # --- 下载分流 (放在上面，优先匹配) ---
+  - RULE-SET,download_domain,📥 下载软件
+  - RULE-SET,bilibili_domain,🅱️ 哔哩哔哩
+  - RULE-SET,onedrive_domain,☁️ OneDrive
+  - RULE-SET,microsoft_domain,Ⓜ️ Microsoft
+  - RULE-SET,appletv_domain,📺 Apple TV
+  - RULE-SET,apple_domain,🍎 Apple
+  - RULE-SET,tiktok_domain,🎼 TikTok
+  - RULE-SET,twitter_domain,🐦 Twitter
+  - RULE-SET,telegram_domain,📲 Telegram
+  - RULE-SET,netflix_domain,🎥 Netflix
+  - RULE-SET,disney_domain,🎬 Disney+
+  - RULE-SET,spotify_domain,🎵 Spotify
+
+  # --- 游戏分流 (域名 + IP) ---
+  - RULE-SET,steam_domain,🎮 游戏平台
+  - RULE-SET,epic_domain,🎮 游戏平台
+  - RULE-SET,ea_domain,🎮 游戏平台
+  - RULE-SET,blizzard_domain,🎮 游戏平台
+  - RULE-SET,ubisoft_domain,🎮 游戏平台
+  - RULE-SET,nintendo_domain,🎮 游戏平台
+  - RULE-SET,playstation_domain,🎮 游戏平台
+  - RULE-SET,xbox_domain,🎮 游戏平台
+  - RULE-SET,steam_ip,🎮 游戏平台,no-resolve
+  # --------------------
+
+  # --- 非中国大陆 IP 走代理变更为漏网之鱼 ---
+  - RULE-SET,geolocation-!cn,🐟 漏网之鱼
+  
+  # IP 规则分流
+  - RULE-SET,google_ip,📹 Google,no-resolve
+  - RULE-SET,apple_ip,🍎 Apple,no-resolve
+  - RULE-SET,netflix_ip,🎥 Netflix,no-resolve
+  - RULE-SET,telegram_ip,📲 Telegram,no-resolve
+  - RULE-SET,twitter_ip,🐦 Twitter,no-resolve
+  
+  # 兜底分流: 中国大陆流量走 "🇨🇳 中国大陆" 分组
+  - RULE-SET,cn_domain,🇨🇳 中国大陆
+  - RULE-SET,cn_ip,🇨🇳 中国大陆,no-resolve
+  - MATCH,🐟 漏网之鱼

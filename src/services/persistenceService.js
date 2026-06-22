@@ -152,6 +152,17 @@ class PersistenceService {
             this.backup(filePath);
             // 再写入
             fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
+            
+            // 异步触发自动备份镜像，动态 require 避免循环引用
+            try {
+                const BackupService = require('./backupService');
+                BackupService.performBackup().catch(err => {
+                    Logger.error('Persistence', '自动配置备份触发失败', err);
+                });
+            } catch (e) {
+                // Ignore
+            }
+
             return true;
         } catch (err) {
             Logger.error('Persistence', `写入JSON失败: ${filePath}`, err);
@@ -188,6 +199,17 @@ class PersistenceService {
             this.backup(filePath);
             // 再写入
             fs.writeFileSync(filePath, data, 'utf8');
+
+            // 异步触发自动备份镜像，动态 require 避免循环引用
+            try {
+                const BackupService = require('./backupService');
+                BackupService.performBackup().catch(err => {
+                    Logger.error('Persistence', '自动配置备份触发失败', err);
+                });
+            } catch (e) {
+                // Ignore
+            }
+
             return true;
         } catch (err) {
             Logger.error('Persistence', `写入文本失败: ${filePath}`, err);
