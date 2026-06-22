@@ -8,6 +8,8 @@ let gameAccCheckTimer = null;
 let dailyCheckTimer = null;
 let dailyCheckDone = false;
 let silentPeriodicalTimer = null; // 后台定期静默测速定时器
+let gameAccStartTimeout = null;   // 心跳启动延时器
+let silentStartTimeout = null;     // 静默测速启动延时器
 
 class GameAccService {
     // 读取已开启加速的设备 MAC 地址（使用持久化服务）
@@ -36,12 +38,11 @@ class GameAccService {
                 return null;
             }
             
-            const testPromises = group.all.map(async (nodeName) => {
-                const delay = await ClashService.testNodeDelay(nodeName, 4000);
-                return { name: nodeName, delay: delay > 0 ? delay : 99999 };
-            });
-            
-            const results = await Promise.all(testPromises);
+            const results = [];
+            for (const nodeName of group.all) {
+                const delay = await ClashService.testNodeDelay(nodeName, 2000);
+                results.push({ name: nodeName, delay: delay > 0 ? delay : 99999 });
+            }
             const validResults = results.filter(r => r.delay < 99999);
             if (validResults.length === 0) {
                 Logger.warn('GameAcc', `所有游戏节点测速全部超时，保持当前或退回原节点: ${group.now}`);
@@ -86,47 +87,70 @@ class GameAccService {
         };
     }
 
-    // 启动游戏加速节点可用性守护进程
+    // 启动游戏加速节点可用性守护进程 (错峰调度)
     static startGameAccMonitor() {
-        if (gameAccCheckTimer) return;
-        Logger.info('GameAcc', '🛡️ 启动游戏加速节点状态守护监测进程');
+        if (gameAccCheckTimer || gameAccStartTimeout) return;
         
-        // 1. 每 30 秒进行一次被动故障转移检测，仅在当前节点不可用时重测
-        gameAccCheckTimer = setInterval(async () => {
+        // 1. 故障心跳检测：延迟 120 秒 (2分钟) 启动，每 5 分钟轮询一次
+        gameAccStartTimeout = setTimeout(() => {
+            gameAccStartTimeout = null;
             const gameMacs = this.readGameDevices();
-            if (gameMacs.length === 0) {
-                this.stopGameAccMonitor();
+            if (gameMacs.length === 0) return;
+
+            Logger.info('GameAcc', '🛡️ 游戏加速故障心跳检测正式启动 (周期 5 分钟)');
+            this._checkGameNodeHealth();
+
+            gameAccCheckTimer = setInterval(async () => {
+                await this._checkGameNodeHealth();
+            }, 300000); // 每 5 分钟轮询
+        }, 120000); // 120秒错峰偏置
+        Logger.info('GameAcc', '🛡️ 游戏加速故障心跳已排程，将在 120 秒后错峰激活 (周期 5 分钟)');
+
+        // 2. 启动后台定期静默测速优化检测定时器：延迟 8 分钟 (480000ms) 启动，每 30 分钟一次 (1800000ms)
+        if (!silentPeriodicalTimer && !silentStartTimeout) {
+            silentStartTimeout = setTimeout(() => {
+                silentStartTimeout = null;
+                const gameMacs = this.readGameDevices();
+                if (gameMacs.length === 0) return;
+
+                Logger.info('GameAcc', '🕰️ 游戏节点后台静默测速优化任务正式启动 (周期 30 分钟)');
+                this.runSilentPeriodicalCheck();
+
+                silentPeriodicalTimer = setInterval(() => this.runSilentPeriodicalCheck(), 1800000);
+            }, 480000); // 8分钟错峰偏置
+            Logger.info('GameAcc', '🕰️ 游戏后台静默测速优化已排程，将在 8 分钟后错峰激活 (周期 30 分钟)');
+        }
+    }
+
+    // 内部方法：执行单次游戏节点可用性心跳检测
+    static async _checkGameNodeHealth() {
+        const gameMacs = this.readGameDevices();
+        if (gameMacs.length === 0) {
+            this.stopGameAccMonitor();
+            return;
+        }
+
+        try {
+            const proxiesData = await ClashService.getProxies();
+            const group = proxiesData.proxies['🎮 游戏加速'];
+            if (!group || !group.now) return;
+            
+            const currentNode = group.now;
+            // 排除自动策略组名称，只有锁死到具体的物理节点才进行可用性保护
+            if (['⚡ 游戏自动测速', '🚀 节点选择', '👑 高级节点', 'DIRECT'].includes(currentNode)) {
                 return;
             }
             
-            try {
-                const proxiesData = await ClashService.getProxies();
-                const group = proxiesData.proxies['🎮 游戏加速'];
-                if (!group || !group.now) return;
-                
-                const currentNode = group.now;
-                // 排除自动策略组名称，只有锁死到具体的物理节点才进行可用性保护
-                if (['⚡ 游戏自动测速', '🚀 节点选择', '👑 高级节点', 'DIRECT'].includes(currentNode)) {
-                    return;
+            const delay = await ClashService.testNodeDelay(currentNode, 4000);
+            if (delay === 0) {
+                Logger.warn('GameAcc', `⚠️ 当前锁定的游戏节点 [${currentNode}] 已完全断联！触发自动故障转移测速...`);
+                const fastestNode = await this.findFastestGameNode();
+                if (fastestNode && fastestNode.name !== currentNode) {
+                    await this.lockGameNode(fastestNode.name);
                 }
-                
-                const delay = await ClashService.testNodeDelay(currentNode, 4000);
-                if (delay === 0) {
-                    Logger.warn('GameAcc', `⚠️ 当前锁定的游戏节点 [${currentNode}] 已完全断联！触发自动故障转移测速...`);
-                    const fastestNode = await this.findFastestGameNode();
-                    if (fastestNode && fastestNode.name !== currentNode) {
-                        await this.lockGameNode(fastestNode.name);
-                    }
-                }
-            } catch (err) {
-                Logger.error('GameAcc', '故障转移守护检测发生异常', err);
             }
-        }, 30000); // 每 30 秒轮询
-
-        // 2. 启动后台定期静默测速优化检测定时器：每 15 分钟一次 (900000 ms)
-        if (!silentPeriodicalTimer) {
-            silentPeriodicalTimer = setInterval(() => this.runSilentPeriodicalCheck(), 900000);
-            Logger.info('GameAcc', '🕰️ 已激活游戏节点后台 15 分钟静默测速优化更新任务');
+        } catch (err) {
+            Logger.error('GameAcc', '故障转移心跳检测发生异常', err);
         }
     }
 
@@ -171,10 +195,18 @@ class GameAccService {
 
     // 停止游戏加速守护进程
     static stopGameAccMonitor() {
+        if (gameAccStartTimeout) {
+            clearTimeout(gameAccStartTimeout);
+            gameAccStartTimeout = null;
+        }
         if (gameAccCheckTimer) {
             clearInterval(gameAccCheckTimer);
             gameAccCheckTimer = null;
             Logger.info('GameAcc', '🛑 停止游戏加速节点状态守护监测进程');
+        }
+        if (silentStartTimeout) {
+            clearTimeout(silentStartTimeout);
+            silentStartTimeout = null;
         }
         if (silentPeriodicalTimer) {
             clearInterval(silentPeriodicalTimer);

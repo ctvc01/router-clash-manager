@@ -4,6 +4,9 @@ const Logger = require('../utils/logger');
 const { config } = require('../config');
 
 let proxyHealthMonitorTimer = null;
+let proxyHealthStartTimeout = null; // 心跳启动延时器
+let silentAllNodesTimer = null;     // 2小时静默测速定时器
+let silentAllNodesStartTimeout = null; // 2小时静默测速启动延时器
 let consecutiveFailures = 0;
 let consecutiveRestarts = 0; // 连续重启计数器，防止级联雪崩
 
@@ -49,16 +52,34 @@ class ProxyHealthService {
         }
     }
 
-    // 启动代理模式全局健康自愈监测器
+    // 启动代理模式全局健康自愈监测器 (错峰调度与定时全节点检测)
     static startProxyHealthMonitor() {
-        if (proxyHealthMonitorTimer) return;
+        if (proxyHealthMonitorTimer || proxyHealthStartTimeout) return;
 
-        Logger.info('ProxyDaemon', '🛡️ 启动网页代理全局健康度自愈监测守护进程...');
+        Logger.info('ProxyDaemon', '🛡️ 网页代理全局健康度自愈监测守护进程排程中...');
         consecutiveFailures = 0;
 
-        // 初始化预热：第一次心跳延迟30s执行，给系统充足的启动和初始化时间
-        proxyHealthMonitorTimer = setTimeout(() => this._runHealthCheckScheduler(), 30000);
-        Logger.info('ProxyDaemon', '心跳检测已启动 (30s初始延迟，采用自适应防堆叠尾调度机制)');
+        // 1. 心跳检测：启动后延迟 180 秒（3分钟）正式激活，每 5 分钟轮询一次
+        proxyHealthStartTimeout = setTimeout(() => {
+            proxyHealthStartTimeout = null;
+            Logger.info('ProxyDaemon', '🛡️ 网页代理心跳监测正式启动 (周期 5 分钟)');
+            this._runHealthCheckScheduler();
+        }, 180000);
+        Logger.info('ProxyDaemon', '🛡️ 网页代理心跳监测已排程，将在 180 秒后错峰激活 (周期 5 分钟)');
+
+        // 2. 网页代理全节点定时测速刷新任务：启动后延迟 15 分钟（900000ms）正式激活，每 2 小时（7200000ms）执行一次
+        if (!silentAllNodesTimer && !silentAllNodesStartTimeout) {
+            silentAllNodesStartTimeout = setTimeout(() => {
+                silentAllNodesStartTimeout = null;
+                Logger.info('ProxyDaemon', '🕰️ 网页代理全节点定时测速刷新任务正式启动 (周期 2 小时)');
+                this.runSilentAllNodesCheck();
+
+                silentAllNodesTimer = setInterval(() => {
+                    this.runSilentAllNodesCheck();
+                }, 7200000);
+            }, 900000);
+            Logger.info('ProxyDaemon', '🕰️ 网页代理全节点定时测速刷新已排程，将在 15 分钟后错峰激活 (周期 2 小时)');
+        }
     }
 
     // 自适应调度器，保证单并发运行，防堆叠
@@ -68,8 +89,8 @@ class ProxyHealthService {
         } catch (e) {
             Logger.error('ProxyDaemon', '调度器捕获到未处理心跳异常', e);
         } finally {
-            // 每次完全结束后，才安排 60 秒后的下一次检测
-            proxyHealthMonitorTimer = setTimeout(() => this._runHealthCheckScheduler(), 60000);
+            // 每次完全结束后，安排 5 分钟（300000 ms）后的下一次检测
+            proxyHealthMonitorTimer = setTimeout(() => this._runHealthCheckScheduler(), 300000);
         }
     }
 
@@ -142,7 +163,7 @@ class ProxyHealthService {
             if (!isProxyWorking) {
                 Logger.warn('ProxyDaemon', '⚠️ 检测到网页代理链路超时阻断！启动高并发自愈测速...');
                 
-                // 1) 优先方案：高并发测速 ⚡ 最快线路 的前 15 个物理核心节点，驱动自动漂移自愈
+                // 1) 优先方案：串行测速 ⚡ 最快线路 的前 5 个物理核心节点，驱动自动漂移自愈
                 try {
                     const testGroupName = '⚡ 最快线路';
                     const proxiesData = await ClashService.getProxies();
@@ -151,20 +172,23 @@ class ProxyHealthService {
                     if (groupInfo && groupInfo.all && groupInfo.all.length > 0) {
                         // 仅挑选前 5 个主要物理高质节点进行测速刷新，减免路由器 CPU 负担
                         const targetNodes = groupInfo.all.slice(0, 5);
-                        Logger.info('ProxyDaemon', `已自动识别到 [${testGroupName}] 下的 ${targetNodes.length} 个核心节点，开始并发测速...`);
+                        Logger.info('ProxyDaemon', `已自动识别到 [${testGroupName}] 下的 ${targetNodes.length} 个核心节点，开始串行测速自愈...`);
                         
-                        // 发起并发延迟更新（不阻塞心跳线程）
-                        Promise.all(targetNodes.map(node => 
-                            ClashService.testNodeDelay(node, 4000, 'http://www.gstatic.com/generate_204')
-                                .then(delay => {
+                        // 在后台以串行排队方式执行（不阻塞主心跳检测线程）
+                        (async () => {
+                            const results = [];
+                            for (const node of targetNodes) {
+                                try {
+                                    const delay = await ClashService.testNodeDelay(node, 2000, 'http://www.gstatic.com/generate_204');
                                     Logger.debug('ProxyDaemon', `  节点 [${node}] 测速就绪: ${delay}ms`);
-                                    return { node, delay };
-                                })
-                                .catch(() => ({ node, delay: 0 }))
-                        )).then(results => {
+                                    results.push({ node, delay });
+                                } catch (e) {
+                                    results.push({ node, delay: 0 });
+                                }
+                            }
                             const activeCount = results.filter(r => r.delay > 0).length;
-                            Logger.info('ProxyDaemon', `🎉 网页代理核心测速自愈并发完成，已成功激活并更新了 ${activeCount} 个可用节点的延迟历史！`);
-                        });
+                            Logger.info('ProxyDaemon', `🎉 网页代理核心测速自愈串行完成，已成功激活并更新了 ${activeCount} 个可用节点的延迟历史！`);
+                        })();
                     }
                 } catch (gErr) {
                     Logger.error('ProxyDaemon', '并发最快线路自愈测速失败，转向后备方案', gErr);
@@ -192,12 +216,65 @@ class ProxyHealthService {
         }
     }
 
+    // 定时全物理节点串行测速刷新任务 (每 2 小时一次)
+    static async runSilentAllNodesCheck() {
+        try {
+            Logger.info('ProxyDaemon', '🕰️ 开始执行网页代理全物理节点定时测速刷新...');
+            const proxiesData = await ClashService.getProxies();
+            if (!proxiesData || !proxiesData.proxies) return;
+
+            // 优先匹配主策略组
+            const testGroupName = '🚀 选择节点';
+            const groupInfo = proxiesData.proxies[testGroupName];
+            if (!groupInfo || !groupInfo.all || groupInfo.all.length === 0) {
+                Logger.warn('ProxyDaemon', `未找到策略组 [${testGroupName}]，跳过定时全节点刷新`);
+                return;
+            }
+
+            // 过滤非物理节点
+            const targetNodes = groupInfo.all.filter(nodeName => {
+                const lowerName = nodeName.toLowerCase();
+                return !['direct', 'global', 'rejection'].includes(lowerName) &&
+                       !lowerName.includes('选择节点') &&
+                       !lowerName.includes('节点选择');
+            });
+
+            Logger.info('ProxyDaemon', `获取到 ${targetNodes.length} 个网页备选物理节点，开始全量串行测速...`);
+            
+            // 串行测试所有节点，指定超时为 2000ms
+            let activeCount = 0;
+            for (const node of targetNodes) {
+                const delay = await ClashService.testNodeDelay(node, 2000, 'http://www.gstatic.com/generate_204');
+                if (delay > 0) {
+                    activeCount++;
+                }
+            }
+
+            Logger.info('ProxyDaemon', `🎉 网页代理全节点定时测速刷新完成，共 ${activeCount}/${targetNodes.length} 个可用节点延迟已更新历史。`);
+        } catch (err) {
+            Logger.error('ProxyDaemon', '网页代理全节点定时测速任务发生异常', err);
+        }
+    }
+
     // 关闭监测器
     static stopProxyHealthMonitor() {
+        if (proxyHealthStartTimeout) {
+            clearTimeout(proxyHealthStartTimeout);
+            proxyHealthStartTimeout = null;
+        }
         if (proxyHealthMonitorTimer) {
             clearTimeout(proxyHealthMonitorTimer);
             proxyHealthMonitorTimer = null;
             Logger.info('ProxyDaemon', '⏹️ 网页代理健康度监测守护进程已关闭。');
+        }
+        if (silentAllNodesStartTimeout) {
+            clearTimeout(silentAllNodesStartTimeout);
+            silentAllNodesStartTimeout = null;
+        }
+        if (silentAllNodesTimer) {
+            clearInterval(silentAllNodesTimer);
+            silentAllNodesTimer = null;
+            Logger.info('ProxyDaemon', '⏹️ 网页代理全节点定时测速刷新任务已注销。');
         }
     }
 }

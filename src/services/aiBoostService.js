@@ -8,6 +8,8 @@ let aiBoostCheckTimer = null;
 let dailyCheckTimer = null;
 let dailyCheckDone = false;
 let silentPeriodicalTimer = null; // 后台定期静默测速定时器
+let aiBoostStartTimeout = null;   // 心跳启动延时器
+let silentStartTimeout = null;     // 静默测速启动延时器
 
 class AiBoostService {
     // 读取已开启 AI 强化的设备 MAC 地址（使用持久化服务）
@@ -53,12 +55,11 @@ class AiBoostService {
                 return group.now ? { name: group.now, delay: 99999 } : null;
             }
             
-            const testPromises = filteredNodes.map(async (nodeName) => {
-                const delay = await ClashService.testNodeDelay(nodeName, 4000, 'https://generativelanguage.googleapis.com/');
-                return { name: nodeName, delay: delay > 0 ? delay : 99999 };
-            });
-            
-            const results = await Promise.all(testPromises);
+            const results = [];
+            for (const nodeName of filteredNodes) {
+                const delay = await ClashService.testNodeDelay(nodeName, 2000, 'https://generativelanguage.googleapis.com/');
+                results.push({ name: nodeName, delay: delay > 0 ? delay : 99999 });
+            }
             const validResults = results.filter(r => r.delay < 99999);
             if (validResults.length === 0) {
                 Logger.warn('AiBoost', `所有 AI 节点测速全部超时，保持当前或退回原节点: ${group.now}`);
@@ -102,47 +103,70 @@ class AiBoostService {
         };
     }
 
-    // 启动 AI 强化节点可用性守护进程
+    // 启动 AI 强化节点可用性守护进程 (错峰调度)
     static startAiBoostMonitor() {
-        if (aiBoostCheckTimer) return;
-        Logger.info('AiBoost', '🛡️ 启动 AI 强化节点状态守护监测进程');
+        if (aiBoostCheckTimer || aiBoostStartTimeout) return;
         
-        // 1. 每 30 秒进行一次被动故障转移检测，仅在锁定节点不可用时重测
-        aiBoostCheckTimer = setInterval(async () => {
+        // 1. 故障心跳检测：延迟 60 秒启动，每 5 分钟轮询一次
+        aiBoostStartTimeout = setTimeout(() => {
+            aiBoostStartTimeout = null;
             const aiMacs = this.readAiDevices();
-            if (aiMacs.length === 0) {
-                this.stopAiBoostMonitor();
+            if (aiMacs.length === 0) return;
+
+            Logger.info('AiBoost', '🛡️ AI 强化故障心跳检测正式启动 (周期 5 分钟)');
+            this._checkAiNodeHealth();
+
+            aiBoostCheckTimer = setInterval(async () => {
+                await this._checkAiNodeHealth();
+            }, 300000); // 每 5 分钟轮询
+        }, 60000); // 60秒错峰偏置
+        Logger.info('AiBoost', '🛡️ AI 强化故障心跳已排程，将在 60 秒后错峰激活 (周期 5 分钟)');
+
+        // 2. 启动后台定期静默测速优化检测定时器：延迟 5 分钟 (300000ms) 启动，每 30 分钟一次 (1800000ms)
+        if (!silentPeriodicalTimer && !silentStartTimeout) {
+            silentStartTimeout = setTimeout(() => {
+                silentStartTimeout = null;
+                const aiMacs = this.readAiDevices();
+                if (aiMacs.length === 0) return;
+
+                Logger.info('AiBoost', '🕰️ AI 节点后台静默测速优化任务正式启动 (周期 30 分钟)');
+                this.runSilentPeriodicalCheck();
+
+                silentPeriodicalTimer = setInterval(() => this.runSilentPeriodicalCheck(), 1800000);
+            }, 300000); // 5分钟错峰偏置
+            Logger.info('AiBoost', '🕰️ AI 后台静默测速优化已排程，将在 5 分钟后错峰激活 (周期 30 分钟)');
+        }
+    }
+
+    // 内部方法：执行单次 AI 节点可用性心跳检测
+    static async _checkAiNodeHealth() {
+        const aiMacs = this.readAiDevices();
+        if (aiMacs.length === 0) {
+            this.stopAiBoostMonitor();
+            return;
+        }
+
+        try {
+            const proxiesData = await ClashService.getProxies();
+            const group = proxiesData.proxies['🤖 AI强化'];
+            if (!group || !group.now) return;
+            
+            const currentNode = group.now;
+            // 排除自动策略组名称，只有锁死到具体的物理节点才进行可用性保护
+            if (['⚡ AI自动测速', '🚀 节点选择', '👑 高级节点', 'DIRECT'].includes(currentNode)) {
                 return;
             }
             
-            try {
-                const proxiesData = await ClashService.getProxies();
-                const group = proxiesData.proxies['🤖 AI强化'];
-                if (!group || !group.now) return;
-                
-                const currentNode = group.now;
-                // 排除自动策略组名称，只有锁死到具体的物理节点才进行可用性保护
-                if (['⚡ AI自动测速', '🚀 节点选择', '👑 高级节点', 'DIRECT'].includes(currentNode)) {
-                    return;
+            const delay = await ClashService.testNodeDelay(currentNode, 4000, 'https://generativelanguage.googleapis.com/');
+            if (delay === 0) {
+                Logger.warn('AiBoost', `⚠️ 当前锁定的 AI 节点 [${currentNode}] 已完全断联！触发自动故障转移测速...`);
+                const fastestNode = await this.findFastestAiNode();
+                if (fastestNode && fastestNode.name !== currentNode) {
+                    await this.lockAiNode(fastestNode.name);
                 }
-                
-                const delay = await ClashService.testNodeDelay(currentNode, 4000, 'https://generativelanguage.googleapis.com/');
-                if (delay === 0) {
-                    Logger.warn('AiBoost', `⚠️ 当前锁定的 AI 节点 [${currentNode}] 已完全断联！触发自动故障转移测速...`);
-                    const fastestNode = await this.findFastestAiNode();
-                    if (fastestNode && fastestNode.name !== currentNode) {
-                        await this.lockAiNode(fastestNode.name);
-                    }
-                }
-            } catch (err) {
-                Logger.error('AiBoost', '故障转移守护检测发生异常', err);
             }
-        }, 30000); // 每 30 秒轮询
-
-        // 2. 启动后台定期静默测速优化检测定时器：每 15 分钟一次 (900000 ms)
-        if (!silentPeriodicalTimer) {
-            silentPeriodicalTimer = setInterval(() => this.runSilentPeriodicalCheck(), 900000);
-            Logger.info('AiBoost', '🕰️ 已激活 AI 节点后台 15 分钟静默测速优化更新任务');
+        } catch (err) {
+            Logger.error('AiBoost', '故障转移心跳检测发生异常', err);
         }
     }
 
@@ -187,10 +211,18 @@ class AiBoostService {
 
     // 停止 AI 强化守护进程
     static stopAiBoostMonitor() {
+        if (aiBoostStartTimeout) {
+            clearTimeout(aiBoostStartTimeout);
+            aiBoostStartTimeout = null;
+        }
         if (aiBoostCheckTimer) {
             clearInterval(aiBoostCheckTimer);
             aiBoostCheckTimer = null;
             Logger.info('AiBoost', '🛑 停止 AI 强化节点状态守护监测进程');
+        }
+        if (silentStartTimeout) {
+            clearTimeout(silentStartTimeout);
+            silentStartTimeout = null;
         }
         if (silentPeriodicalTimer) {
             clearInterval(silentPeriodicalTimer);

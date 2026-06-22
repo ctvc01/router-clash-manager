@@ -6,6 +6,7 @@ let cachedProxies = null;
 let lastProxiesFetchTime = 0;
 let pendingProxiesPromise = null;
 const PROXIES_CACHE_TTL = 10000; // 10秒缓存
+let delayTestQueue = Promise.resolve(); // 全局测速串行 Promise 队列
 
 class ClashService {
     // 获取 Clash (Mihomo) HTTP 客户端实例
@@ -82,15 +83,26 @@ class ClashService {
         Logger.info('ClashAPI', '已清除节点 proxies 缓存');
     }
 
-    // 测试单个节点延迟
+    // 测试单个节点延迟 (全局串行队列保护，保证对路由器零并发冲击)
     static async testNodeDelay(nodeName, timeoutMs = 4000, testUrl = 'http://ctest.cdn.nintendo.net/') {
-        const encodedName = encodeURIComponent(nodeName);
-        const url = `/proxies/${encodedName}/delay?timeout=${timeoutMs - 1000}&url=${encodeURIComponent(testUrl)}`;
-        const res = await this._request('GET', url, null, timeoutMs);
-        if (res.status === 200) {
-            return res.data.delay || 0;
-        }
-        return 0;
+        return new Promise((resolve) => {
+            delayTestQueue = delayTestQueue.then(async () => {
+                try {
+                    const encodedName = encodeURIComponent(nodeName);
+                    const apiTimeout = Math.max(1000, timeoutMs - 1000);
+                    const url = `/proxies/${encodedName}/delay?timeout=${apiTimeout}&url=${encodeURIComponent(testUrl)}`;
+                    const res = await this._request('GET', url, null, timeoutMs);
+                    if (res && res.status === 200) {
+                        resolve(res.data.delay || 0);
+                        return;
+                    }
+                    resolve(0);
+                } catch (err) {
+                    Logger.debug('ClashAPI', `节点 [${nodeName}] 测速请求失败: ${err.message}`);
+                    resolve(0);
+                }
+            });
+        });
     }
 
     // 锁定/选择特定的策略组节点

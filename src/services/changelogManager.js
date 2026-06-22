@@ -1,9 +1,10 @@
 const fs = require('fs');
 const path = require('path');
 const Logger = require('../utils/logger');
+const { config } = require('../config');
 
 class ChangelogManager {
-    static CHANGELOG_FILE = '/app/CHANGELOG.md';
+    static CHANGELOG_FILE = path.join(config.paths.dataDir, 'CHANGELOG.md');
     static MAX_ENTRIES = 1000;
 
     // 记录配置变更
