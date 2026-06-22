@@ -21,21 +21,18 @@ class RulesEngine {
         for (let i = 0; i < configLines.length; i++) {
             const originalLine = configLines[i];
             const line = originalLine.trim();
-
-            // 如果已处于块中，遇到非空行且不是缩进（不以空格/Tab开头），且不是注释，则认为退出该块
+            if (line.startsWith('tun:')) {
+                inTunBlock = true;
+                continue;
+            }
+            // 如果处于 tun 块中，遇到非空行且不是缩进（不以空格/Tab开头），且不是注释，则认为退出 tun 块
             if (inTunBlock && line.length > 0 && !originalLine.startsWith(' ') && !originalLine.startsWith('\t') && !line.startsWith('#')) {
                 inTunBlock = false;
             }
-
-            // 检测 tun: 块的开始（必须在退出检查之后，防止立即退出）
-            if (line.startsWith('tun:')) {
-                inTunBlock = true;
-            }
-
-            // 修改 tun 块内的 enable 设置
             if (inTunBlock && line.startsWith('enable:')) {
                 const indent = originalLine.match(/^\s*/)[0];
                 configLines[i] = `${indent}enable: false`;
+                inTunBlock = false; // 替换后即可退出 tun 块
             }
         }
 
