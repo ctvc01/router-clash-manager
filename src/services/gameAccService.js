@@ -7,6 +7,7 @@ const PersistenceService = require('./persistenceService');
 let gameAccCheckTimer = null;
 let dailyCheckTimer = null;
 let dailyCheckDone = false;
+let silentPeriodicalTimer = null; // 后台定期静默测速定时器
 
 class GameAccService {
     // 读取已开启加速的设备 MAC 地址（使用持久化服务）
@@ -23,6 +24,7 @@ class GameAccService {
     }
 
     // 寻找当前最快的游戏节点
+    // 返回 { name, delay } 对象，方便延迟差比较
     static async findFastestGameNode() {
         try {
             Logger.info('GameAcc', '🔍 开始并发测试游戏节点延迟，寻找最快节点...');
@@ -43,15 +45,15 @@ class GameAccService {
             const validResults = results.filter(r => r.delay < 99999);
             if (validResults.length === 0) {
                 Logger.warn('GameAcc', `所有游戏节点测速全部超时，保持当前或退回原节点: ${group.now}`);
-                return group.now || null;
+                return group.now ? { name: group.now, delay: 99999 } : null;
             }
             
             validResults.sort((a, b) => a.delay - b.delay);
             Logger.info('GameAcc', `✅ 测速最优节点: ${validResults[0].name} (${validResults[0].delay} ms)`);
-            return validResults[0].name;
+            return validResults[0];
          } catch (err) {
-             Logger.error('GameAcc', '寻找最快节点时发生异常', err);
-             return null;
+              Logger.error('GameAcc', '寻找最快节点时发生异常', err);
+              return null;
          }
     }
 
@@ -89,6 +91,7 @@ class GameAccService {
         if (gameAccCheckTimer) return;
         Logger.info('GameAcc', '🛡️ 启动游戏加速节点状态守护监测进程');
         
+        // 1. 每 30 秒进行一次被动故障转移检测，仅在当前节点不可用时重测
         gameAccCheckTimer = setInterval(async () => {
             const gameMacs = this.readGameDevices();
             if (gameMacs.length === 0) {
@@ -111,14 +114,59 @@ class GameAccService {
                 if (delay === 0) {
                     Logger.warn('GameAcc', `⚠️ 当前锁定的游戏节点 [${currentNode}] 已完全断联！触发自动故障转移测速...`);
                     const fastestNode = await this.findFastestGameNode();
-                    if (fastestNode && fastestNode !== currentNode) {
-                        await this.lockGameNode(fastestNode);
+                    if (fastestNode && fastestNode.name !== currentNode) {
+                        await this.lockGameNode(fastestNode.name);
                     }
                 }
             } catch (err) {
                 Logger.error('GameAcc', '故障转移守护检测发生异常', err);
             }
         }, 30000); // 每 30 秒轮询
+
+        // 2. 启动后台定期静默测速优化检测定时器：每 15 分钟一次 (900000 ms)
+        if (!silentPeriodicalTimer) {
+            silentPeriodicalTimer = setInterval(() => this.runSilentPeriodicalCheck(), 900000);
+            Logger.info('GameAcc', '🕰️ 已激活游戏节点后台 15 分钟静默测速优化更新任务');
+        }
+    }
+
+    // 后台定期静默测速与克制切换
+    static async runSilentPeriodicalCheck() {
+        try {
+            const gameMacs = this.readGameDevices();
+            if (gameMacs.length === 0) return;
+
+            Logger.info('GameAcc', '🕰️ 触发游戏节点定期静默测速优化检测...');
+            const proxiesData = await ClashService.getProxies();
+            const group = proxiesData.proxies['🎮 游戏加速'];
+            if (!group || !group.now) return;
+
+            const currentNode = group.now;
+            
+            // 1. 快速测速当前节点
+            let currentDelay = await ClashService.testNodeDelay(currentNode, 4000);
+            if (currentDelay === 0) currentDelay = 99999; // 完全断开时视为无穷大
+
+            // 2. 并发测速寻找所有物理节点中的最快节点
+            const fastestNode = await this.findFastestGameNode();
+            if (!fastestNode) return;
+
+            if (fastestNode.name === currentNode) {
+                Logger.info('GameAcc', `定期检测：当前锁定的游戏节点 [${currentNode}] (${currentDelay}ms) 已经是最新最优节点，保持不变。`);
+                return;
+            }
+
+            // 3. 克制切换判断：延迟差距需大于 200ms
+            const diff = currentDelay - fastestNode.delay;
+            if (diff > 200) {
+                Logger.info('GameAcc', `🎉 发现更优游戏节点: [${fastestNode.name}] (${fastestNode.delay}ms)，比当前节点 [${currentNode}] (${currentDelay}ms) 快了 ${diff}ms (已超出 200ms 门槛)，执行锁定切换。`);
+                await this.lockGameNode(fastestNode.name);
+            } else {
+                Logger.info('GameAcc', `定期检测：虽发现更快游戏节点 [${fastestNode.name}] (${fastestNode.delay}ms)，但相较当前节点 [${currentNode}] (${currentDelay}ms) 优化差值 ${diff}ms <= 200ms，为保持连接稳定性，跳过主动切换。`);
+            }
+        } catch (err) {
+            Logger.error('GameAcc', '定期静默测速优化任务异常', err);
+        }
     }
 
     // 停止游戏加速守护进程
@@ -127,6 +175,11 @@ class GameAccService {
             clearInterval(gameAccCheckTimer);
             gameAccCheckTimer = null;
             Logger.info('GameAcc', '🛑 停止游戏加速节点状态守护监测进程');
+        }
+        if (silentPeriodicalTimer) {
+            clearInterval(silentPeriodicalTimer);
+            silentPeriodicalTimer = null;
+            Logger.info('GameAcc', '🛑 已注销游戏后台静默测速定时任务');
         }
     }
 
@@ -147,7 +200,7 @@ class GameAccService {
                         try {
                             const fastestNode = await this.findFastestGameNode();
                             if (fastestNode) {
-                                await this.lockGameNode(fastestNode);
+                                await this.lockGameNode(fastestNode.name);
                             }
                         } catch (err) {
                             Logger.error('GameAcc', '每日凌晨定时测速切换异常', err);
@@ -160,5 +213,6 @@ class GameAccService {
         }, 60000); // 每分钟轮询
     }
 }
+
 
 module.exports = GameAccService;

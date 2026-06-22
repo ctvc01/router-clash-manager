@@ -139,7 +139,7 @@ class AccelerationService {
                     Logger.info(label, `Clash 核心就绪成功，开始测速锁定最优${modeName}...`);
                     const fastestNode = await service[findNodeMethod]();
                     if (fastestNode) {
-                        await service[lockNodeMethod](fastestNode);
+                        await service[lockNodeMethod](fastestNode.name);
                     }
                     service[startMonitorMethod]();
                 } else {
