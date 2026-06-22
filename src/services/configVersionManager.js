@@ -1,9 +1,10 @@
 const fs = require('fs');
 const path = require('path');
 const Logger = require('../utils/logger');
+const { config } = require('../config');
 
 class ConfigVersionManager {
-    static VERSION_DIR = '/tmp/clash_config_versions';
+    static VERSION_DIR = config.paths.configVersions;
     static MAX_VERSIONS = 10;
     static BACKUP_INTERVAL = 5 * 60 * 1000; // 5分钟检测一次
 

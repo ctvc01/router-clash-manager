@@ -49,11 +49,20 @@ class ProxyHealthService {
         consecutiveFailures = 0;
 
         // 初始化预热：第一次心跳延迟30s执行，给系统充足的启动和初始化时间
-        setTimeout(() => this._runHealthCheck(), 30000);
+        proxyHealthMonitorTimer = setTimeout(() => this._runHealthCheckScheduler(), 30000);
+        Logger.info('ProxyDaemon', '心跳检测已启动 (30s初始延迟，采用自适应防堆叠尾调度机制)');
+    }
 
-        // 之后每60秒轮询一次
-        proxyHealthMonitorTimer = setInterval(() => this._runHealthCheck(), 60000);
-        Logger.info('ProxyDaemon', '心跳检测已启动 (30s初始延迟，之后每60s检测一次)');
+    // 自适应调度器，保证单并发运行，防堆叠
+    static async _runHealthCheckScheduler() {
+        try {
+            await this._runHealthCheck();
+        } catch (e) {
+            Logger.error('ProxyDaemon', '调度器捕获到未处理心跳异常', e);
+        } finally {
+            // 每次完全结束后，才安排 60 秒后的下一次检测
+            proxyHealthMonitorTimer = setTimeout(() => this._runHealthCheckScheduler(), 60000);
+        }
     }
 
     // 内部实现：单次心跳检测
@@ -93,6 +102,21 @@ class ProxyHealthService {
                     consecutiveFailures = 0;
                 }
                 return;
+            }
+
+            // 2.5 检查重定向引流规则完整性（防御防火墙重置冲刷规则漏洞）
+            try {
+                const hasProxyOrGame = (await SshService.runRemoteCommand('[ -s /data/ShellCrash/configs/mac ] && echo 1 || echo 0')).trim() === '1';
+                if (hasProxyOrGame) {
+                    const redirectCount = parseInt(await SshService.runRemoteCommand('iptables -t nat -L PREROUTING -n 2>/dev/null | grep -c REDIRECT || echo 0'), 10);
+                    if (redirectCount === 0) {
+                        Logger.warn('ProxyDaemon', '⚠️ 警告: 检测到 Clash 进程存活但 iptables 劫持规则被意外清空！正在自动执行引流重构修复...');
+                        await SshService.runRemoteCommand('sh /data/ShellCrash/setup_iptables.sh');
+                        Logger.info('ProxyDaemon', '✅ 官方引流规则已自愈重建');
+                    }
+                }
+            } catch (ruleErr) {
+                Logger.error('ProxyDaemon', '检测/重构防火墙引流规则失败', ruleErr);
             }
 
             // 3. 检查海外代理链路可用性
@@ -152,7 +176,7 @@ class ProxyHealthService {
     // 关闭监测器
     static stopProxyHealthMonitor() {
         if (proxyHealthMonitorTimer) {
-            clearInterval(proxyHealthMonitorTimer);
+            clearTimeout(proxyHealthMonitorTimer);
             proxyHealthMonitorTimer = null;
             Logger.info('ProxyDaemon', '⏹️ 网页代理健康度监测守护进程已关闭。');
         }

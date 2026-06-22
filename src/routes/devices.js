@@ -36,8 +36,8 @@ router.get('/', async (req, res) => {
         const [dhcpOutput, whitelistOutput, trafficOutput] = await Promise.all([
             (async () => {
                 try {
-                    // 方案：从 /data 读取（持久），失败则从 /tmp 读取，再失败则从 ARP
-                    return await SshService.runRemoteCommand('cat /data/dhcp.leases 2>/dev/null || /tmp/generate_dhcp_leases.sh 2>/dev/null || cat /proc/net/arp');
+                    // 方案：优先从 /tmp/dhcp.leases（标准位置）读取，失败则尝试 dnsmasq.leases 或旧 /data，最后降级至 ARP 表
+                    return await SshService.runRemoteCommand('cat /tmp/dhcp.leases 2>/dev/null || cat /var/lib/misc/dnsmasq.leases 2>/dev/null || cat /data/dhcp.leases 2>/dev/null || /tmp/generate_dhcp_leases.sh 2>/dev/null || cat /proc/net/arp');
                 } catch (err) {
                     Logger.warn('Devices', '读取 DHCP 数据失败，降级使用 ARP', err.message);
                     return await SshService.runRemoteCommand('cat /proc/net/arp');
@@ -74,23 +74,37 @@ router.get('/', async (req, res) => {
         for (const line of lines) {
             const parts = line.trim().split(/\s+/);
             let ip, mac, hostname;
+            let flags = '';
+            let device = '';
 
             if (isDhcpFormat && parts.length >= 4) {
                 // DHCP 租约格式: timestamp | mac | ip | hostname | *
                 mac = parts[1].trim().toLowerCase();
                 ip = parts[2].trim();
                 hostname = parts[3].trim() === '*' ? '未知设备' : parts[3].trim();
-            } else if (parts.length >= 4 && !parts[0].match(/^IP|^HW|^---/)) {
+            } else if (parts.length >= 6 && !parts[0].match(/^IP|^HW|^---/)) {
                 // ARP 表格式: IP | HW type | Flags | MAC | Mask | Device
                 // 或者:      0  | 1        | 2     | 3   | 4    | 5
                 ip = parts[0].trim();
+                flags = parts[2].trim();
                 mac = parts[3].trim().toLowerCase();
+                device = parts[5].trim();
                 hostname = '未知设备';
             } else {
                 continue; // 跳过头行或无效行
             }
 
-            if (MAC_REGEX.test(mac) && IP_REGEX.test(ip) && !seen.has(mac)) {
+            // 过滤条件加固：
+            // 1. 符合 MAC 和 IP 正则
+            // 2. MAC 不能为全零的未完成/无效状态（比如 198.18.0.2 Fake-IP 探测记录）
+            // 3. ARP 格式下，物理网卡接口必须为 br-lan（局域网网桥），过滤 WAN 口侧设备（如 192.168.1.1 光猫）
+            // 注意：不硬性过滤 flags === '0x0' 的真实 MAC 设备，以防止休眠设备（如 iPhone）被误判为离线清空
+            if (MAC_REGEX.test(mac) && IP_REGEX.test(ip) && mac !== '00:00:00:00:00:00' && !seen.has(mac)) {
+                if (!isDhcpFormat) {
+                    if (device !== 'br-lan') {
+                        continue;
+                    }
+                }
                 seen.add(mac);
                 const macUpper = mac.toUpperCase();
                 const trafficInfo = trafficData[macUpper] || {};
@@ -108,6 +122,16 @@ router.get('/', async (req, res) => {
         }
 
         const custom = readCustom();
+        let needWriteBack = false;
+        for (const [mac, item] of Object.entries(custom)) {
+            if (item && !item.name && item.category === 'other') {
+                delete custom[mac];
+                needWriteBack = true;
+            }
+        }
+        if (needWriteBack) {
+            writeCustom(custom);
+        }
         const responseData = {
             whitelist,
             lan_devices,
@@ -141,7 +165,11 @@ router.post('/custom', (req, res) => {
         const { name, category } = Validators.validateDeviceCustom(req.body.name, req.body.category);
         
         const customData = readCustom();
-        customData[mac] = { name, category };
+        if (!name && category === 'other') {
+            delete customData[mac];
+        } else {
+            customData[mac] = { name, category };
+        }
         
         if (writeCustom(customData)) {
             // 主动失效设备列表缓存以强制即时刷新

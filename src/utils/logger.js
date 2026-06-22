@@ -5,7 +5,11 @@ const path = require('path');
 
 class Logger {
     static MAX_LOG_SIZE = 10 * 1024 * 1024; // 10MB
-    static LOG_DIR = process.env.LOG_DIR || '/app/logs';
+    static LOG_DIR = process.env.LOG_DIR || (
+        process.env.NODE_ENV === 'production' 
+            ? '/data/logs' 
+            : path.join(__dirname, '..', '..', 'logs')
+    );
     static LOG_FILE = path.join(Logger.LOG_DIR, 'app.log');
     static logFileSize = 0;
 

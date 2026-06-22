@@ -70,6 +70,7 @@ device_custom.json
 game_devices
 ai_devices
 aliases.json
+config_versions/
 
 # 允许追踪本地备份目录 configs_backup/ 里的配置文件，避免被上方规则阻断
 !configs_backup/

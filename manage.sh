@@ -221,6 +221,29 @@ action_backup() {
     fi
 }
 
+# 动作：远程可用性检测
+action_check() {
+    echo -e "${C_BLUE}[*] 正在选择测试发起端 (NAS)...${C_RESET}"
+    
+    # 1. 探测内网或外网 SSH 连通性
+    local nas_host="192.168.31.66"
+    local local_ip="192.168.31.66"
+    local domain_host="dev.jinjitu.com"
+
+    echo -e "${C_CYAN}[*] 正在探测 NAS 连通性...${C_RESET}"
+    if curl -s -o /dev/null --connect-timeout 2 "http://${local_ip}:3000/health"; then
+        nas_host="${local_ip}"
+        echo -e "${C_GREEN}● [LAN] 探测成功，正在使用局域网直连 IP: ${nas_host}${C_RESET}"
+    else
+        nas_host="${domain_host}"
+        echo -e "${C_YELLOW}● [WAN] 局域网不可达，正在使用外网域名映射: ${nas_host}${C_RESET}"
+    fi
+
+    echo -e "${C_BLUE}[*] 正在远程请求 NAS (clash-meta 容器) 执行可用性检测...${C_RESET}\n"
+    # 执行远程容器内的检测脚本
+    ssh -o StrictHostKeyChecking=no ctpdrqm@${nas_host} "docker exec clash-meta /app/scripts/check_modes.sh"
+}
+
 # 动作：帮助文档
 show_help() {
     print_banner
@@ -236,6 +259,7 @@ show_help() {
     echo -e "  ${C_GREEN}logs${C_RESET}       - 实时流式监控和查看 Clash 的请求分流日志 (彩色)"
     echo -e "  ${C_GREEN}menu${C_RESET}       - 登录路由器直接运行 ShellCrash 原生交互菜单"
     echo -e "  ${C_GREEN}backup${C_RESET}     - 备份路由器和 NAS 端当前的全部配置文件到 configs_backup/"
+    echo -e "  ${C_GREEN}check${C_RESET}      - 远程让局域网 NAS 发起代理各模式可用性与 Switch 联机丢包测速"
     echo -e "  ${C_GREEN}help${C_RESET}       - 显示本帮助文档"
     echo ""
 }
@@ -276,6 +300,10 @@ case "$1" in
     backup)
         print_banner
         action_backup
+        ;;
+    check)
+        print_banner
+        action_check
         ;;
     help|*)
         show_help

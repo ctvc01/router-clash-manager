@@ -28,9 +28,6 @@ const Validators = {
             throw new Error('设备名称参数缺失');
         }
         const trimmedName = String(name).trim();
-        if (trimmedName.length === 0) {
-            throw new Error('设备名称不能为空');
-        }
         if (trimmedName.length > this.DEVICE_NAME_MAX_LENGTH) {
             throw new Error(`设备名称超长，最大允许 ${this.DEVICE_NAME_MAX_LENGTH} 个字符`);
         }

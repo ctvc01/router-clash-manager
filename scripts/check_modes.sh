@@ -108,10 +108,100 @@ check_connectivity() {
     return 0
 }
 
+# 任天堂游戏加速专项丢包与延迟测试
+check_game_detail() {
+    local target="http://ctest.cdn.nintendo.net"
+    local count=5
+    
+    echo "${C_CYAN}-----------------------------------------------------${C_RESET}"
+    echo "${C_BOLD}${C_MAGENTA}   🎮 Switch 游戏加速专项丢包与时延检测 (5次TCP采样)${C_RESET}"
+    echo "${C_CYAN}-----------------------------------------------------${C_RESET}"
+    echo "测试目标: ${C_YELLOW}${target}${C_RESET} | 采样包数: ${C_YELLOW}${count}${C_RESET}"
+    
+    local success_count=0
+    local min_lat=99999
+    local max_lat=0
+    local sum_lat=0
+    local loss_count=0
+    
+    local i=1
+    while [ $i -le $count ]; do
+        local res
+        local exit_code
+        # 记录 time_starttransfer (首字节耗时 / TTFB) 以真实反映经由代理节点往返任天堂主机的联机握手时延
+        res=$(curl -o /dev/null -s -w "%{http_code} %{time_starttransfer}" --connect-timeout 3 -x "${PROXY_URL}" "$target" 2>&1)
+        exit_code=$?
+        
+        local http_code
+        http_code=$(echo "$res" | awk '{print $1}')
+        local time_sec
+        time_sec=$(echo "$res" | awk '{print $2}')
+        
+        if [ $exit_code -ne 0 ] || [ -z "$http_code" ] || [ "$http_code" = "000" ]; then
+            loss_count=$((loss_count + 1))
+            echo "  包 $i/$count: ${C_RED}❌ 超时/丢失${C_RESET}"
+        else
+            success_count=$((success_count + 1))
+            local time_ms
+            time_ms=$(awk "BEGIN {print int($time_sec * 1000)}" 2>/dev/null || echo "0")
+            if [ "$time_ms" = "0" ] && [ -n "$time_sec" ]; then
+                time_ms=$(echo "$time_sec * 1000" | bc 2>/dev/null | cut -d. -f1 || echo "0")
+            fi
+            
+            # 计算延迟
+            sum_lat=$((sum_lat + time_ms))
+            [ $time_ms -lt $min_lat ] && min_lat=$time_ms
+            [ $time_ms -gt $max_lat ] && max_lat=$time_ms
+            
+            echo "  包 $i/$count: ${C_GREEN}✔ 正常${C_RESET} | HTTP-Code: ${C_GREEN}$http_code${C_RESET} | 时延: ${C_YELLOW}${time_ms} ms${C_RESET}"
+        fi
+        
+        i=$((i + 1))
+        # 每次采样间隔 200ms
+        sleep 0.2
+    done
+    
+    # 丢包率计算
+    local loss_rate
+    loss_rate=$(( loss_count * 100 / count ))
+    
+    local loss_color="${C_GREEN}"
+    if [ $loss_rate -gt 40 ]; then
+        loss_color="${C_RED}"
+    elif [ $loss_rate -gt 0 ]; then
+        loss_color="${C_YELLOW}"
+    fi
+    
+    echo "${C_CYAN}-----------------------------------------------------${C_RESET}"
+    echo "统计报告:"
+    echo "  - 丢包率: ${loss_color}${loss_rate}%${C_RESET} (${success_count} 收到, ${loss_count} 丢失)"
+    
+    if [ $success_count -gt 0 ]; then
+        local avg_lat
+        avg_lat=$((sum_lat / success_count))
+        
+        local avg_color="${C_GREEN}"
+        if [ $avg_lat -gt 400 ]; then
+            avg_color="${C_RED}"
+        elif [ $avg_lat -gt 150 ]; then
+            avg_color="${C_YELLOW}"
+        fi
+        
+        echo "  - 最短时延: ${C_GREEN}${min_lat} ms${C_RESET}"
+        echo "  - 最长时延: ${C_RED}${max_lat} ms${C_RESET}"
+        echo "  - 平均时延: ${avg_color}${avg_lat} ms${C_RESET}"
+    else
+        echo "  - 延迟指标: ${C_RED}无法计算 (链路已阻断)${C_RESET}"
+    fi
+}
+
 # 依次执行检测
 check_connectivity "DIRECT"   "https://www.baidu.com" 0
 check_connectivity "PROXY"    "https://www.youtube.com" 1
 check_connectivity "AI_BOOST"  "https://generativelanguage.googleapis.com" 1
 check_connectivity "GAME"     "http://ctest.cdn.nintendo.net" 1
+
+# 执行 Switch 专项深度联机测速与丢包检测
+check_game_detail
 
 echo "${C_CYAN}=====================================================${C_RESET}"

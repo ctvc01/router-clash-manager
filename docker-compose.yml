@@ -17,15 +17,19 @@ services:
       - SUBSCRIPTION_URL=https://www.cmsub.com/subscribe/WUK1BZDNN7ICBIIB?clash=ssr&trojan
     volumes:
       # 持久化自定义设备名和分类以及游戏与AI加速列表，防止容器重启丢失数据
-      - ./device_custom.json:/app/device_custom.json
-      - ./game_devices:/app/game_devices
-      - ./ai_devices:/app/ai_devices
-      - ./aliases.json:/app/aliases.json
+      - ./device_custom.json:/data/device_custom.json
+      - ./game_devices:/data/game_devices
+      - ./ai_devices:/data/ai_devices
+      - ./aliases.json:/data/aliases.json
+      # 挂载故障诊断高保真日志目录，以便在宿主机随时复盘
+      - ./logs:/data/logs
       # 挂载备份文件，实现开机自愈补全
-      - ./Clash:/app/clash_backup/Clash
-      - ./Country.mmdb:/app/clash_backup/Country.mmdb
+      - ./Clash:/data/clash_backup/Clash
+      - ./Country.mmdb:/data/clash_backup/Country.mmdb
       # 持久化整个配置备份文件夹，用于灾备恢复与 Git commit 归档
-      - ./configs_backup:/app/configs_backup
+      - ./configs_backup:/data/configs_backup
+      # 持久化多版本配置快照目录，用于路由器重启自愈与灾备恢复
+      - ./config_versions:/data/config_versions
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
       interval: 30s

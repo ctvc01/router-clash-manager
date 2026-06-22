@@ -73,8 +73,8 @@ async function getCurrentNodeInfo() {
 // 1. 获取网关/代理运行状态
 router.get('/status', async (req, res) => {
     try {
-        // 1. 一次性获取所有系统状态信息，将 5 次 SSH 连接优化为 1 次
-        const statsCmd = `pid=\$(pidof mihomo || pidof Clash || pidof CrashCore || pgrep -x mihomo || pgrep -x Clash || pgrep -x CrashCore); echo "PID:\$pid"; if [ -n "\$pid" ]; then cat /proc/\$pid/status | grep VmRSS; top -b -n 1 | grep -v grep | grep -E "CrashCore|clash|mihomo" | head -n 1; fi; cat /proc/meminfo | grep MemTotal; cat /proc/uptime`;
+        // 1. 一次性获取所有系统状态信息，将 5 次 SSH 连接优化为 1 次，并增加对 /data 分区 df -m 探测
+        const statsCmd = `pid=\$(pidof mihomo || pidof Clash || pidof CrashCore || pgrep -x mihomo || pgrep -x Clash || pgrep -x CrashCore); echo "PID:\$pid"; if [ -n "\$pid" ]; then cat /proc/\$pid/status | grep VmRSS; top -b -n 1 | grep -v grep | grep -E "CrashCore|clash|mihomo" | head -n 1; fi; cat /proc/meminfo | grep MemTotal; cat /proc/uptime; df -m /data | tail -n 1`;
         const statsOutput = await SshService.runRemoteCommand(statsCmd);
 
         // 解析输出
@@ -84,6 +84,18 @@ router.get('/status', async (req, res) => {
         let cpu = '0.0%';
         let totalMemory = '1024 MB';
         let uptime = 0;
+        let diskUsed = '0';
+        let diskTotal = '20';
+
+        // 解析磁盘占用
+        const dfLine = lines.find(l => l.includes('/data') && !l.includes('df') && !l.includes('mihomo') && !l.includes('Clash') && !l.includes('CrashCore'));
+        if (dfLine) {
+            const dfParts = dfLine.trim().split(/\s+/);
+            if (dfParts.length >= 4) {
+                diskTotal = dfParts[1].trim();
+                diskUsed = dfParts[2].trim();
+            }
+        }
 
         // 解析 PID
         const pidLine = lines.find(l => l.startsWith('PID:'));
@@ -146,6 +158,8 @@ router.get('/status', async (req, res) => {
                 mode: '未知',
                 memory: '0 MB',
                 totalMemory,
+                diskUsed,
+                diskTotal,
                 cpu: '0.0%',
                 uptime: 0,
                 localIp: getLocalIP(),
@@ -200,6 +214,8 @@ router.get('/status', async (req, res) => {
             mode,
             memory,
             totalMemory,
+            diskUsed,
+            diskTotal,
             cpu,
             uptime,
             localIp: getLocalIP(),

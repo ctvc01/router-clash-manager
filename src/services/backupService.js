@@ -7,7 +7,7 @@ const PersistenceService = require('./persistenceService');
 
 class BackupService {
     // 物理备份根目录
-    static BACKUP_DIR = path.join(__dirname, '..', '..', 'configs_backup');
+    static BACKUP_DIR = config.paths.configsBackup;
     static NAS_BACKUP_DIR = path.join(this.BACKUP_DIR, 'nas');
     static ROUTER_BACKUP_DIR = path.join(this.BACKUP_DIR, 'router');
 

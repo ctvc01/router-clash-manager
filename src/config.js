@@ -1,5 +1,7 @@
 const path = require('path');
 
+const dataDir = process.env.DATA_DIR || (process.env.NODE_ENV === 'production' ? '/data' : path.join(__dirname, '..'));
+
 // 统一的环境变量与静态配置
 const config = {
     // 路由器 SSH 登录凭证
@@ -19,9 +21,14 @@ const config = {
     
     // 数据文件存储路径
     paths: {
-        custom: path.join(__dirname, '..', 'device_custom.json'),
-        gameDevices: path.join(__dirname, '..', 'game_devices'),
-        aiDevices: path.join(__dirname, '..', 'ai_devices'),
+        dataDir,
+        custom: path.join(dataDir, 'device_custom.json'),
+        gameDevices: path.join(dataDir, 'game_devices'),
+        aiDevices: path.join(dataDir, 'ai_devices'),
+        aliases: path.join(dataDir, 'aliases.json'),
+        configsBackup: path.join(dataDir, 'configs_backup'),
+        clashBackup: path.join(dataDir, 'clash_backup'),
+        configVersions: path.join(dataDir, 'config_versions'),
         sshExec: path.join(__dirname, '..', 'ssh_wrapper.sh')
     }
 };

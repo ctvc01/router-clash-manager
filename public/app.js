@@ -90,7 +90,12 @@ document.addEventListener('DOMContentLoaded', () => {
         status: {},               // 路由运行状态
         activeCategory: 'all',    // 当前激活的过滤类别
         deviceSpeeds: {},         // 各设备的仿真网速波动缓存
-        systemUptimeMinutes: 20482 // 模拟运行时间自增
+        systemUptimeMinutes: 20482, // 模拟运行时间自增
+        
+        // 瞬态假死防抖保护
+        consecutiveOfflineFailures: 0,
+        isRebuilding: false,
+        rebuildTimer: null
     };
 
     // 辅助：获取设备类型的 UI 图标 (完全规范等比大小)
@@ -116,6 +121,22 @@ document.addEventListener('DOMContentLoaded', () => {
     // 辅助：智能根据 Hostname 推定设备类型归类 (PC, 手机, 游戏机, IoT, 其它)
     function getDeviceCategory(hostname, mac) {
         const name = (hostname || '').toLowerCase();
+        
+        // 1. 根据 MAC 地址前缀与特征进行智能推定
+        if (mac && typeof mac === 'string') {
+            const cleanMac = mac.toLowerCase();
+            // 常见的美的等智能家居 MAC 段
+            const mideaPrefixes = ['44:87:63', 'c0:84:ff', '80:3e:4f', '8c:d0:b2', 'cc:4d:75'];
+            if (mideaPrefixes.some(prefix => cleanMac.startsWith(prefix))) {
+                return 'iot';
+            }
+            
+            // 检查是否为本地随机 MAC 地址 (第一字节第二低位为 1，多为启用了随机 MAC 的手机)
+            const firstByte = parseInt(cleanMac.slice(0, 2), 16);
+            if (!isNaN(firstByte) && (firstByte & 2) !== 0) {
+                return 'phone';
+            }
+        }
         
         if (name.includes('switch') || name.includes('nintendo') || 
             name.includes('playstation') || name.includes('ps5') || 
@@ -211,6 +232,45 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 3000);
     }
 
+    // 辅助：重载过渡态切换函数
+    function startRebuildState() {
+        state.isRebuilding = true;
+        if (state.rebuildTimer) {
+            clearTimeout(state.rebuildTimer);
+        }
+        
+        updateUiForRebuilding();
+        
+        // 最大 20 秒保护时间，超时后自动恢复
+        state.rebuildTimer = setTimeout(() => {
+            stopRebuildState();
+        }, 20000);
+    }
+    
+    function stopRebuildState() {
+        if (!state.isRebuilding) return;
+        state.isRebuilding = false;
+        if (state.rebuildTimer) {
+            clearTimeout(state.rebuildTimer);
+            state.rebuildTimer = null;
+        }
+        // 恢复正常轮询拉取状态
+        fetchStatus();
+    }
+    
+    function updateUiForRebuilding() {
+        elStatusText.textContent = '重载中';
+        elStatusText.className = 'card-value text-orange animate-pulse';
+        elStatusMode.innerHTML = '<span style="color: #ffb786;">正在热重载分流策略...</span>';
+        
+        elCurrentNode.textContent = '请稍候';
+        elCurrentNode.classList.remove('long-text');
+        elNodeLatency.textContent = '延迟: --';
+        
+        elFooterVersion.textContent = '内核版本: 重载中 (Mihomo)';
+        elFooterCpu.textContent = 'CPU: --';
+    }
+
     // 辅助：HTML 特殊字符转义防 XSS (C4)
     function escapeHtml(str) {
         if (!str) return '';
@@ -262,12 +322,41 @@ document.addEventListener('DOMContentLoaded', () => {
         elTotalUpSpeed.textContent = formatSpeed(totalUp) + '/s';
     }
 
+    // 更新顶部代理设备数量统计，只统计当前在线且处于非直连（即代理、游戏、AI强化）状态的设备数
+    function updateDevicesProxyCount() {
+        let count = 0;
+        state.lanDevices.forEach(d => {
+            const mac = d.mac.toLowerCase();
+            if (state.whitelist.includes(mac) || state.gameAccelerated.includes(mac) || state.aiBoosted.includes(mac)) {
+                count++;
+            }
+        });
+        elDevicesProxy.textContent = count;
+    }
+
     // 接口：获取 Clash 服务状态与监控数据的真实联动
     async function fetchStatus() {
         try {
             const res = await fetch('/api/status');
             if (!res.ok) throw new Error();
             const data = await res.json();
+            
+            // 只要成功拿到数据，重置连续失败计数器
+            state.consecutiveOfflineFailures = 0;
+            
+            // 重载过渡态自愈判断
+            if (state.isRebuilding) {
+                const isLoadingState = data.currentNode === '未知' || data.version === '未知' || data.mode === '未知';
+                if (data.running && !isLoadingState) {
+                    // 内核已成功起来且数据加载就绪，提前结束过渡态
+                    stopRebuildState();
+                } else {
+                    // 如果虽然请求通了但内核还在重启中，保持重载 UI
+                    state.status = data;
+                    return;
+                }
+            }
+
             state.status = data;
             
             if (data.running) {
@@ -332,6 +421,27 @@ document.addEventListener('DOMContentLoaded', () => {
                 elFooterCpu.textContent = 'CPU: 0.0%';
             }
         } catch (e) {
+            // 如果处于重载过渡态，静默忽略此次异常
+            if (state.isRebuilding) {
+                return;
+            }
+            
+            // 递增连续失败计数
+            state.consecutiveOfflineFailures++;
+            
+            // 如果连续失败次数小于 3，展示“连接中”黄色过渡状态
+            if (state.consecutiveOfflineFailures < 3) {
+                elStatusText.textContent = '连接中';
+                elStatusText.className = 'card-value text-orange animate-pulse';
+                elStatusMode.innerHTML = `正在尝试重新连接 (${state.consecutiveOfflineFailures}/3)...`;
+                
+                elCurrentNode.textContent = '已关闭';
+                elCurrentNode.classList.remove('long-text');
+                elNodeLatency.textContent = '延迟: --';
+                return;
+            }
+
+            // 达到 3 次连续失败，正式判定为离线/未知
             updateDiskBar(0, 20);
             elStatusText.textContent = '离线/未知';
             elStatusText.className = 'card-value text-muted';
@@ -371,7 +481,10 @@ document.addEventListener('DOMContentLoaded', () => {
         
         elFooterMemory.textContent = `磁盘: ${usedMB}MB / ${totalMB}MB`;
         if (elMemorySub) {
-            elMemorySub.textContent = `实时内存 ${memUsed || '--'}MB / ${memTotal || '--'}MB`;
+            // 防御性格式化：如果后端返回的数据中已经带有 MB 单位，则不重复追加
+            const formattedUsed = memUsed && typeof memUsed === 'string' && memUsed.includes('MB') ? memUsed.trim() : (memUsed ? `${memUsed}MB` : '--');
+            const formattedTotal = memTotal && typeof memTotal === 'string' && memTotal.includes('MB') ? memTotal.trim() : (memTotal ? `${memTotal}MB` : '--');
+            elMemorySub.textContent = `实时内存 ${formattedUsed} / ${formattedTotal}`;
         }
     }
 
@@ -417,17 +530,21 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // 统计大卡片
             elDevicesTotal.textContent = state.lanDevices.length;
-            elDevicesProxy.textContent = state.whitelist.length + state.gameAccelerated.length + state.aiBoosted.length;
+            updateDevicesProxyCount();
             
             renderFilterTabs();
             updateRealSpeeds();
             renderGrid();
         } catch (e) {
             console.error('获取设备列表异常 (前端):', e);
-            // 异常时回退为空列表
+            // 容错设计：如果本地已经存有在线设备，在短时间异常时保留上一次渲染结果，不强制清空导致白屏
+            if (state.lanDevices && state.lanDevices.length > 0) {
+                return;
+            }
+            // 只有当本地没有历史数据时才降级为空列表
             state.lanDevices = [];
             elDevicesTotal.textContent = 0;
-            elDevicesProxy.textContent = state.whitelist.length + state.gameAccelerated.length + state.aiBoosted.length;
+            elDevicesProxy.textContent = 0;
             
             renderFilterTabs();
             updateRealSpeeds();
@@ -455,7 +572,7 @@ document.addEventListener('DOMContentLoaded', () => {
             state.whitelist.push(mac);
         }
         
-        elDevicesProxy.textContent = state.whitelist.length + state.gameAccelerated.length + state.aiBoosted.length;
+        updateDevicesProxyCount();
         renderGrid();
     }
 
@@ -477,7 +594,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         state.whitelist = state.whitelist.filter(m => m !== mac);
         
-        elDevicesProxy.textContent = state.whitelist.length + state.gameAccelerated.length + state.aiBoosted.length;
+        updateDevicesProxyCount();
         renderGrid();
     }
 
@@ -638,7 +755,10 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // 自定义别名和类型的匹配
             const custom = state.customDevices[mac] || {};
-            const displayName = (custom.name || d.hostname || '').trim();
+            let displayName = (custom.name || d.hostname || '').trim();
+            if (displayName === '未知设备' || displayName === '*') {
+                displayName = '未知设备';
+            }
             const category = custom.category || getDeviceCategory(d.hostname, mac);
             
             // 1. 分类 Tab 筛选 (处理 tablet->phone, tv->iot 的归类)
@@ -710,7 +830,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <div class="device-title-wrapper" data-ip-display="IP: ${escapeHtml(d.ip)}">
                             <div class="device-name-row">
                                 <span class="device-name-text">${escapeHtml(displayName)}</span>
-                                <button class="btn-edit-device" data-mac="${mac}" data-ip="${escapeHtml(d.ip)}" data-name="${escapeHtml(displayName)}" data-category="${category}" title="编辑名称和分类">
+                                <button class="btn-edit-device" data-mac="${mac}" data-ip="${escapeHtml(d.ip)}" data-name="${escapeHtml(custom.name || '')}" data-category="${category}" title="编辑名称和分类">
                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                         <path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
                                     </svg>
@@ -791,6 +911,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const btn = e.target.closest('.segment-btn');
         if (!btn) return;
 
+        if (state.isRebuilding) {
+            showToast('分流策略热重载中，请稍候再试...');
+            return;
+        }
+
         const mac = btn.getAttribute('data-mac').toLowerCase();
         const action = btn.getAttribute('data-action');
         
@@ -798,6 +923,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (btn.classList.contains('active')) return;
 
         showLoading('正在切换网络分流策略并热重载内核...');
+        startRebuildState();
         try {
             if (action === 'direct') {
                 // 切直连
@@ -838,6 +964,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (err) {
             console.error('切换网络模式失败:', err);
             showToast('模式切换失败，网关配置已安全回滚！\n原因: ' + err.message);
+            stopRebuildState();
         } finally {
             hideLoading();
         }
@@ -858,6 +985,14 @@ document.addEventListener('DOMContentLoaded', () => {
         elModalIp.textContent = ip;
         elModalNameInput.value = name || '';
         elModalCategorySelect.value = category || 'other';
+
+        // 提取默认的主机名用作编辑框的 placeholder 提示占位
+        const dev = state.lanDevices.find(item => item.mac === mac) || {};
+        let rawHostname = dev.hostname || '未知设备';
+        if (rawHostname === '未知设备' || rawHostname === '*') {
+            rawHostname = '未知设备';
+        }
+        elModalNameInput.placeholder = rawHostname;
 
         // 显示弹窗
         elEditModal.classList.add('active');
@@ -1519,6 +1654,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (elNodeStatusCard) {
         elNodeStatusCard.addEventListener('click', (e) => {
             e.preventDefault();
+            if (state.isRebuilding) {
+                showToast('策略重载中，暂无法切换节点');
+                return;
+            }
             openNodeDetailModal();
         });
     }

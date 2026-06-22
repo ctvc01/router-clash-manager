@@ -1862,3 +1862,13 @@ body {
     color: var(--text-secondary) !important;
 }
 
+/* 温和的文字/元素呼吸动画 */
+@keyframes textPulse {
+    0% { opacity: 0.55; }
+    50% { opacity: 1; }
+    100% { opacity: 0.55; }
+}
+.animate-pulse {
+    animation: textPulse 1.6s infinite ease-in-out;
+}
+

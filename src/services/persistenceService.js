@@ -15,7 +15,7 @@ class PersistenceService {
     // 所有需要持久化的文件
     static FILES = {
         device_custom: config.paths.custom,
-        aliases: path.join(__dirname, '..', 'aliases.json'),
+        aliases: config.paths.aliases,
         game_devices: config.paths.gameDevices,
         ai_devices: config.paths.aiDevices
     };
@@ -23,6 +23,17 @@ class PersistenceService {
     // 初始化所有文件
     static initializeAll() {
         Logger.info('Persistence', '启动数据文件初始化流程...');
+
+        // 确保数据目录存在（防止 production /data 目录未被自动创建）
+        try {
+            const dataDir = config.paths.dataDir;
+            if (dataDir && !fs.existsSync(dataDir)) {
+                fs.mkdirSync(dataDir, { recursive: true });
+                Logger.info('Persistence', `已递归创建数据根目录: ${dataDir}`);
+            }
+        } catch (e) {
+            Logger.error('Persistence', '创建数据根目录失败', e);
+        }
 
         let allValid = true;
         for (const [name, filePath] of Object.entries(this.FILES)) {

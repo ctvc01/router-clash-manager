@@ -143,7 +143,7 @@ class SshService {
                     await this.runRemoteCommand('mkdir -p /tmp/ShellCrash');
                     
                     const fs = require('fs');
-                    const backupDir = '/app/clash_backup';
+                    const backupDir = config.paths.clashBackup;
                     
                     if (fs.existsSync(`${backupDir}/Clash`) && fs.existsSync(`${backupDir}/Country.mmdb`)) {
                         Logger.info('ShellCrash', '正在从本地备份全自动上传 Clash 内核与 Country.mmdb 到路由器...');
@@ -164,8 +164,8 @@ class SshService {
                 const isConfigExist = await this.runRemoteCommand('[ -s /data/ShellCrash/config.yaml ] && echo 1 || echo 0');
                 if (isConfigExist.trim() !== '1') {
                     Logger.warn('ShellCrash', '⚠️ 探测到路由器 config.yaml 配置丢失或大小为 0，正在执行灾备恢复...');
-                    const backupConfig = '/app/configs_backup/router/config.yaml';
-                    const backupMac = '/app/configs_backup/router/mac';
+                    const backupConfig = path.join(config.paths.configsBackup, 'router', 'config.yaml');
+                    const backupMac = path.join(config.paths.configsBackup, 'router', 'mac');
                     
                     if (fs.existsSync(backupConfig)) {
                         Logger.info('ShellCrash', '正在将备份的 configs_backup/router/config.yaml 推送到新路由器...');

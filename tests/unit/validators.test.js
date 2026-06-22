@@ -37,12 +37,15 @@ describe('Validators 单元测试', () => {
             const result = Validators.validateDeviceCustom('我的 iPad', 'tablet');
             expect(result.name).toBe('我的 iPad');
             expect(result.category).toBe('tablet');
+
+            const emptyResult = Validators.validateDeviceCustom('', 'phone');
+            expect(emptyResult.name).toBe('');
+            expect(emptyResult.category).toBe('phone');
         });
 
-        test('应该拒绝空名称或缺失参数', () => {
-            expect(() => Validators.validateDeviceCustom('', 'phone')).toThrow();
-            expect(() => Validators.validateDeviceCustom('   ', 'phone')).toThrow();
+        test('应该拒绝缺失参数', () => {
             expect(() => Validators.validateDeviceCustom(null, 'phone')).toThrow();
+            expect(() => Validators.validateDeviceCustom(undefined, 'phone')).toThrow();
         });
 
         test('应该拒绝超长设备名称 (大于64字符)', () => {
