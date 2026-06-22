@@ -5,6 +5,7 @@ const { config } = require('../config');
 
 let proxyHealthMonitorTimer = null;
 let consecutiveFailures = 0;
+let consecutiveRestarts = 0; // 连续重启计数器，防止级联雪崩
 
 class ProxyHealthService {
     // 检测路由器本地指定 TCP 端口是否在监听
@@ -91,8 +92,13 @@ class ProxyHealthService {
                 consecutiveFailures++;
                 Logger.warn('ProxyDaemon', `⚠️ [${consecutiveFailures}/2] 检测到 Clash Core 进程已异常退出`);
                 if (consecutiveFailures >= 2) {
-                    Logger.warn('ProxyDaemon', '触发强制自愈拉起...');
-                    await SshService.restartShellCrashSecurely();
+                    if (consecutiveRestarts >= 3) {
+                        Logger.error('ProxyDaemon', '❌ 已经连续安全重启服务 3 次仍未恢复！疑似外网物理断开或订阅失效。为保护路由器 CPU，挂起自动重启自愈机制。');
+                    } else {
+                        Logger.warn('ProxyDaemon', '触发强制自愈拉起...');
+                        consecutiveRestarts++;
+                        await SshService.restartShellCrashSecurely();
+                    }
                     consecutiveFailures = 0;
                 }
                 return;
@@ -104,8 +110,13 @@ class ProxyHealthService {
                 consecutiveFailures++;
                 Logger.warn('ProxyDaemon', `⚠️ [${consecutiveFailures}/2] 检测到核心代理端口 ${config.ports.proxy} 假死/未开启`);
                 if (consecutiveFailures >= 2) {
-                    Logger.warn('ProxyDaemon', '触发强制修复...');
-                    await SshService.restartShellCrashSecurely();
+                    if (consecutiveRestarts >= 3) {
+                        Logger.error('ProxyDaemon', '❌ 已经连续安全重启服务 3 次仍未恢复！挂起重启自愈以防止拖死 CPU。');
+                    } else {
+                        Logger.warn('ProxyDaemon', '触发强制修复...');
+                        consecutiveRestarts++;
+                        await SshService.restartShellCrashSecurely();
+                    }
                     consecutiveFailures = 0;
                 }
                 return;
@@ -138,8 +149,8 @@ class ProxyHealthService {
                     const groupInfo = proxiesData && proxiesData.proxies ? proxiesData.proxies[testGroupName] : null;
                     
                     if (groupInfo && groupInfo.all && groupInfo.all.length > 0) {
-                        // 挑选出前 15 个主要高质节点进行刷新
-                        const targetNodes = groupInfo.all.slice(0, 15);
+                        // 仅挑选前 5 个主要物理高质节点进行测速刷新，减免路由器 CPU 负担
+                        const targetNodes = groupInfo.all.slice(0, 5);
                         Logger.info('ProxyDaemon', `已自动识别到 [${testGroupName}] 下的 ${targetNodes.length} 个核心节点，开始并发测速...`);
                         
                         // 发起并发延迟更新（不阻塞心跳线程）
@@ -173,6 +184,7 @@ class ProxyHealthService {
                 consecutiveFailures = 0;
             } else {
                 consecutiveFailures = 0;
+                consecutiveRestarts = 0; // 成功连通时，重置连续重启计数器
                 Logger.debug('ProxyDaemon', '✅ 全部检测通过');
             }
         } catch (err) {

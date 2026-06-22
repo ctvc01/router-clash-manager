@@ -2,6 +2,8 @@ const { execFile } = require('child_process');
 const { config } = require('../config');
 const Logger = require('../utils/logger');
 const Validators = require('../utils/validators');
+const fs = require('fs');
+const path = require('path');
 
 let restartPromise = Promise.resolve();
 let lastRestartTime = 0;
@@ -107,19 +109,31 @@ class SshService {
         });
     }
 
+    // 上传最新的安全防火墙引流脚本到路由器并赋权
+    static async pushIptablesScript() {
+        try {
+            const localIptablesScript = path.join(__dirname, '..', '..', 'scripts', 'setup_iptables.sh');
+            if (fs.existsSync(localIptablesScript)) {
+                Logger.info('ShellCrash', '正在上传最新安全引流脚本 setup_iptables.sh 至路由器...');
+                await this.uploadFileLocal(localIptablesScript, '/data/ShellCrash/setup_iptables.sh');
+                await this.runRemoteCommand('chmod +x /data/ShellCrash/setup_iptables.sh');
+                Logger.info('ShellCrash', '安全引流脚本推送成功');
+            } else {
+                Logger.warn('ShellCrash', `本地未找到安全引流脚本: ${localIptablesScript}，跳过推送`);
+            }
+        } catch (err) {
+            Logger.error('ShellCrash', '推送最新防火墙引流脚本失败', err);
+            throw err;
+        }
+    }
+
     // 确保 iptables 规则存在（路由器重启后恢复）
     static async ensureIptablesRules() {
         try {
-            await this.runRemoteCommand('mkdir -p /var/run');
-            await this.runRemoteCommand(
-                'iptables -t nat -F PREROUTING 2>/dev/null; ' +
-                'while read mac; do ' +
-                '[ -n "$mac" ] && iptables -t nat -A PREROUTING -m mac --mac-source $mac -p udp --dport 53 -j REDIRECT --to-ports 1053; ' +
-                '[ -n "$mac" ] && iptables -t nat -A PREROUTING -m mac --mac-source $mac -p tcp -j REDIRECT --to-ports 7892; ' +
-                'done < /data/ShellCrash/configs/mac'
-            );
-            const ruleCount = await this.runRemoteCommand('iptables -t nat -L PREROUTING -n 2>/dev/null | grep -c REDIRECT || echo 0');
-            Logger.info('ShellCrash', `iptables 规则已初始化 (${ruleCount.trim()} 条)`);
+            await this.pushIptablesScript();
+            await this.runRemoteCommand('sh /data/ShellCrash/setup_iptables.sh');
+            const ruleCount = await this.runRemoteCommand('iptables -t nat -L CLASH_PRE -n 2>/dev/null | grep -c REDIRECT || echo 0');
+            Logger.info('ShellCrash', `CLASH_PRE 自定义链引流规则已初始化 (${ruleCount.trim()} 条)`);
         } catch (err) {
             Logger.warn('ShellCrash', 'iptables 规则初始化失败', err);
             throw err;
@@ -139,10 +153,9 @@ class SshService {
                 // 0a. 路由器重启后自动补全内核与地理数据库
                 const isKernelExist = await this.runRemoteCommand('[ -f /tmp/ShellCrash/mihomo ] && echo 1 || echo 0');
                 if (isKernelExist.trim() !== '1') {
-                    Logger.info('ShellCrash', '⚠️ 探测到路由器重启导致 /tmp 内核丢失，正在执行全自动自愈补全...');
+                    Logger.warn('ShellCrash', '⚠️ 探测到路由器重启导致 /tmp 内核丢失，正在执行全自动自愈补全...');
                     await this.runRemoteCommand('mkdir -p /tmp/ShellCrash');
                     
-                    const fs = require('fs');
                     const backupDir = config.paths.clashBackup;
                     
                     if (fs.existsSync(`${backupDir}/Clash`) && fs.existsSync(`${backupDir}/Country.mmdb`)) {
@@ -184,6 +197,11 @@ class SshService {
                         });
                     }
                 }
+
+                // 0d. 智能推送防腐：确保最新的安全防火墙引流脚本就绪
+                await this.pushIptablesScript().catch(e => {
+                    Logger.error('ShellCrash', '重启自愈过程中推送引流脚本失败', e);
+                });
 
                 // 1. 杀死旧进程
                 await this.runRemoteCommand('killall mihomo Clash 2>/dev/null; true');
