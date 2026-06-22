@@ -32,12 +32,19 @@ class ProxyHealthService {
 
     // 向 Clash 核心下发触发指定 provider 测速的请求，以驱动节点自动漂移
     static async triggerProviderHealthCheck(providerName) {
-        try {
-            // 使用 curl 远程调用 localhost 的 Clash 接口触发测速
-            await SshService.runRemoteCommand(`curl -s http://127.0.0.1:${config.ports.clash}/providers/proxies/${providerName}/healthcheck`);
-            Logger.info('ProxyDaemon', `已成功向 Clash 核心下发 ${providerName} 节点重新测速自愈请求。`);
-        } catch (e) {
-            Logger.error('ProxyDaemon', '触发节点自愈测速失败', e);
+        Logger.info('ProxyDaemon', `正在触发 ${providerName} 节点重新测速自愈请求...`);
+        const success = await ClashService.triggerProviderHealthCheck(providerName);
+        if (success) {
+            Logger.info('ProxyDaemon', `已成功向 Clash 核心下发 ${providerName} 节点重新测速自愈请求 (HTTP API)。`);
+        } else {
+            // API 失败则降级使用 SSH curl
+            try {
+                Logger.warn('ProxyDaemon', 'HTTP API 触发测速失败，正在尝试通过 SSH 降级触发...');
+                await SshService.runRemoteCommand(`curl -s http://127.0.0.1:${config.ports.clash}/providers/proxies/${providerName}/healthcheck`);
+                Logger.info('ProxyDaemon', '已成功通过 SSH 降级下发测速请求');
+            } catch (sshErr) {
+                Logger.error('ProxyDaemon', 'SSH 降级触发自愈测速失败', sshErr);
+            }
         }
     }
 

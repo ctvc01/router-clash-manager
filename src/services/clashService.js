@@ -107,6 +107,23 @@ class ClashService {
         return false;
     }
 
+    // 触发指定 proxy-provider 的健康测速
+    static async triggerProviderHealthCheck(providerName, timeoutMs = 5000) {
+        const encodedProvider = encodeURIComponent(providerName);
+        const url = `/providers/proxies/${encodedProvider}/healthcheck`;
+        try {
+            const res = await this._request('GET', url, null, timeoutMs);
+            if (res.status === 204 || res.status === 200) {
+                Logger.info('ClashAPI', `成功触发 ${providerName} 节点测速`);
+                return true;
+            }
+            throw new Error(`API 返回状态码: ${res.status}`);
+        } catch (error) {
+            Logger.error('ClashAPI', `触发 ${providerName} 测速失败: ${error.message}`);
+            return false;
+        }
+    }
+
     // 轮询等待 Clash 核心就绪 (1053/9999 端口恢复响应)
     static async waitClashReady(maxAttempts = 15) {
         Logger.info('ClashAPI', '开始轮询等待 Clash 核心就绪...');
