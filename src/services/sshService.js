@@ -113,6 +113,8 @@ class SshService {
     static async pushIptablesScript() {
         try {
             const localIptablesScript = path.join(__dirname, '..', '..', 'scripts', 'setup_iptables.sh');
+            const localQuicScript = path.join(__dirname, '..', '..', 'scripts', 'setup_quic_block.sh');
+            
             if (fs.existsSync(localIptablesScript)) {
                 Logger.info('ShellCrash', '正在上传最新安全引流脚本 setup_iptables.sh 至路由器...');
                 await this.uploadFileLocal(localIptablesScript, '/data/ShellCrash/setup_iptables.sh');
@@ -120,6 +122,12 @@ class SshService {
                 Logger.info('ShellCrash', '安全引流脚本推送成功');
             } else {
                 Logger.warn('ShellCrash', `本地未找到安全引流脚本: ${localIptablesScript}，跳过推送`);
+            }
+            
+            if (fs.existsSync(localQuicScript)) {
+                await this.uploadFileLocal(localQuicScript, '/data/ShellCrash/setup_quic_block.sh');
+                await this.runRemoteCommand('chmod +x /data/ShellCrash/setup_quic_block.sh');
+                Logger.info('ShellCrash', 'QUIC阻断脚本推送成功');
             }
         } catch (err) {
             Logger.error('ShellCrash', '推送最新防火墙引流脚本失败', err);
@@ -132,8 +140,9 @@ class SshService {
         try {
             await this.pushIptablesScript();
             await this.runRemoteCommand('sh /data/ShellCrash/setup_iptables.sh');
-            const ruleCount = await this.runRemoteCommand('iptables -t nat -L CLASH_PRE -n 2>/dev/null | grep -c REDIRECT || echo 0');
-            Logger.info('ShellCrash', `CLASH_PRE 自定义链引流规则已初始化 (${ruleCount.trim()} 条)`);
+            await this.runRemoteCommand('sh /data/ShellCrash/setup_quic_block.sh');
+            const ruleCount = await this.runRemoteCommand('iptables -t nat -L PREROUTING -n 2>/dev/null | grep -c "redir ports 7892" || echo 0');
+            Logger.info('ShellCrash', `iptables 规则已初始化 (${ruleCount.trim()} 条 TCP REDIRECT)`);
         } catch (err) {
             Logger.warn('ShellCrash', 'iptables 规则初始化失败', err);
             throw err;

@@ -26,8 +26,6 @@ class AccelerationService {
             Logger.info(label, `开启${modeName}：由于设备 ${mac} 原本在${otherModeName}模式，已自动将其从中移除。`);
         }
 
-        // 检查是否需要重启 Clash（只在 MAC 白名单变化时）
-        let needsRestart = false;
         const whitelistOutput = await SshService.runRemoteCommand('cat /data/ShellCrash/configs/mac');
         const whitelistMacs = whitelistOutput
             .split('\n')
@@ -36,7 +34,6 @@ class AccelerationService {
 
         if (!whitelistMacs.includes(mac)) {
             await SshService.runRemoteCommand(`echo "${mac}" >> /data/ShellCrash/configs/mac`);
-            needsRestart = true;
             Logger.info(label, `已将设备 ${mac} 写入 MAC 白名单`);
         }
 
@@ -45,12 +42,18 @@ class AccelerationService {
             macs.push(mac);
         }
 
-        // 无条件重建/恢复路由器的 iptables 规则以防止其因防火墙重启等原因而失效
+        // 无条件重建 iptables（幂等，补充缺失规则并清理残留）
         try {
             await SshService.runRemoteCommand('sh /data/ShellCrash/setup_iptables.sh');
-            Logger.info(label, '已执行 setup_iptables.sh 重建路由器 MAC 劫持规则');
+            Logger.info(label, '已执行 setup_iptables.sh 重建 MAC 劫持规则');
         } catch (e) {
-            Logger.warn(label, '更新防火墙规则失败', e.message);
+            Logger.warn(label, 'TCP 劫持规则重建失败', e.message);
+        }
+        try {
+            await SshService.runRemoteCommand('sh /data/ShellCrash/setup_quic_block.sh');
+            Logger.info(label, '已执行 setup_quic_block.sh 添加 QUIC 阻断');
+        } catch (e) {
+            Logger.warn(label, 'QUIC 阻断规则添加失败', e.message);
         }
 
         // Read game+ai devices for RulesEngine
@@ -93,23 +96,19 @@ class AccelerationService {
         const aiMacs = AiBoostService.readAiDevices();
         await RulesEngine.updateClashRules(gameMacs, aiMacs);
 
-        // 检查是否需要从白名单移除（只有 game/ai 都不包含该 MAC 时才移除）
+        // 原子性从白名单移除（grep -v + mv 替代 read-modify-write，消除竞态）
         if (!gameMacs.includes(mac) && !aiMacs.includes(mac)) {
-            const whitelistOutput = await SshService.runRemoteCommand('cat /data/ShellCrash/configs/mac');
-            const whitelistMacs = whitelistOutput
-                .split('\n')
-                .map(line => line.trim().toLowerCase())
-                .filter(line => line.length > 0);
+            try {
+                await SshService.runRemoteCommand(
+                    `grep -vi "^${mac}$" /data/ShellCrash/configs/mac > /tmp/mac_clean.tmp && mv /tmp/mac_clean.tmp /data/ShellCrash/configs/mac`
+                );
+                Logger.info(label, `已从路由物理 MAC 白名单清除设备 ${mac}`);
 
-            if (whitelistMacs.includes(mac)) {
-                const updatedMacs = whitelistMacs.filter(m => m !== mac);
-                if (updatedMacs.length === 0) {
-                    await SshService.runRemoteCommand('true > /data/ShellCrash/configs/mac');
-                } else {
-                    await SshService.runRemoteCommand(`printf "${updatedMacs.join('\\n')}\\n" > /data/ShellCrash/configs/mac`);
-                }
-                await SshService.restartShellCrashSecurely();
-                Logger.info(label, `已从路由物理 MAC 白名单清除设备 ${mac} 并重启 ShellCrash！`);
+                // 重建 iptables 以移除该设备的规则
+                await SshService.runRemoteCommand('sh /data/ShellCrash/setup_iptables.sh');
+                await SshService.runRemoteCommand('sh /data/ShellCrash/setup_quic_block.sh');
+            } catch (e) {
+                Logger.warn(label, `清除白名单或重建规则失败`, e.message);
             }
         }
 

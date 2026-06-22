@@ -1,34 +1,38 @@
 #!/bin/sh
-# 🛰️ 智能硬件与代理系统 - 安全防火墙引流脚本 (方案B)
-# 采用自定义链隔离，直连设备不受任何影响，防止全局 PREROUTING 冲刷导致网络假死。
+# 透明代理 iptables 重建脚本
+# 安全重建：先删除旧 REDIRECT 规则，再重建，确保幂等
 
-mkdir -p /var/run
+WHITELIST="/data/ShellCrash/configs/mac"
+REDIR_PORT="7892"
 
-# 1. 确保自定义链 CLASH_PRE 存在于 nat 表中
-iptables -t nat -N CLASH_PRE 2>/dev/null
-
-# 2. 清空自定义链 CLASH_PRE 的旧规则 (安全隔离，不影响 PREROUTING 中其他系统规则)
+# 0. 清理旧的自定义链（如果存在）
+iptables -t nat -D PREROUTING -j CLASH_PRE 2>/dev/null
 iptables -t nat -F CLASH_PRE 2>/dev/null
+iptables -t nat -X CLASH_PRE 2>/dev/null
 
-# 3. 检查并确保 PREROUTING 链的第一条规则是跳转到 CLASH_PRE
-# 用 -C 检查规则是否存在，若不存在则 -I 插入到最前面，防重复注入
-iptables -t nat -C PREROUTING -j CLASH_PRE 2>/dev/null || iptables -t nat -I PREROUTING -j CLASH_PRE
+# 1. 删除旧的 REDIRECT 规则（仅删除我们创建的，不碰系统规则）
+iptables -t nat -D PREROUTING -p tcp -j REDIRECT --to-ports "$REDIR_PORT" 2>/dev/null
+# 循环删除直到没有匹配（因为 -D 一次只删一条）
+while iptables -t nat -C PREROUTING -p tcp -j REDIRECT --to-ports "$REDIR_PORT" 2>/dev/null; do
+    iptables -t nat -D PREROUTING -p tcp -j REDIRECT --to-ports "$REDIR_PORT" 2>/dev/null
+done
 
-# 4. 读取白名单设备 MAC 地址，注入流量劫持规则
-if [ -f /data/ShellCrash/configs/mac ]; then
-  while read mac; do
-    # 剔除空行和注释行
-    [ -z "$mac" ] && continue
-    echo "$mac" | grep -q '^#' && continue
-    
-    # 统一转换为大写以匹配 iptables (防大小写不一致失效)
-    mac=$(echo "$mac" | tr 'a-z' 'A-Z')
-    
-    # 仅劫持白名单设备的 UDP 53 端口 (DNS) 重定向到 Clash DNS 1053 端口
-    iptables -t nat -A CLASH_PRE -m mac --mac-source "$mac" -p udp --dport 53 -j REDIRECT --to-ports 1053
-    # 仅劫持白名单设备的 TCP 流量重定向到 Clash 透明代理 7892 端口
-    iptables -t nat -A CLASH_PRE -m mac --mac-source "$mac" -p tcp -j REDIRECT --to-ports 7892
-  done < /data/ShellCrash/configs/mac
+# 2. 确保 ESTABLISHED,RELATED 逃逸规则在最前面（防止转发流被重复劫持）
+#    检查是否存在，不存在则插入到最前面
+iptables -t nat -C PREROUTING -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null \
+    || iptables -t nat -I PREROUTING -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+
+# 3. 读取白名单，为每个 MAC 创建 TCP REDIRECT 规则
+if [ -f "$WHITELIST" ]; then
+    while read mac; do
+        [ -z "$mac" ] && continue
+        echo "$mac" | grep -q '^#' && continue
+        mac=$(echo "$mac" | tr 'a-z' 'A-Z')
+        # 检查规则是否已存在，不存在则添加
+        iptables -t nat -C PREROUTING -m mac --mac-source "$mac" -p tcp -j REDIRECT --to-ports "$REDIR_PORT" 2>/dev/null \
+            || iptables -t nat -A PREROUTING -m mac --mac-source "$mac" -p tcp -j REDIRECT --to-ports "$REDIR_PORT"
+    done < "$WHITELIST"
 fi
 
-echo "iptables: \$(iptables -t nat -L CLASH_PRE -n | grep -c REDIRECT) rules applied safely in CLASH_PRE chain."
+RULE_COUNT=$(iptables -t nat -L PREROUTING -n 2>/dev/null | grep -c "redir ports $REDIR_PORT" || echo 0)
+echo "iptables: $RULE_COUNT TCP REDIRECT rules in PREROUTING"

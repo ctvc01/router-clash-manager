@@ -40,32 +40,33 @@ Logger.info('Server', '✅ 配置版本管理系统已初始化');
     const activeGameDevices = GameAccService.readGameDevices();
     const activeAiDevices = AiBoostService.readAiDevices();
 
-    // 读取代理白名单
-    let activeProxyDevices = [];
-    try {
-        const whitelistOutput = await SshService.runRemoteCommand('cat /data/ShellCrash/configs/mac');
-        activeProxyDevices = whitelistOutput
-            .split('\n')
-            .map(line => line.trim().toLowerCase())
-            .filter(line => line.length > 0);
-        Logger.debug('Server', `读取代理白名单: ${activeProxyDevices.length}个设备`);
-    } catch (err) {
-        Logger.warn('Server', '读取代理白名单失败，将跳过代理设备规则注入', err);
-    }
+    // 从容器本地文件重建路由器白名单（容器为权威数据源，防止路由器重启后丢失）
+    const allAccDevices = [...new Set([...activeGameDevices, ...activeAiDevices])];
+    Logger.info('Server', `本地加速设备: ${activeGameDevices.length}个游戏 + ${activeAiDevices.length}个AI = ${allAccDevices.length}个去重`);
 
-    // 重建 iptables 规则（路由器重启后会丢失）
-    if (activeProxyDevices.length > 0) {
+    if (allAccDevices.length > 0) {
         try {
-            await SshService.ensureIptablesRules();
-        } catch (iptablesErr) {
-            Logger.warn('Server', 'iptables 规则初始化失败（稍后重启 Clash 时会重试）', iptablesErr);
+            // 写入路由器白名单（覆盖模式）
+            const macContent = allAccDevices.join('\n') + '\n';
+            await SshService.runRemoteCommand(`printf "${macContent}" > /data/ShellCrash/configs/mac`);
+            Logger.info('Server', `已同步${allAccDevices.length}个设备到路由器白名单`);
+
+            // 重建 iptables 规则
+            await SshService.runRemoteCommand('sh /data/ShellCrash/setup_iptables.sh');
+            Logger.info('Server', 'iptables TCP REDIRECT 规则已重建');
+
+            // 添加 QUIC 阻断规则
+            await SshService.runRemoteCommand('sh /data/ShellCrash/setup_quic_block.sh');
+            Logger.info('Server', 'QUIC (UDP 443) 阻断规则已添加');
+        } catch (err) {
+            Logger.warn('Server', '路由器白名单/iptables初始化失败（稍后会重试）', err);
         }
     }
 
     // 如果有活跃的加速设备，启动时自动初始化规则注入
-    if (activeGameDevices.length > 0 || activeAiDevices.length > 0 || activeProxyDevices.length > 0) {
-        Logger.info('Daemon', `检测到当前有 ${activeProxyDevices.length} 个代理设备 + ${activeGameDevices.length} 个游戏设备 + ${activeAiDevices.length} 个 AI 设备，正在初始化规则注入...`);
-        RulesEngine.updateClashRules(activeGameDevices, activeAiDevices, activeProxyDevices).catch(err => {
+    if (activeGameDevices.length > 0 || activeAiDevices.length > 0) {
+        Logger.info('Daemon', `检测到当前有 ${activeGameDevices.length} 个游戏设备 + ${activeAiDevices.length} 个 AI 设备，正在初始化规则注入...`);
+        RulesEngine.updateClashRules(activeGameDevices, activeAiDevices).catch(err => {
             Logger.warn('Daemon', '启动时规则注入失败（稍后会重试）', err);
         });
     }
