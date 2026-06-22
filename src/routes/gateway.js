@@ -234,10 +234,10 @@ router.get('/status', async (req, res) => {
 // 2. 获取最近一次异常退出的详细日志内容
 router.get('/error-log', async (req, res) => {
     try {
-        const logOutput = await SshService.runRemoteCommand('tail -n 40 /tmp/ShellCrash/ShellCrash.log');
+        const logOutput = await SshService.runRemoteCommand('[ -f /tmp/ShellCrash/ShellCrash.log ] && tail -n 40 /tmp/ShellCrash/ShellCrash.log || echo "当前无异常日志"');
         res.json({
             status: 'success',
-            log: logOutput
+            log: logOutput.trim()
         });
     } catch (err) {
         Logger.error('Gateway', '获取异常错误日志失败', err);
