@@ -3,6 +3,14 @@ const StorageCleanupService = require('../services/storageCleanupService');
 const Logger = require('../utils/logger');
 
 class ClashApiProxy {
+    // Caches
+    static _cachedProxies = null;
+    static _cachedProxiesTime = 0;
+    static _cachedVersion = null;
+    static _cachedVersionTime = 0;
+
+    static _proxiesCacheTTL = 10000;   // 10 seconds
+    static _versionCacheTTL = 30000;   // 30 seconds
     // 通过SSH在路由器上执行curl命令获取Clash API响应（带超时）
     static async fetchViaSSH(endpoint, timeoutMs = 5000) {
         try {
@@ -33,9 +41,16 @@ class ClashApiProxy {
         }
     }
 
-    // 获取版本信息
+    // 获取版本信息（带30s缓存，版本不会频繁变化）
     static async getVersion(timeoutMs = 3000) {
-        return this.fetchViaSSH('/version');
+        const now = Date.now();
+        if (this._cachedVersion && (now - this._cachedVersionTime < this._versionCacheTTL)) {
+            return this._cachedVersion;
+        }
+        const data = await this.fetchViaSSH('/version');
+        this._cachedVersion = data;
+        this._cachedVersionTime = now;
+        return data;
     }
 
     // 获取配置
@@ -43,9 +58,16 @@ class ClashApiProxy {
         return this.fetchViaSSH('/configs');
     }
 
-    // 获取所有代理节点
+    // 获取所有代理节点（带10s缓存，避免每次/status触发SSH）
     static async getProxies(timeoutMs = 5000) {
-        return this.fetchViaSSH('/proxies');
+        const now = Date.now();
+        if (this._cachedProxies && (now - this._cachedProxiesTime < this._proxiesCacheTTL)) {
+            return this._cachedProxies;
+        }
+        const data = await this.fetchViaSSH('/proxies');
+        this._cachedProxies = data;
+        this._cachedProxiesTime = now;
+        return data;
     }
 
     // 获取规则集

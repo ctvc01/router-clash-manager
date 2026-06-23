@@ -1,8 +1,14 @@
+const fs = require('fs');
+const path = require('path');
 const Logger = require('../utils/logger');
 const SshService = require('./sshService');
 const GameAccService = require('./gameAccService');
 const AiBoostService = require('./aiBoostService');
 const RulesEngine = require('./rulesEngine');
+const { config } = require('../config');
+
+const PENDING_FILE = path.join(config.paths.dataDir, 'validator_pending.json');
+const REQUIRED_CONSECUTIVE_CHECKS = 3;
 
 class SystemValidator {
     // 启动时的完整系统检查
@@ -52,40 +58,112 @@ class SystemValidator {
         }
     }
 
-    // 验证游戏设备列表
+    // 验证游戏设备列表（须连续3次不在线才清理）
     static async validateGameDevices(dhcpLeases) {
         const gameDevices = GameAccService.readGameDevices();
         const invalidMacs = gameDevices.filter(mac => !dhcpLeases[mac.toLowerCase()]);
 
         if (invalidMacs.length === 0) {
             Logger.debug('Validator', `✓ 游戏设备${gameDevices.length}个，全部有效`);
+            this._resetPending('game', gameDevices);
             return;
         }
 
-        Logger.warn('Validator', `⚠️ 检测到${invalidMacs.length}个无效游戏设备: ${invalidMacs.join(', ')}`);
+        const pending = this._loadPending();
+        const toRemove = [];
+        const toKeep = [];
 
-        // 自动清理无效设备
-        const validMacs = gameDevices.filter(mac => dhcpLeases[mac.toLowerCase()]);
-        GameAccService.writeGameDevices(validMacs);
-        Logger.info('Validator', `✓ 已自动清理，保留${validMacs.length}个有效设备`);
+        for (const mac of invalidMacs) {
+            const key = `game_${mac}`;
+            pending[key] = (pending[key] || 0) + 1;
+            if (pending[key] >= REQUIRED_CONSECUTIVE_CHECKS) {
+                toRemove.push(mac);
+            } else {
+                toKeep.push(mac);
+                Logger.debug('Validator', `游戏设备 ${mac} 离线 (${pending[key]}/${REQUIRED_CONSECUTIVE_CHECKS})`);
+            }
+        }
+        // Reset counters for devices that are online
+        for (const mac of gameDevices.filter(m => !invalidMacs.includes(m))) {
+            delete pending[`game_${mac}`];
+        }
+        this._savePending(pending);
+
+        if (toRemove.length > 0) {
+            Logger.warn('Validator', `⚠️ 清理${toRemove.length}个长期不在线游戏设备: ${toRemove.join(', ')}`);
+            const validMacs = gameDevices.filter(m => !toRemove.includes(m));
+            GameAccService.writeGameDevices(validMacs);
+            Logger.info('Validator', `✓ 保留${validMacs.length}个游戏设备`);
+            for (const mac of toRemove) delete pending[`game_${mac}`];
+            this._savePending(pending);
+        } else if (toKeep.length > 0) {
+            Logger.debug('Validator', `⏳ ${toKeep.length}个游戏设备等待更多次检查确认离线`);
+        }
     }
 
-    // 验证AI设备列表
+    // 验证AI设备列表（须连续3次不在线才清理）
     static async validateAiDevices(dhcpLeases) {
         const aiDevices = AiBoostService.readAiDevices();
         const invalidMacs = aiDevices.filter(mac => !dhcpLeases[mac.toLowerCase()]);
 
         if (invalidMacs.length === 0) {
             Logger.debug('Validator', `✓ AI设备${aiDevices.length}个，全部有效`);
+            this._resetPending('ai', aiDevices);
             return;
         }
 
-        Logger.warn('Validator', `⚠️ 检测到${invalidMacs.length}个无效AI设备: ${invalidMacs.join(', ')}`);
+        const pending = this._loadPending();
+        const toRemove = [];
+        const toKeep = [];
 
-        // 自动清理无效设备
-        const validMacs = aiDevices.filter(mac => dhcpLeases[mac.toLowerCase()]);
-        AiBoostService.writeAiDevices(validMacs);
-        Logger.info('Validator', `✓ 已自动清理，保留${validMacs.length}个有效设备`);
+        for (const mac of invalidMacs) {
+            const key = `ai_${mac}`;
+            pending[key] = (pending[key] || 0) + 1;
+            if (pending[key] >= REQUIRED_CONSECUTIVE_CHECKS) {
+                toRemove.push(mac);
+            } else {
+                toKeep.push(mac);
+                Logger.debug('Validator', `AI设备 ${mac} 离线 (${pending[key]}/${REQUIRED_CONSECUTIVE_CHECKS})`);
+            }
+        }
+        for (const mac of aiDevices.filter(m => !invalidMacs.includes(m))) {
+            delete pending[`ai_${mac}`];
+        }
+        this._savePending(pending);
+
+        if (toRemove.length > 0) {
+            Logger.warn('Validator', `⚠️ 清理${toRemove.length}个长期不在线AI设备: ${toRemove.join(', ')}`);
+            const validMacs = aiDevices.filter(m => !toRemove.includes(m));
+            AiBoostService.writeAiDevices(validMacs);
+            Logger.info('Validator', `✓ 保留${validMacs.length}个AI设备`);
+            for (const mac of toRemove) delete pending[`ai_${mac}`];
+            this._savePending(pending);
+        } else if (toKeep.length > 0) {
+            Logger.debug('Validator', `⏳ ${toKeep.length}个AI设备等待更多次检查确认离线`);
+        }
+    }
+
+    static _loadPending() {
+        try {
+            if (fs.existsSync(PENDING_FILE)) {
+                return JSON.parse(fs.readFileSync(PENDING_FILE, 'utf8'));
+            }
+        } catch (e) { /* ignore */ }
+        return {};
+    }
+
+    static _savePending(data) {
+        try { fs.writeFileSync(PENDING_FILE, JSON.stringify(data), 'utf8'); } catch (e) { /* ignore */ }
+    }
+
+    static _resetPending(prefix, devices) {
+        const pending = this._loadPending();
+        let changed = false;
+        for (const mac of devices) {
+            const key = `${prefix}_${mac}`;
+            if (pending[key]) { delete pending[key]; changed = true; }
+        }
+        if (changed) this._savePending(pending);
     }
 
     // 验证代理白名单

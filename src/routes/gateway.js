@@ -80,7 +80,7 @@ async function getCurrentNodeInfo() {
 router.get('/status', async (req, res) => {
     try {
         // 1. 一次性获取所有系统状态信息，将 5 次 SSH 连接优化为 1 次，并增加对 /data 分区 df -m 探测
-        const statsCmd = `pid=\$(pidof mihomo || pidof Clash || pidof CrashCore || pgrep -x mihomo || pgrep -x Clash || pgrep -x CrashCore); echo "PID:\$pid"; if [ -n "\$pid" ]; then echo "CLASH_UP:\$(( \$(cut -d' ' -f1 /proc/uptime | cut -d. -f1) - \$(awk '{print \$22}' /proc/\$pid/stat) / 100 ))"; cat /proc/\$pid/status | grep VmRSS; top -b -n 1 | grep -v grep | grep -E "CrashCore|clash|mihomo" | head -n 1; fi; cat /proc/meminfo | grep MemTotal; cat /proc/uptime; df -m /data | tail -n 1`;
+        const statsCmd = `pid=\$(pidof mihomo || pidof Clash || pidof CrashCore || pgrep -x mihomo || pgrep -x Clash || pgrep -x CrashCore); echo "PID:\$pid"; if [ -n "\$pid" ]; then echo "CLASH_UP:\$(( \$(cut -d' ' -f1 /proc/uptime | cut -d. -f1) - \$(cut -d' ' -f22 /proc/\$pid/stat) / 100 ))"; cat /proc/\$pid/status | grep VmRSS; top -b -n 1 | grep -v grep | grep -E "CrashCore|clash|mihomo" | head -n 1; fi; cat /proc/meminfo | grep MemTotal; cat /proc/uptime; df -m /data | tail -n 1`;
         const statsOutput = await SshService.runRemoteCommand(statsCmd);
 
         // 解析输出

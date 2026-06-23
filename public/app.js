@@ -457,6 +457,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 // 更新真实的 Uptime
                 if (data.uptime && data.uptime > 0) {
                     state.systemUptimeMinutes = Math.round(data.uptime / 60);
+                } else {
+                    state.systemUptimeMinutes = 0;
                 }
                 elFooterUptime.textContent = formatUptime(state.systemUptimeMinutes);
                 
@@ -1267,8 +1269,7 @@ document.addEventListener('DOMContentLoaded', () => {
         };
         updateBadge(elBadgeGameLock, game.lock);
         updateBadge(elBadgeAiLock, ai.lock);
-        // Proxy mode doesn't support locking, hide the badge
-        if (elBadgeProxyLock) elBadgeProxyLock.style.display = 'none';
+        updateBadge(elBadgeProxyLock, false);
     }
 
     // LOCK/UNLOCK 切换
