@@ -300,12 +300,22 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
-    // 辅助：格式化运行时间 (分钟转 "X天 Y时 Z分")
+    // 辅助：格式化运行时间 (分钟转 "已启动 X天 XX时 XX分")
     function formatUptime(totalMinutes) {
         const days = Math.floor(totalMinutes / (24 * 60));
         const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
         const mins = totalMinutes % 60;
         return `运行时间: ${days}天 ${hours.toString().padStart(2, '0')}时 ${mins.toString().padStart(2, '0')}分`;
+    }
+
+    // 格式化网关状态启动时长 "已启动 X天 XX时 XX分"
+    function formatGatewayUptime(totalMinutes) {
+        const days = Math.floor(totalMinutes / (24 * 60));
+        const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
+        const mins = totalMinutes % 60;
+        if (days > 0) return `已启动 ${days}天${hours}时${mins}分`;
+        if (hours > 0) return `已启动 ${hours}时${mins}分`;
+        return `已启动 ${mins}分`;
     }
 
     // 辅助：格式化网速输出
@@ -419,7 +429,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 } else {
                     elStatusText.textContent = '运行中';
                     elStatusText.className = 'card-value text-green';
-                    elStatusMode.textContent = `模式: ${(data.mode || '未知').toUpperCase()}`;
+                    elStatusMode.textContent = formatGatewayUptime(state.systemUptimeMinutes);
                     
                     // 更新当前节点与延迟
                     elCurrentNode.textContent = data.currentNode;
@@ -575,7 +585,7 @@ document.addEventListener('DOMContentLoaded', () => {
             state.lanDevices = remoteDevices;
             
             // 统计大卡片
-            elDevicesTotal.textContent = state.lanDevices.length;
+            elDevicesTotal.textContent = state.lanDevices.length + ' 在线';
             updateDevicesProxyCount();
             
             renderFilterTabs();
