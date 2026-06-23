@@ -245,8 +245,8 @@ class RulesEngine {
             if (gameMacs.length > 0) {
                 // 注入游戏自动测速组（日韩台节点，URLTest自动选最快）
                 groupLines.push(`${indent}- {name: '${PROXY_GROUPS.GAME_SPEEDTEST}', type: url-test, tolerance: 50, interval: 300, use: [subscription], filter: "(?i)(Japan|Korea|Taiwan|日本|韩国|台灣|台湾|JP|KR|TW)"}`);
-                // 游戏加速选择器：优先走游戏测速组，兜底走主选择器
-                groupLines.push(`${indent}- {name: '${PROXY_GROUPS.GAME_ACC}', type: select, proxies: ['${PROXY_GROUPS.GAME_SPEEDTEST}', '${actualNodeSelect}', 'DIRECT']}`);
+                // 游戏加速选择器：游戏测速组优先，所有日韩台节点可供直选，兜底走主选择器
+                groupLines.push(`${indent}- {name: '${PROXY_GROUPS.GAME_ACC}', type: select, proxies: ['${PROXY_GROUPS.GAME_SPEEDTEST}', '${actualNodeSelect}', 'DIRECT'], use: [subscription], filter: "(?i)(Japan|Korea|Taiwan|日本|韩国|台灣|台湾|JP|KR|TW)"}`);
             }
 
             if (aiMacs.length > 0) {
