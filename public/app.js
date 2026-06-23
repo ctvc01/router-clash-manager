@@ -1321,7 +1321,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // count badge: physical nodes with valid delay
             const proxyPhysical = (proxy.all || []).filter(n => n && n.name && !groupKeywords.some(k => n.name.includes(k)));
             const proxyValid = proxyPhysical.filter(n => n.delay > 0).length;
-            if (elBadgeProxyCount) elBadgeProxyCount.textContent = `「${proxyValid || proxyPhysical.length}」`;
+            if (elBadgeProxyCount) elBadgeProxyCount.textContent = proxyValid || proxyPhysical.length;
 
             // 2. 回显：AI强化
             elNodeAiReal.textContent = ai.realNode || '--';
@@ -1329,7 +1329,7 @@ document.addEventListener('DOMContentLoaded', () => {
             elNodeAiDelay.className = `${getDelayClass(ai.delay)} flex-shrink-0`;
             const aiPhysical = (ai.all || []).filter(n => n && n.name && !groupKeywords.some(k => n.name.includes(k)) && !hkKeywords.some(k => n.name.toLowerCase().includes(k)));
             const aiValid = aiPhysical.filter(n => n.delay > 0).length;
-            if (elBadgeAiCount) elBadgeAiCount.textContent = `「${aiValid || aiPhysical.length}」`;
+            if (elBadgeAiCount) elBadgeAiCount.textContent = aiValid || aiPhysical.length;
 
             // 3. 回显：游戏模式
             const gameState = state.speedtest.game || {};
@@ -1337,15 +1337,18 @@ document.addEventListener('DOMContentLoaded', () => {
             elNodeGameDelay.textContent = game.delay > 0 ? `${game.delay} ms` : '-- ms';
             elNodeGameDelay.className = `${getDelayClass(game.delay)}`;
             if (elNodeGameLoss) {
-                const lossPct = gameState.lastLoss > 0 ? `${(gameState.lastLoss * 100).toFixed(0)}%` : (gameState.lastLoss === 0 ? '0%' : '--%');
-                elNodeGameLoss.textContent = `loss:${lossPct}`;
-                elNodeGameLoss.className = gameState.lastLoss > 0 ? 'text-orange' : 'text-green';
-                elNodeGameLoss.style.fontSize = '11px';
+                const lossNum = gameState.lastLoss;
+                const lossPct = lossNum > 0 ? (lossNum * 100).toFixed(0) + '%' : (lossNum === 0 ? '0%' : '--%');
+                elNodeGameLoss.textContent = '丢包率 ' + lossPct;
+                if (lossNum === 0) elNodeGameLoss.className = 'text-green';
+                else if (lossNum <= 0.2) elNodeGameLoss.className = 'text-orange';
+                else elNodeGameLoss.className = 'text-red';
+                elNodeGameLoss.style.fontSize = '';
             }
             lastSelectedGameNode = game.now || '';
             const gamePhysical = (game.all || []).filter(n => n && n.name && !groupKeywords.some(k => n.name.includes(k)));
             const gameValid = gamePhysical.filter(n => n.delay > 0).length;
-            if (elBadgeGameCount) elBadgeGameCount.textContent = `「${gameValid || gamePhysical.length}」`;
+            if (elBadgeGameCount) elBadgeGameCount.textContent = gameValid || gamePhysical.length;
 
             // 4. 动态渲染游戏节点下拉菜单（仅物理节点，排除 Selector/URLTest）
             elGameDropdownListContainer.innerHTML = '';
@@ -1390,7 +1393,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 itemDiv.appendChild(leftDiv);
                 
                 const rightSpan = document.createElement('span');
-                if (cand.delay > 0) {
+                const isCurrent = cand.name === lastSelectedGameNode;
+                if (isCurrent && gameState.lastLoss !== undefined) {
+                    const lNum = gameState.lastLoss;
+                    const lPct = lNum > 0 ? (lNum * 100).toFixed(0) + '%' : '0%';
+                    rightSpan.textContent = cand.delay > 0 ? `${cand.delay} ms · 丢包率 ${lPct}` : `-- · 丢包率 ${lPct}`;
+                    rightSpan.className = getDelayClass(cand.delay);
+                } else if (cand.delay > 0) {
                     rightSpan.textContent = `${cand.delay} ms`;
                     rightSpan.className = getDelayClass(cand.delay);
                 } else {
