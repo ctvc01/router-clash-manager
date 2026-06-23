@@ -66,9 +66,21 @@ Logger.info('Server', '✅ 配置版本管理系统已初始化');
     // 如果有活跃的加速设备，启动时自动初始化规则注入
     if (activeGameDevices.length > 0 || activeAiDevices.length > 0) {
         Logger.info('Daemon', `检测到当前有 ${activeGameDevices.length} 个游戏设备 + ${activeAiDevices.length} 个 AI 设备，正在初始化规则注入...`);
-        RulesEngine.updateClashRules(activeGameDevices, activeAiDevices).catch(err => {
+        await RulesEngine.updateClashRules(activeGameDevices, activeAiDevices).catch(err => {
             Logger.warn('Daemon', '启动时规则注入失败（稍后会重试）', err);
         });
+    }
+
+    // 启动时恢复游戏锁定状态（若 speedtest_state.json 中记录为 LOCKED）
+    const SpeedtestState = require('./services/speedtestState');
+    const gameState = SpeedtestState.get('game');
+    if (gameState.lock && gameState.lockedNode) {
+        Logger.info('Server', `🔄 恢复游戏锁定节点: ${gameState.lockedNode}`);
+        try {
+            await GameAccService.lockGameNode(gameState.lockedNode);
+        } catch (e) {
+            Logger.warn('Server', `恢复游戏锁定节点失败: ${e.message}`);
+        }
     }
 
     // 后续的守护进程启动代码...

@@ -59,8 +59,8 @@ router.clearMainGroupCache = () => {
 async function getCurrentNodeInfo() {
     try {
         const mainGroupName = await getMainGroupName();
-        // 通过 Clash API 解析代理组链，获取实际物理节点和延迟
-        const proxiesData = await ClashApiProxy.getProxies();
+        // 通过 Clash API 解析代理组链（使用与 /api/nodes 相同的数据源 ClashService）
+        const proxiesData = await ClashService.getProxies();
         if (proxiesData && proxiesData.proxies) {
             const realNode = ProxyGroupDetector.getRealPhysicalNode(proxiesData.proxies, mainGroupName);
             return {

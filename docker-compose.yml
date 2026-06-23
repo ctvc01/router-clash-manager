@@ -21,6 +21,8 @@ services:
       - ./game_devices:/data/game_devices
       - ./ai_devices:/data/ai_devices
       - ./aliases.json:/data/aliases.json
+      - ./speedtest_state.json:/data/speedtest_state.json
+      - ./validator_pending.json:/data/validator_pending.json
       # 挂载故障诊断高保真日志目录，以便在宿主机随时复盘
       - ./logs:/data/logs
       # 挂载备份文件，实现开机自愈补全
