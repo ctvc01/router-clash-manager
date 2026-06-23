@@ -1738,6 +1738,20 @@ body {
     border: 1px solid rgba(133, 45, 246, 0.3);
 }
 
+.badge-status.cursor-pointer {
+    cursor: pointer;
+    transition: opacity 0.2s;
+}
+.badge-status.cursor-pointer:hover {
+    opacity: 0.8;
+}
+
+.badge-status.locked {
+    background: linear-gradient(135deg, rgba(255, 100, 50, 0.2) 0%, rgba(255, 50, 50, 0.2) 100%) !important;
+    color: #ff6432 !important;
+    border: 1px solid rgba(255, 100, 50, 0.5) !important;
+}
+
 /* --- 高保真自定义下拉列表样式 --- */
 .material-symbols-outlined {
     font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;

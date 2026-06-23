@@ -54,7 +54,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const elNodeGameDelay = document.getElementById('node-game-delay');
     
     // 自定义下拉菜单相关 DOM
-    const elBadgeGameAuto = document.getElementById('badge-game-auto');
     const elBtnToggleGameDropdown = document.getElementById('btn-toggle-game-dropdown');
     const elIconGameDropdownArrow = document.getElementById('icon-game-dropdown-arrow');
     const elGameNodeDropdownMenu = document.getElementById('game-node-dropdown-menu');
@@ -82,21 +81,30 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 全局状态管理
     let state = {
-        whitelist: [],            // 代理白名单的 MAC 列表 (来自后端)
-        gameAccelerated: [],      // 游戏加速的 MAC 列表 (来自后端)
-        aiBoosted: [],            // AI 强化的 MAC 列表 (来自后端)
-        customDevices: {},        // 自定义设备别名与类型列表 (来自后端)
-        lanDevices: [],           // 融合后的局域网设备列表
-        status: {},               // 路由运行状态
-        activeCategory: 'all',    // 当前激活的过滤类别
-        deviceSpeeds: {},         // 各设备的仿真网速波动缓存
-        systemUptimeMinutes: 20482, // 模拟运行时间自增
+        whitelist: [],
+        gameAccelerated: [],
+        aiBoosted: [],
+        customDevices: {},
+        lanDevices: [],
+        status: {},
+        activeCategory: 'all',
+        deviceSpeeds: {},
+        systemUptimeMinutes: 20482,
         
         // 瞬态假死防抖保护
         consecutiveOfflineFailures: 0,
         isRebuilding: false,
-        rebuildTimer: null
+        rebuildTimer: null,
+
+        // 测速状态
+        speedtest: { game: { lock: false, lastNode: null, lastDelay: 0, lastLoss: 0, lastSamples: '' }, ai: { lock: false, lastNode: null, lastDelay: 0, lastSamples: '' } }
     };
+
+    // 新增元素引用
+    const elCardModeDist = document.getElementById('card-mode-dist');
+    const elBadgeProxyLock = document.getElementById('badge-proxy-lock');
+    const elBadgeAiLock = document.getElementById('badge-ai-lock');
+    const elBadgeGameLock = document.getElementById('badge-game-lock');
 
     // 辅助：获取设备类型的 UI 图标 (完全规范等比大小)
     function getDeviceIcon(category) {
@@ -324,14 +332,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 更新顶部代理设备数量统计，只统计当前在线且处于非直连（即代理、游戏、AI强化）状态的设备数
     function updateDevicesProxyCount() {
-        let count = 0;
+        let proxyCount = 0, aiCount = 0, gameCount = 0;
         state.lanDevices.forEach(d => {
             const mac = d.mac.toLowerCase();
-            if (state.whitelist.includes(mac) || state.gameAccelerated.includes(mac) || state.aiBoosted.includes(mac)) {
-                count++;
-            }
+            if (state.whitelist.includes(mac)) proxyCount++;
+            if (state.aiBoosted.includes(mac)) aiCount++;
+            if (state.gameAccelerated.includes(mac)) gameCount++;
         });
-        elDevicesProxy.textContent = count;
+        const total = proxyCount + aiCount + gameCount;
+        elDevicesProxy.textContent = total;
+        if (elCardModeDist) {
+            elCardModeDist.textContent = `代理(${proxyCount}) · AI(${aiCount}) · 游戏(${gameCount})`;
+        }
     }
 
     // 接口：获取 Clash 服务状态与监控数据的真实联动
@@ -1187,6 +1199,51 @@ document.addEventListener('DOMContentLoaded', () => {
         elIconProxyDropdownArrow.textContent = 'expand_more';
     }
 
+    // [新增] 获取测速状态
+    async function fetchSpeedtestStatus() {
+        try {
+            const res = await fetch('/api/speedtest/status');
+            const data = await res.json();
+            state.speedtest = data;
+            updateLockBadges();
+        } catch (e) {
+            console.warn('获取测速状态失败', e);
+        }
+    }
+
+    // 更新 LOCK/UNLOCK 徽标
+    function updateLockBadges() {
+        const game = state.speedtest.game || {};
+        const ai = state.speedtest.ai || {};
+        if (elBadgeGameLock) {
+            elBadgeGameLock.textContent = game.lock ? 'LOCKED' : 'UNLOCK';
+            elBadgeGameLock.className = game.lock ? 'badge-status font-game' : 'badge-status font-game';
+        }
+        if (elBadgeAiLock) {
+            elBadgeAiLock.textContent = ai.lock ? 'LOCKED' : 'UNLOCK';
+            elBadgeAiLock.className = ai.lock ? 'badge-status font-ai locked' : 'badge-status font-ai';
+        }
+    }
+
+    // LOCK/UNLOCK 切换
+    async function toggleLock(mode) {
+        const current = state.speedtest[mode] || {};
+        const newLock = !current.lock;
+        try {
+            const res = await fetch('/api/speedtest/lock', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mode, lock: newLock })
+            });
+            const data = await res.json();
+            state.speedtest[mode] = data;
+            updateLockBadges();
+            showToast(newLock ? `${mode === 'ai' ? 'AI' : 'Game'} 已锁定` : `${mode === 'ai' ? 'AI' : 'Game'} 已解锁`);
+        } catch (e) {
+            showToast('操作失败');
+        }
+    }
+
     // [新增] 打开节点详情弹窗函数
     async function openNodeDetailModal() {
         showLoading('正在获取各分流模式的节点详情...');
@@ -1223,48 +1280,22 @@ document.addEventListener('DOMContentLoaded', () => {
             elNodeAiDelay.className = `${getDelayClass(ai.delay)} flex-shrink-0`;
 
             // 3. 回显：游戏模式
-            // 判断是否手动锁定了物理节点
-            const isCustomLocked = !['⚡ 游戏自动测速', '🚀 节点选择', '👑 高级节点', 'DIRECT'].includes(game.now);
-            // 根据锁定状态切换 AUTO / LOCKED 标签
-            if (isCustomLocked) {
-                elBadgeGameAuto.textContent = 'LOCKED';
-                elBadgeGameAuto.style.background = 'linear-gradient(135deg, rgba(255,183,134,0.15) 0%, rgba(255,100,50,0.15) 100%)';
-                elBadgeGameAuto.style.color = '#ffb786';
-                elBadgeGameAuto.style.border = '1px solid rgba(255,183,134,0.3)';
-            } else {
-                elBadgeGameAuto.textContent = 'AUTO';
-                elBadgeGameAuto.style.background = '';
-                elBadgeGameAuto.style.color = '';
-                elBadgeGameAuto.style.border = '';
-            }
-
+            const isGameLocked = (state.speedtest.game || {}).lock;
             elNodeGameReal.textContent = game.realNode || '--';
             elNodeGameDelay.textContent = game.delay > 0 ? `${game.delay} ms` : '-- ms';
             elNodeGameDelay.className = `${getDelayClass(game.delay)}`;
-
-            // 缓存当前的锁定节点
             lastSelectedGameNode = game.now || '';
 
-            // 4. 动态渲染自定义游戏节点下拉菜单
+            // 4. 动态渲染游戏节点下拉菜单（仅物理节点，排除 Selector/URLTest）
             elGameDropdownListContainer.innerHTML = '';
-
             const allCandidates = [];
-            // 插入首选项：自动测速
-            allCandidates.push({
-                name: '⚡ 游戏自动测速',
-                delay: 0,
-                displayName: '⚡ 自动测速 (自动切换最优延迟节点)'
-            });
-
-            // 插入可用物理节点（后端已扩展为对象数组）
-            const physicalNodes = game.all || [];
-            physicalNodes.forEach(node => {
-                if (node && node.name) {  // 防守性检查
-                    allCandidates.push({
-                        name: node.name,
-                        delay: node.delay || 0,
-                        displayName: node.name
-                    });
+            const groupKeywords = ['选择', '自动', 'DIRECT', 'GLOBAL', '测速'];
+            (game.all || []).forEach(node => {
+                if (node && node.name) {
+                    const isGroup = groupKeywords.some(k => node.name.includes(k));
+                    if (!isGroup) {
+                        allCandidates.push({ name: node.name, delay: node.delay || 0, displayName: node.name });
+                    }
                 }
             });
 
@@ -1285,42 +1316,32 @@ document.addEventListener('DOMContentLoaded', () => {
                 const itemDiv = document.createElement('div');
                 itemDiv.className = `game-dropdown-item${isSelected ? ' selected' : ''}`;
                 
-                // 左侧元素
                 const leftDiv = document.createElement('div');
                 leftDiv.className = 'game-dropdown-item-left';
-                
                 if (isSelected) {
                     leftDiv.innerHTML = `<span class="material-symbols-outlined icon-selected-check">check_circle</span>`;
                 } else {
                     leftDiv.innerHTML = `<span class="icon-placeholder"></span>`;
                 }
-                
                 const nameSpan = document.createElement('span');
                 nameSpan.className = 'game-dropdown-item-name';
                 nameSpan.textContent = cand.displayName;
                 leftDiv.appendChild(nameSpan);
                 itemDiv.appendChild(leftDiv);
                 
-                // 右侧延迟元素
                 const rightSpan = document.createElement('span');
-                if (cand.name === '⚡ 游戏自动测速') {
-                    rightSpan.textContent = ''; // 自动测速项右侧不显示单节点延迟
-                } else if (cand.delay > 0) {
+                if (cand.delay > 0) {
                     rightSpan.textContent = `${cand.delay} ms`;
                     rightSpan.className = getDelayClass(cand.delay);
                 } else {
-                    rightSpan.textContent = '超时';
+                    rightSpan.textContent = '--';
                     rightSpan.className = 'text-muted';
                 }
                 itemDiv.appendChild(rightSpan);
                 
-                // 绑定点击切换事件
                 itemDiv.addEventListener('click', async (e) => {
-                    e.stopPropagation(); // 阻止事件冒泡
-                    if (cand.name === lastSelectedGameNode) {
-                        closeGameDropdown();
-                        return;
-                    }
+                    e.stopPropagation();
+                    if (cand.name === lastSelectedGameNode) { closeGameDropdown(); return; }
                     await handleGameNodeSelect(cand.name);
                 });
                 
@@ -1332,15 +1353,17 @@ document.addEventListener('DOMContentLoaded', () => {
             let lastSelectedAiNode = ai.now || '';
 
             const aiCandidates = [];
-            // 插入可用物理节点
+            const groupKeywords = ['选择', '自动', 'DIRECT', 'GLOBAL', '测速'];
+            const hkKeywords = ['hk', 'hongkong', '香港', '港'];
             const aiPhysicalNodes = ai.all || [];
             aiPhysicalNodes.forEach(node => {
-                if (node && node.name) {  // 防守性检查
-                    aiCandidates.push({
-                        name: node.name,
-                        delay: node.delay || 0,
-                        displayName: node.name
-                    });
+                if (node && node.name) {
+                    const lower = node.name.toLowerCase();
+                    const isGroup = groupKeywords.some(k => lower.includes(k.toLowerCase()));
+                    const isHK = hkKeywords.some(k => lower.includes(k));
+                    if (!isGroup && !isHK) {
+                        aiCandidates.push({ name: node.name, delay: node.delay || 0, displayName: node.name });
+                    }
                 }
             });
 
@@ -1407,15 +1430,15 @@ document.addEventListener('DOMContentLoaded', () => {
             function renderProxyDropdownList(proxyData) {
                 elProxyDropdownListContainer.innerHTML = '';
                 const proxyCandidates = [];
-                // 插入可用物理节点
+                const groupKeywords = ['选择', '自动', 'DIRECT', 'GLOBAL', '测速'];
                 const proxyPhysicalNodes = proxyData.all || [];
                 proxyPhysicalNodes.forEach(node => {
-                    if (node && node.name) {  // 防守性检查
-                        proxyCandidates.push({
-                            name: node.name,
-                            delay: node.delay || 0,
-                            displayName: node.name
-                        });
+                    if (node && node.name) {
+                        const lower = node.name.toLowerCase();
+                        const isGroup = groupKeywords.some(k => lower.includes(k.toLowerCase()));
+                        if (!isGroup) {
+                            proxyCandidates.push({ name: node.name, delay: node.delay || 0, displayName: node.name });
+                        }
                     }
                 });
 
@@ -1768,8 +1791,13 @@ document.addEventListener('DOMContentLoaded', () => {
         
         elFooterUptime.textContent = formatUptime(state.systemUptimeMinutes);
         
+        // Lock badge click handlers
+        if (elBadgeGameLock) elBadgeGameLock.addEventListener('click', () => toggleLock('game'));
+        if (elBadgeAiLock) elBadgeAiLock.addEventListener('click', () => toggleLock('ai'));
+        
         await fetchStatus();
-        await fetchDevices();   // 拉取局域网设备并重绘 (L11: fetchDevices 已包含 gameList 数据)
+        await fetchDevices();
+        await fetchSpeedtestStatus();
         
         updateRealSpeeds();
         renderFilterTabs();
@@ -1777,6 +1805,11 @@ document.addEventListener('DOMContentLoaded', () => {
         
         hideLoading();
     }
+
+    // 定时器：每 30 秒同步测速状态
+    setInterval(() => {
+        fetchSpeedtestStatus();
+    }, 30000);
 
     init();
 });

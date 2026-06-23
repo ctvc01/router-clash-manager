@@ -224,24 +224,6 @@ class RulesEngine {
             const selectMatch = currentConfig.match(/name:\s*['"]?([^'"\n]*(?:选择节点|节点选择))['"]?/);
             const actualNodeSelect = selectMatch ? selectMatch[1] : PROXY_GROUPS.NODE_SELECT;
 
-            // 提取所有可能包含“自动”的代理组
-            const aiGroupProxies = [actualNodeSelect];
-            const groupMatches = currentConfig.matchAll(/name:\s*['"]?([^\n'"]*(?:自动|Auto|节点)[^\n'"]*)['"]?/gi);
-            for (const m of groupMatches) {
-                const name = m[1];
-                if (name.includes('说明') || name.includes('提示') || name.includes('官网') || name.includes(':') || name.includes('：')) {
-                    continue;
-                }
-                if (name.includes('AI自动') || name.includes('AI强化') || name.includes('游戏自动') || name.includes('游戏加速')) {
-                    continue;
-                }
-                if (name !== actualNodeSelect && !aiGroupProxies.includes(name) && !name.includes('香港') && !name.includes('HK')) {
-                    aiGroupProxies.push(name);
-                }
-            }
-            if (!aiGroupProxies.includes('DIRECT')) aiGroupProxies.push('DIRECT');
-            const aiProxiesStr = aiGroupProxies.map(p => `'${p}'`).join(', ');
-
             if (gameMacs.length > 0) {
                 // 注入游戏自动测速组（日韩台节点，URLTest自动选最快）
                 groupLines.push(`${indent}- {name: '${PROXY_GROUPS.GAME_SPEEDTEST}', type: url-test, tolerance: 50, interval: 300, use: [subscription], filter: "(?i)(Japan|Korea|Taiwan|日本|韩国|台灣|台湾|JP|KR|TW)"}`);
@@ -250,7 +232,10 @@ class RulesEngine {
             }
 
             if (aiMacs.length > 0) {
-                groupLines.push(`${indent}- {name: '${PROXY_GROUPS.AI_BOOST}', type: select, proxies: [${aiProxiesStr}]}`);
+                // 注入 AI 自动测速组（IPLC 中继节点，排除直連以提高稳定性）
+                groupLines.push(`${indent}- {name: '${PROXY_GROUPS.AI_SPEEDTEST}', type: url-test, tolerance: 100, interval: 600, use: [subscription], filter: "(?i)(IPLC|IEPL).*(A-[0-9]|gRPC)"}`);
+                // AI 强化选择器：AI 测速组优先，所有 IPLC 节点可供直选，兜底走主选择器
+                groupLines.push(`${indent}- {name: '${PROXY_GROUPS.AI_BOOST}', type: select, proxies: ['${PROXY_GROUPS.AI_SPEEDTEST}', '${actualNodeSelect}', 'DIRECT'], use: [subscription], filter: "(?i)(IPLC|IEPL).*(A-[0-9]|gRPC)"}`);
             }
 
             if (groupLines.length > 0) {

@@ -92,11 +92,11 @@
                     </div>
                     <div class="card-value-group">
                         <h2 class="card-value text-white">
-                            <span id="devices-total">0</span><span class="value-unit"> / 总数</span>
-                            <span class="space-split"></span>
-                            <span id="devices-proxy" class="text-green">0</span><span class="value-unit"> / 代理</span>
+                            <span id="devices-proxy" class="text-green">0</span>
+                            <span class="value-unit" style="font-size:0.6em;"> / </span>
+                            <span id="devices-total" style="font-size:0.6em;">0</span>
                         </h2>
-                        <p class="card-sub-value">局域网客户端监控中</p>
+                        <p id="card-mode-dist" class="card-sub-value">代理(0) · AI(0) · 游戏(0)</p>
                     </div>
                 </div>
 
@@ -320,7 +320,7 @@
                         <div style="display: flex; align-items: center; gap: 6px; font-weight: 600;">
                             <span>🚀 代理模式</span>
                         </div>
-                        <span class="badge-status font-proxy">RULE</span>
+                        <span id="badge-proxy-lock" class="badge-status font-proxy cursor-pointer" style="cursor:pointer;">UNLOCK</span>
                     </label>
                     <div class="node-info-card" style="position: relative; overflow: visible;">
                         <!-- 展开触发区：点击这一行触发自定义的下拉菜单展示 -->
@@ -341,7 +341,7 @@
                         <div style="display: flex; align-items: center; gap: 6px; font-weight: 600;">
                             <span>🤖 AI 强化模式</span>
                         </div>
-                        <span class="badge-status font-ai">AI_BOOST</span>
+                        <span id="badge-ai-lock" class="badge-status font-ai cursor-pointer" style="cursor:pointer;">UNLOCK</span>
                     </label>
                     <div class="node-info-card" style="position: relative; overflow: visible;">
                         <!-- 展开触发区：点击这一行触发自定义的下拉菜单展示 -->
@@ -363,8 +363,7 @@
                             <span>🎮 游戏模式</span>
                         </div>
                         <div style="display: flex; align-items: center; gap: 6px;">
-                            <span class="badge-status font-game">GAME</span>
-                            <span id="badge-game-auto" class="badge-status font-game">AUTO</span>
+                            <span id="badge-game-lock" class="badge-status font-game cursor-pointer" style="cursor:pointer;">UNLOCK</span>
                         </div>
                     </label>
                     <div class="node-info-card" style="position: relative; overflow: visible;">

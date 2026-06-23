@@ -3,6 +3,7 @@ const { config } = require('../config');
 const Logger = require('../utils/logger');
 const ClashService = require('./clashService');
 const PersistenceService = require('./persistenceService');
+const SpeedtestState = require('./speedtestState');
 
 let aiBoostCheckTimer = null;
 let dailyCheckTimer = null;
@@ -38,7 +39,7 @@ class AiBoostService {
                 return null;
             }
             
-            // 过滤掉不支持 AI 的香港节点，并排除通用选择节点和直连
+            // 过滤：排除 HK 节点（Gemini 在港不可用）、排除组名（Selector/URLTest）、排除直连
             const filteredNodes = group.all.filter(nodeName => {
                 const lowerName = nodeName.toLowerCase();
                 return !lowerName.includes('hk') && 
@@ -47,7 +48,9 @@ class AiBoostService {
                        !lowerName.includes('港') &&
                        !['direct', 'global'].includes(lowerName) &&
                        !lowerName.includes('选择节点') &&
-                       !lowerName.includes('节点选择');
+                       !lowerName.includes('节点选择') &&
+                       !lowerName.includes('自动测速') &&
+                       !lowerName.includes('自动选择');
             });
 
             if (filteredNodes.length === 0) {
@@ -67,8 +70,10 @@ class AiBoostService {
             }
             
             validResults.sort((a, b) => a.delay - b.delay);
-            Logger.info('AiBoost', `✅ 测速最优 AI 节点: ${validResults[0].name} (${validResults[0].delay} ms)`);
-            return validResults[0];
+            const best = validResults[0];
+            Logger.info('AiBoost', `✅ 测速最优 AI 节点: ${best.name} (${best.delay} ms)`);
+            SpeedtestState.updateResult('ai', best);
+            return best;
          } catch (err) {
              Logger.error('AiBoost', '寻找最快 AI 节点时发生异常', err);
              return null;
@@ -84,6 +89,18 @@ class AiBoostService {
             Logger.error('AiBoost', `锁定 AI 策略组发生异常: ${nodeName}`, err);
             return false;
         }
+    }
+
+    // 手动触发：全量测速 + 锁定最优节点（忽略 LOCK/UNLOCK 状态）
+    static async findBestAndLock(force) {
+        const best = await this.findFastestAiNode();
+        if (best) {
+            SpeedtestState.updateResult('ai', best);
+            if (force || !SpeedtestState.isLocked('ai')) {
+                await this.lockAiNode(best.name);
+            }
+        }
+        return best;
     }
 
     // 获取北京时间 (UTC+8) 的小时 and 分钟
@@ -153,7 +170,7 @@ class AiBoostService {
             
             const currentNode = group.now;
             // 排除自动策略组名称，只有锁死到具体的物理节点才进行可用性保护
-            if (['⚡ AI自动测速', '🚀 节点选择', '👑 高级节点', 'DIRECT'].includes(currentNode)) {
+            if (['⚡ AI自动测速', '🚀 节点选择', '♻️ 自动选择', '👑 高级节点', 'DIRECT'].includes(currentNode)) {
                 return;
             }
             
@@ -176,7 +193,8 @@ class AiBoostService {
             const aiMacs = this.readAiDevices();
             if (aiMacs.length === 0) return;
 
-            Logger.info('AiBoost', '🕰️ 触发 AI 节点定期静默测速优化检测...');
+            const isLocked = SpeedtestState.isLocked('ai');
+            Logger.info('AiBoost', `🕰️ 触发 AI 节点定期静默测速优化检测... (${isLocked ? 'LOCKED' : 'UNLOCK'})`);
             const proxiesData = await ClashService.getProxies();
             const group = proxiesData.proxies['🤖 AI强化'];
             if (!group || !group.now) return;
@@ -185,11 +203,17 @@ class AiBoostService {
             
             // 1. 快速测速当前节点
             let currentDelay = await ClashService.testNodeDelay(currentNode, 4000, 'https://generativelanguage.googleapis.com/');
-            if (currentDelay === 0) currentDelay = 99999; // 完全断开时视为无穷大
+            if (currentDelay === 0) currentDelay = 99999;
 
-            // 2. 并发测速寻找所有物理节点中的最快节点
+            // 2. 全量测速寻找最优节点（始终执行以更新 lastResult）
             const fastestNode = await this.findFastestAiNode();
             if (!fastestNode) return;
+
+            // LOCKED 状态下只更新结果不切换
+            if (isLocked) {
+                Logger.info('AiBoost', `定期检测(LOCKED)：仅更新测速结果 (${fastestNode.name} ${fastestNode.delay}ms)，不切换节点。`);
+                return;
+            }
 
             if (fastestNode.name === currentNode) {
                 Logger.info('AiBoost', `定期检测：当前锁定的 AI 节点 [${currentNode}] (${currentDelay}ms) 已经是最新最优节点，保持不变。`);
@@ -242,18 +266,19 @@ class AiBoostService {
             if (hour === 4 && minute === 0) {
                 if (!dailyCheckDone) {
                     dailyCheckDone = true;
-                    const aiMacs = this.readAiDevices();
-                    if (aiMacs.length > 0) {
-                        Logger.info('AiBoost', '🕰️ 检测到当前是北京时间 04:00 且有设备开启 AI 强化，自动触发重测与切换...');
-                        try {
-                            const fastestNode = await this.findFastestAiNode();
-                            if (fastestNode) {
-                                await this.lockAiNode(fastestNode.name);
+                        const aiMacs = this.readAiDevices();
+                        if (aiMacs.length > 0) {
+                            const isLocked = SpeedtestState.isLocked('ai');
+                            Logger.info('AiBoost', `🕰️ 检测到当前是北京时间 04:00 且有设备开启 AI 强化，自动触发重测... (${isLocked ? 'LOCKED:仅更新' : 'UNLOCK:切换'})`);
+                            try {
+                                const fastestNode = await this.findFastestAiNode();
+                                if (fastestNode && !isLocked) {
+                                    await this.lockAiNode(fastestNode.name);
+                                }
+                            } catch (err) {
+                                Logger.error('AiBoost', '每日凌晨定时测速切换异常', err);
                             }
-                        } catch (err) {
-                            Logger.error('AiBoost', '每日凌晨定时测速切换异常', err);
                         }
-                    }
                 }
             } else {
                 dailyCheckDone = false;

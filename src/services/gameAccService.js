@@ -3,6 +3,7 @@ const { config } = require('../config');
 const Logger = require('../utils/logger');
 const ClashService = require('./clashService');
 const PersistenceService = require('./persistenceService');
+const SpeedtestState = require('./speedtestState');
 
 let gameAccCheckTimer = null;
 let dailyCheckTimer = null;
@@ -78,6 +79,7 @@ class GameAccService {
             const best = results[0];
             const lossPct = (best.loss * 100).toFixed(0);
             Logger.info('GameAcc', `✅ 最优游戏节点: ${best.name} (avg=${best.delay}ms, loss=${lossPct}%, ${best.samples}/${NODE_SAMPLES})`);
+            SpeedtestState.updateResult('game', best);
             return best;
          } catch (err) {
               Logger.error('GameAcc', '寻找最快节点时发生异常', err);
@@ -94,6 +96,18 @@ class GameAccService {
             Logger.error('GameAcc', `锁定游戏策略组发生异常: ${nodeName}`, err);
             return false;
         }
+    }
+
+    // 手动触发：全量测速 + 锁定最优节点（忽略 LOCK/UNLOCK 状态）
+    static async findBestAndLock(force) {
+        const best = await this.findFastestGameNode();
+        if (best) {
+            SpeedtestState.updateResult('game', best);
+            if (force || !SpeedtestState.isLocked('game')) {
+                await this.lockGameNode(best.name);
+            }
+        }
+        return best;
     }
 
     // 获取北京时间 (UTC+8)
@@ -187,7 +201,8 @@ class GameAccService {
             const gameMacs = this.readGameDevices();
             if (gameMacs.length === 0) return;
 
-            Logger.info('GameAcc', '🕰️ 触发游戏节点定期静默测速优化检测...');
+            const isLocked = SpeedtestState.isLocked('game');
+            Logger.info('GameAcc', `🕰️ 触发游戏节点定期静默测速优化检测... (${isLocked ? 'LOCKED' : 'UNLOCK'})`);
             const proxiesData = await ClashService.getProxies();
             const group = proxiesData.proxies['🎮 游戏加速'];
             if (!group || !group.now) return;
@@ -196,11 +211,17 @@ class GameAccService {
             
             // 1. 快速测速当前节点
             let currentDelay = await ClashService.testNodeDelay(currentNode, 4000);
-            if (currentDelay === 0) currentDelay = 99999; // 完全断开时视为无穷大
+            if (currentDelay === 0) currentDelay = 99999;
 
-            // 2. 并发测速寻找所有物理节点中的最快节点
+            // 2. 全量测速寻找最优节点（始终执行以更新 lastResult）
             const fastestNode = await this.findFastestGameNode();
             if (!fastestNode) return;
+
+            // LOCKED 状态下只更新结果不切换
+            if (isLocked) {
+                Logger.info('GameAcc', `定期检测(LOCKED)：仅更新测速结果 (${fastestNode.name} ${fastestNode.delay}ms)，不切换节点。`);
+                return;
+            }
 
             if (fastestNode.name === currentNode) {
                 Logger.info('GameAcc', `定期检测：当前锁定的游戏节点 [${currentNode}] (${currentDelay}ms) 已经是最新最优节点，保持不变。`);
@@ -253,18 +274,19 @@ class GameAccService {
             if (hour === 4 && minute === 0) {
                 if (!dailyCheckDone) {
                     dailyCheckDone = true;
-                    const gameMacs = this.readGameDevices();
-                    if (gameMacs.length > 0) {
-                        Logger.info('GameAcc', '🕰️ 检测到当前是北京时间 04:00 且有设备开启加速，自动触发重测与切换...');
-                        try {
-                            const fastestNode = await this.findFastestGameNode();
-                            if (fastestNode) {
-                                await this.lockGameNode(fastestNode.name);
+                        const gameMacs = this.readGameDevices();
+                        if (gameMacs.length > 0) {
+                            const isLocked = SpeedtestState.isLocked('game');
+                            Logger.info('GameAcc', `🕰️ 检测到当前是北京时间 04:00 且有设备开启加速，自动触发重测... (${isLocked ? 'LOCKED:仅更新' : 'UNLOCK:切换'})`);
+                            try {
+                                const fastestNode = await this.findFastestGameNode();
+                                if (fastestNode && !isLocked) {
+                                    await this.lockGameNode(fastestNode.name);
+                                }
+                            } catch (err) {
+                                Logger.error('GameAcc', '每日凌晨定时测速切换异常', err);
                             }
-                        } catch (err) {
-                            Logger.error('GameAcc', '每日凌晨定时测速切换异常', err);
                         }
-                    }
                 }
             } else {
                 dailyCheckDone = false;
