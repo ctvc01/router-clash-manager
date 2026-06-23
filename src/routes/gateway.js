@@ -258,9 +258,8 @@ router.get('/error-log', async (req, res) => {
 // 3. 获取所有策略组节点信息（用于顶层节点详情弹窗）
 router.get('/nodes', async (req, res) => {
     try {
-        // 优化：改为直接从本服务直连 Clash HTTP API 获取 proxies，不通过 SSH curl 踩踏
-        const proxiesData = await ClashService.getProxies();
-        const proxies = proxiesData.proxies || {};
+        const nocache = req.query.nocache === '1';
+        const proxiesData = await ClashService.getProxies(5000, nocache);
 
         const mainGroup = ProxyGroupDetector.findMainProxyGroup(proxies);
         const mainGroupName = mainGroup?.name || '🚀 节点选择';

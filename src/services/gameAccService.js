@@ -80,6 +80,7 @@ class GameAccService {
             const lossPct = (best.loss * 100).toFixed(0);
             Logger.info('GameAcc', `✅ 最优游戏节点: ${best.name} (avg=${best.delay}ms, loss=${lossPct}%, ${best.samples}/${NODE_SAMPLES})`);
             SpeedtestState.updateResult('game', best);
+            SpeedtestState.updateGamePerNodeResults(results);
             return best;
          } catch (err) {
               Logger.error('GameAcc', '寻找最快节点时发生异常', err);

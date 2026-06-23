@@ -1267,7 +1267,8 @@ document.addEventListener('DOMContentLoaded', () => {
         };
         updateBadge(elBadgeGameLock, game.lock);
         updateBadge(elBadgeAiLock, ai.lock);
-        updateBadge(elBadgeProxyLock, false);
+        // Proxy mode doesn't support locking, hide the badge
+        if (elBadgeProxyLock) elBadgeProxyLock.style.display = 'none';
     }
 
     // LOCK/UNLOCK 切换
@@ -1290,7 +1291,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // [新增] 打开节点详情弹窗函数
-    async function openNodeDetailModal() {
+    async function openNodeDetailModal(nocache = false) {
         showLoading('正在获取各分流模式的节点详情...');
         closeGameDropdown();
         closeAiDropdown();
@@ -1300,7 +1301,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const hkKeywords = ['hk', 'hongkong', '香港', '港'];
         
         try {
-            const res = await fetch('/api/nodes');
+            const url = nocache ? '/api/nodes?nocache=1' : '/api/nodes';
+            const res = await fetch(url);
             if (!res.ok) throw new Error('接口状态异常');
             const data = await res.json();
             if (data.status !== 'success' || !data.proxies) {
@@ -1350,7 +1352,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 elNodeGameLoss.appendChild(labelSpan);
                 elNodeGameLoss.style.fontSize = '';
             }
-            lastSelectedGameNode = game.now || '';
+            lastSelectedGameNode = game.realNode || game.now || '';
             const gamePhysical = (game.all || []).filter(n => n && n.name && !groupKeywords.some(k => n.name.includes(k)));
             const gameValid = gamePhysical.filter(n => n.delay > 0).length;
             if (elBadgeGameCount) elBadgeGameCount.textContent = gameValid || gamePhysical.length;
@@ -1399,17 +1401,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 const rightSpan = document.createElement('span');
                 const isCurrent = cand.name === lastSelectedGameNode;
-                if (isCurrent && gameState.lastLoss !== undefined) {
-                    const lNum = gameState.lastLoss;
+                // Look up per-node loss from speedtest results (if available)
+                const perNodeResults = gameState.perNodeResults || [];
+                const nodeResult = perNodeResults.find(r => r.name === cand.name);
+                const hasLoss = nodeResult && nodeResult.loss !== undefined;
+                if (hasLoss) {
+                    const lNum = nodeResult.loss;
                     const lPct = lNum > 0 ? (lNum * 100).toFixed(0) + '%' : '0%';
                     rightSpan.textContent = cand.delay > 0 ? `${cand.delay} ms · ${lPct} 丢包` : `-- · ${lPct} 丢包`;
-                    rightSpan.className = getDelayClass(cand.delay);
+                    rightSpan.className = getDelayClass(cand.delay) + ' flex-shrink-0';
                 } else if (cand.delay > 0) {
                     rightSpan.textContent = `${cand.delay} ms`;
-                    rightSpan.className = getDelayClass(cand.delay);
+                    rightSpan.className = getDelayClass(cand.delay) + ' flex-shrink-0';
                 } else {
                     rightSpan.textContent = '--';
-                    rightSpan.className = 'text-muted';
+                    rightSpan.className = 'text-muted flex-shrink-0';
                 }
                 itemDiv.appendChild(rightSpan);
                 
@@ -1476,10 +1482,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 const rightSpan = document.createElement('span');
                 if (cand.delay > 0) {
                     rightSpan.textContent = `${cand.delay} ms`;
-                    rightSpan.className = getDelayClass(cand.delay);
+                    rightSpan.className = getDelayClass(cand.delay) + ' flex-shrink-0';
                 } else {
-                    rightSpan.textContent = '超时';
-                    rightSpan.className = 'text-muted';
+                    rightSpan.textContent = '--';
+                    rightSpan.className = 'text-muted flex-shrink-0';
                 }
                 itemDiv.appendChild(rightSpan);
 
@@ -1497,7 +1503,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             // 6. 动态渲染代理节点下拉菜单
-            let lastSelectedProxyNode = proxy.now || '';
+            let lastSelectedProxyNode = proxy.realNode || proxy.now || '';
 
             function renderProxyDropdownList(proxyData) {
                 elProxyDropdownListContainer.innerHTML = '';
@@ -1551,10 +1557,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     const rightSpan = document.createElement('span');
                     if (cand.delay > 0) {
                         rightSpan.textContent = `${cand.delay} ms`;
-                        rightSpan.className = getDelayClass(cand.delay);
+                        rightSpan.className = getDelayClass(cand.delay) + ' flex-shrink-0';
                     } else {
-                        rightSpan.textContent = '超时';
-                        rightSpan.className = 'text-muted';
+                        rightSpan.textContent = '--';
+                        rightSpan.className = 'text-muted flex-shrink-0';
                     }
                     itemDiv.appendChild(rightSpan);
 
@@ -1628,7 +1634,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await res.json();
             if (data.status === 'success') {
                 showToast('已成功切换游戏节点！');
-                await openNodeDetailModal();
+                await openNodeDetailModal(true);
                 await fetchStatus();
             } else {
                 throw new Error(data.message || '切换失败');
@@ -1662,9 +1668,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await res.json();
             if (data.status === 'success') {
                 showToast('已成功切换 AI 强化节点！');
-                // 重新刷新详情展示与列表缓存
-                await openNodeDetailModal();
-                // 刷新主页面的当前节点信息
+                await openNodeDetailModal(true);
                 await fetchStatus();
             } else {
                 throw new Error(data.message || '切换失败');
@@ -1698,9 +1702,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await res.json();
             if (data.status === 'success') {
                 showToast('已成功切换代理节点！');
-                // 重新刷新详情展示与列表缓存
-                await openNodeDetailModal();
-                // 刷新主页面的当前节点信息
+                await openNodeDetailModal(true);
                 await fetchStatus();
             } else {
                 throw new Error(data.message || '切换失败');

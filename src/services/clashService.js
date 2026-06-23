@@ -50,12 +50,12 @@ class ClashService {
     }
 
     // 获取所有代理节点信息 (带有 10 秒防抖和合并请求缓存，防止路由器 OOM)
-    static async getProxies(timeoutMs = 5000) {
+    static async getProxies(timeoutMs = 5000, nocache = false) {
         const now = Date.now();
-        if (cachedProxies && (now - lastProxiesFetchTime < PROXIES_CACHE_TTL)) {
+        if (!nocache && cachedProxies && (now - lastProxiesFetchTime < PROXIES_CACHE_TTL)) {
             return cachedProxies;
         }
-        if (pendingProxiesPromise) {
+        if (!nocache && pendingProxiesPromise) {
             return pendingProxiesPromise;
         }
 

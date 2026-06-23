@@ -6,7 +6,7 @@ const Logger = require('../utils/logger');
 const STATE_FILE = path.join(config.paths.dataDir, 'speedtest_state.json');
 
 const DEFAULT_STATE = {
-    game: { lock: false, lockedNode: null, lastNode: null, lastDelay: 0, lastLoss: 0, lastSamples: '', timestamp: 0 },
+    game: { lock: false, lockedNode: null, lastNode: null, lastDelay: 0, lastLoss: 0, lastSamples: '', perNodeResults: [], timestamp: 0 },
     ai:   { lock: false, lockedNode: null, lastNode: null, lastDelay: 0, lastSamples: '', timestamp: 0 }
 };
 
@@ -74,6 +74,20 @@ class SpeedtestState {
         }
         this._save();
         return state[mode];
+    }
+
+    // 保存游戏模式完整 per-node 测速结果（用于前端下拉列表展示丢包率）
+    static updateGamePerNodeResults(results) {
+        const state = this._load();
+        if (Array.isArray(results)) {
+            state.game.perNodeResults = results.map(r => ({
+                name: r.name,
+                delay: r.delay,
+                loss: r.loss,
+                samples: r.samples
+            }));
+        }
+        this._save();
     }
 
     static isLocked(mode) {
