@@ -55,15 +55,21 @@ router.clearMainGroupCache = () => {
     Logger.info('Gateway', '已清除网关配置及代理组名缓存');
 };
 
-// 辅助：获取 Clash 当前代理节点信息（使用静态检测）
+// 辅助：获取 Clash 当前代理节点信息（解析代理组链，返回实际物理节点）
 async function getCurrentNodeInfo() {
     try {
         const mainGroupName = await getMainGroupName();
-        return {
-            name: mainGroupName,
-            delay: 0,
-            mainGroupName: mainGroupName
-        };
+        // 通过 Clash API 解析代理组链，获取实际物理节点和延迟
+        const proxiesData = await ClashApiProxy.getProxies();
+        if (proxiesData && proxiesData.proxies) {
+            const realNode = ProxyGroupDetector.getRealPhysicalNode(proxiesData.proxies, mainGroupName);
+            return {
+                name: realNode.name,
+                delay: realNode.delay || 0,
+                mainGroupName
+            };
+        }
+        return { name: mainGroupName, delay: 0, mainGroupName };
     } catch (e) {
         Logger.debug('Gateway', `查询当前节点异常: ${e.message}`);
         return { name: '未知', delay: 0, mainGroupName: '未知' };

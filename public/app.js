@@ -1,7 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
     // 页面核心节点缓存
     const elStatusText = document.getElementById('status-text');
-    const elStatusUptime = document.getElementById('status-uptime');
+    const elStatusMode = document.getElementById('status-mode');
     const elCurrentNode = document.getElementById('current-node');
     const elNodeLatency = document.getElementById('node-latency');
     const elDevicesTotal = document.getElementById('devices-total');
@@ -273,7 +273,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function updateUiForRebuilding() {
         elStatusText.textContent = '重载中';
         elStatusText.className = 'card-value text-orange animate-pulse';
-        elStatusUptime.innerHTML = '<span style="color: #ffb786;">正在热重载分流策略...</span>';
+        elStatusMode.innerHTML = '<span style="color: #ffb786;">正在热重载分流策略...</span>';
         
         elCurrentNode.textContent = '请稍候';
         elCurrentNode.classList.remove('long-text');
@@ -381,7 +381,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (isLoadingState) {
                     elStatusText.textContent = '加载中';
                     elStatusText.className = 'card-value text-orange';
-                    elStatusUptime.textContent = '';
+                    elStatusMode.textContent = '';
                     
                     elCurrentNode.textContent = '加载中';
                     elCurrentNode.classList.remove('long-text');
@@ -389,7 +389,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 } else {
                     elStatusText.textContent = '运行中';
                     elStatusText.className = 'card-value text-green';
-                    elStatusUptime.textContent = formatUptime(state.systemUptimeMinutes);
+                    elStatusMode.textContent = `模式: ${(data.mode || '未知').toUpperCase()}`;
                     
                     // 更新当前节点与延迟
                     elCurrentNode.textContent = data.currentNode;
@@ -426,7 +426,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 updateDiskBar(0, 20, '--', '--');
                 elStatusText.textContent = '已停止';
                 elStatusText.className = 'card-value text-muted';
-                elStatusUptime.innerHTML = `<span class="error-log-link" id="view-error-log" style="color: var(--danger); text-decoration: underline; cursor: pointer; font-size: 11px;">错误日志</span>`;
+                elStatusMode.innerHTML = `<span class="error-log-link" id="view-error-log" style="color: var(--danger); text-decoration: underline; cursor: pointer; font-size: 11px;">错误日志</span>`;
                 
                 // 停止时隐藏展示节点
                 elCurrentNode.textContent = '已关闭';
@@ -449,7 +449,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (state.consecutiveOfflineFailures < 3) {
                 elStatusText.textContent = '连接中';
                 elStatusText.className = 'card-value text-orange animate-pulse';
-                elStatusUptime.innerHTML = `正在尝试重新连接 (${state.consecutiveOfflineFailures}/3)...`;
+                elStatusMode.innerHTML = `正在尝试重新连接 (${state.consecutiveOfflineFailures}/3)...`;
                 
                 elCurrentNode.textContent = '已关闭';
                 elCurrentNode.classList.remove('long-text');
@@ -461,7 +461,7 @@ document.addEventListener('DOMContentLoaded', () => {
             updateDiskBar(0, 20);
             elStatusText.textContent = '离线/未知';
             elStatusText.className = 'card-value text-muted';
-            elStatusUptime.innerHTML = '无法与后端通信';
+            elStatusMode.innerHTML = '无法与后端通信';
             
             elCurrentNode.textContent = '已关闭';
             elCurrentNode.classList.remove('long-text');
@@ -1370,7 +1370,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // 5. 动态渲染 AI 节点下拉菜单
             elAiDropdownListContainer.innerHTML = '';
-            let lastSelectedAiNode = ai.now || '';
+            let lastSelectedAiNode = ai.realNode || ai.now || '';
 
             const aiCandidates = [];
             const aiPhysicalNodes = ai.all || [];
@@ -1764,7 +1764,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
     // 绑定事件：点击“错误日志”文字链（事件委托）
-    elStatusUptime.addEventListener('click', async (e) => {
+    elStatusMode.addEventListener('click', async (e) => {
         const link = e.target.closest('#view-error-log');
         if (!link) return;
 
