@@ -1,7 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
     // 页面核心节点缓存
     const elStatusText = document.getElementById('status-text');
-    const elStatusMode = document.getElementById('status-mode');
+    const elStatusUptime = document.getElementById('status-uptime');
     const elCurrentNode = document.getElementById('current-node');
     const elNodeLatency = document.getElementById('node-latency');
     const elDevicesTotal = document.getElementById('devices-total');
@@ -105,6 +105,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const elBadgeProxyLock = document.getElementById('badge-proxy-lock');
     const elBadgeAiLock = document.getElementById('badge-ai-lock');
     const elBadgeGameLock = document.getElementById('badge-game-lock');
+    const elBadgeProxyCount = document.getElementById('badge-proxy-count');
+    const elBadgeAiCount = document.getElementById('badge-ai-count');
+    const elBadgeGameCount = document.getElementById('badge-game-count');
+    const elNodeGameLoss = document.getElementById('node-game-loss');
 
     // 辅助：获取设备类型的 UI 图标 (完全规范等比大小)
     function getDeviceIcon(category) {
@@ -269,7 +273,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function updateUiForRebuilding() {
         elStatusText.textContent = '重载中';
         elStatusText.className = 'card-value text-orange animate-pulse';
-        elStatusMode.innerHTML = '<span style="color: #ffb786;">正在热重载分流策略...</span>';
+        elStatusUptime.innerHTML = '<span style="color: #ffb786;">正在热重载分流策略...</span>';
         
         elCurrentNode.textContent = '请稍候';
         elCurrentNode.classList.remove('long-text');
@@ -342,7 +346,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const total = proxyCount + aiCount + gameCount;
         elDevicesProxy.textContent = total;
         if (elCardModeDist) {
-            elCardModeDist.textContent = `代理(${proxyCount}) · AI(${aiCount}) · 游戏(${gameCount})`;
+            elCardModeDist.textContent = `代理设备- ${proxyCount} 代理｜${aiCount} AI | ${gameCount} 游戏，全部设备 - ${state.lanDevices.length}`;
         }
     }
 
@@ -377,7 +381,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (isLoadingState) {
                     elStatusText.textContent = '加载中';
                     elStatusText.className = 'card-value text-orange';
-                    elStatusMode.textContent = '';
+                    elStatusUptime.textContent = '';
                     
                     elCurrentNode.textContent = '加载中';
                     elCurrentNode.classList.remove('long-text');
@@ -385,7 +389,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 } else {
                     elStatusText.textContent = '运行中';
                     elStatusText.className = 'card-value text-green';
-                    elStatusMode.innerHTML = `模式: ${(data.mode || '未知').toUpperCase()}`;
+                    elStatusUptime.textContent = formatUptime(state.systemUptimeMinutes);
                     
                     // 更新当前节点与延迟
                     elCurrentNode.textContent = data.currentNode;
@@ -422,7 +426,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 updateDiskBar(0, 20, '--', '--');
                 elStatusText.textContent = '已停止';
                 elStatusText.className = 'card-value text-muted';
-                elStatusMode.innerHTML = `<span class="error-log-link" id="view-error-log" style="color: var(--danger); text-decoration: underline; cursor: pointer; font-size: 11px;">错误日志</span>`;
+                elStatusUptime.innerHTML = `<span class="error-log-link" id="view-error-log" style="color: var(--danger); text-decoration: underline; cursor: pointer; font-size: 11px;">错误日志</span>`;
                 
                 // 停止时隐藏展示节点
                 elCurrentNode.textContent = '已关闭';
@@ -445,7 +449,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (state.consecutiveOfflineFailures < 3) {
                 elStatusText.textContent = '连接中';
                 elStatusText.className = 'card-value text-orange animate-pulse';
-                elStatusMode.innerHTML = `正在尝试重新连接 (${state.consecutiveOfflineFailures}/3)...`;
+                elStatusUptime.innerHTML = `正在尝试重新连接 (${state.consecutiveOfflineFailures}/3)...`;
                 
                 elCurrentNode.textContent = '已关闭';
                 elCurrentNode.classList.remove('long-text');
@@ -457,7 +461,7 @@ document.addEventListener('DOMContentLoaded', () => {
             updateDiskBar(0, 20);
             elStatusText.textContent = '离线/未知';
             elStatusText.className = 'card-value text-muted';
-            elStatusMode.innerHTML = '无法与后端通信';
+            elStatusUptime.innerHTML = '无法与后端通信';
             
             elCurrentNode.textContent = '已关闭';
             elCurrentNode.classList.remove('long-text');
@@ -1211,18 +1215,19 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // 更新 LOCK/UNLOCK 徽标
+    // 更新 LOCK/UNLOCK 徽标（统一颜色：绿色 UNLOCK，橙色 LOCKED）
     function updateLockBadges() {
         const game = state.speedtest.game || {};
         const ai = state.speedtest.ai || {};
-        if (elBadgeGameLock) {
-            elBadgeGameLock.textContent = game.lock ? 'LOCKED' : 'UNLOCK';
-            elBadgeGameLock.className = game.lock ? 'badge-status font-game' : 'badge-status font-game';
-        }
-        if (elBadgeAiLock) {
-            elBadgeAiLock.textContent = ai.lock ? 'LOCKED' : 'UNLOCK';
-            elBadgeAiLock.className = ai.lock ? 'badge-status font-ai locked' : 'badge-status font-ai';
-        }
+        const updateBadge = (el, locked) => {
+            if (!el) return;
+            el.textContent = locked ? 'LOCKED' : 'UNLOCK';
+            el.className = locked ? 'badge-status badge-locked' : 'badge-status badge-unlocked';
+            el.style.cursor = 'pointer';
+        };
+        updateBadge(elBadgeGameLock, game.lock);
+        updateBadge(elBadgeAiLock, ai.lock);
+        updateBadge(elBadgeProxyLock, false);
     }
 
     // LOCK/UNLOCK 切换
@@ -1269,24 +1274,38 @@ document.addEventListener('DOMContentLoaded', () => {
             const ai = proxies.ai || {};
             const game = proxies.game || {};
 
-            // 1. 回显：网页代理（显示策略组名称）
-            // elNodeProxyNow.textContent = proxy.name || '--';  // 已通过下拉菜单显示策略组名称
+            // 1. 回显：网页代理
             elNodeProxyReal.textContent = proxy.realNode || '--';
             elNodeProxyDelay.textContent = proxy.delay > 0 ? `${proxy.delay} ms` : '-- ms';
             elNodeProxyDelay.className = `${getDelayClass(proxy.delay)} flex-shrink-0`;
+            // count badge: physical nodes with valid delay
+            const proxyPhysical = (proxy.all || []).filter(n => n && n.name && !groupKeywords.some(k => n.name.includes(k)));
+            const proxyValid = proxyPhysical.filter(n => n.delay > 0).length;
+            if (elBadgeProxyCount) elBadgeProxyCount.textContent = `「${proxyValid || proxyPhysical.length}」`;
 
             // 2. 回显：AI强化
-            // elNodeAiNow.textContent = ai.name || '--';  // 已通过下拉菜单显示策略组名称
             elNodeAiReal.textContent = ai.realNode || '--';
             elNodeAiDelay.textContent = ai.delay > 0 ? `${ai.delay} ms` : '-- ms';
             elNodeAiDelay.className = `${getDelayClass(ai.delay)} flex-shrink-0`;
+            const aiPhysical = (ai.all || []).filter(n => n && n.name && !groupKeywords.some(k => n.name.includes(k)) && !hkKeywords.some(k => n.name.toLowerCase().includes(k)));
+            const aiValid = aiPhysical.filter(n => n.delay > 0).length;
+            if (elBadgeAiCount) elBadgeAiCount.textContent = `「${aiValid || aiPhysical.length}」`;
 
             // 3. 回显：游戏模式
-            const isGameLocked = (state.speedtest.game || {}).lock;
+            const gameState = state.speedtest.game || {};
             elNodeGameReal.textContent = game.realNode || '--';
             elNodeGameDelay.textContent = game.delay > 0 ? `${game.delay} ms` : '-- ms';
             elNodeGameDelay.className = `${getDelayClass(game.delay)}`;
+            if (elNodeGameLoss) {
+                const lossPct = gameState.lastLoss > 0 ? `${(gameState.lastLoss * 100).toFixed(0)}%` : (gameState.lastLoss === 0 ? '0%' : '--%');
+                elNodeGameLoss.textContent = `loss:${lossPct}`;
+                elNodeGameLoss.className = gameState.lastLoss > 0 ? 'text-orange' : 'text-green';
+                elNodeGameLoss.style.fontSize = '11px';
+            }
             lastSelectedGameNode = game.now || '';
+            const gamePhysical = (game.all || []).filter(n => n && n.name && !groupKeywords.some(k => n.name.includes(k)));
+            const gameValid = gamePhysical.filter(n => n.delay > 0).length;
+            if (elBadgeGameCount) elBadgeGameCount.textContent = `「${gameValid || gamePhysical.length}」`;
 
             // 4. 动态渲染游戏节点下拉菜单（仅物理节点，排除 Selector/URLTest）
             elGameDropdownListContainer.innerHTML = '';
@@ -1745,7 +1764,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
     // 绑定事件：点击“错误日志”文字链（事件委托）
-    elStatusMode.addEventListener('click', async (e) => {
+    elStatusUptime.addEventListener('click', async (e) => {
         const link = e.target.closest('#view-error-log');
         if (!link) return;
 

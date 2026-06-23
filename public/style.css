@@ -283,12 +283,12 @@ body {
 }
 
 .card-value {
-    font-size: 20px;
+    font-size: 22px;
     font-weight: 700;
     color: var(--text-primary);
     letter-spacing: -0.3px;
     display: flex;
-    align-items: baseline;
+    align-items: center;
 }
 
 .value-unit {
@@ -1720,22 +1720,16 @@ body {
     text-transform: uppercase;
 }
 
-.badge-status.font-ai {
-    background: linear-gradient(135deg, rgba(0, 210, 255, 0.15) 0%, rgba(0, 102, 255, 0.15) 100%);
-    color: #00d2ff;
-    border: 1px solid rgba(0, 210, 255, 0.3);
-}
-
-.badge-status.font-proxy {
+.badge-status.badge-unlocked {
     background: linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, rgba(5, 150, 105, 0.15) 100%);
     color: #10b981;
     border: 1px solid rgba(16, 185, 129, 0.3);
 }
 
-.badge-status.font-game {
-    background: linear-gradient(135deg, rgba(133, 45, 246, 0.15) 0%, rgba(217, 61, 246, 0.15) 100%);
-    color: #d93df6;
-    border: 1px solid rgba(133, 45, 246, 0.3);
+.badge-status.badge-locked {
+    background: linear-gradient(135deg, rgba(255, 100, 50, 0.2) 0%, rgba(255, 50, 50, 0.2) 100%);
+    color: #ff6432;
+    border: 1px solid rgba(255, 100, 50, 0.5);
 }
 
 .badge-status.cursor-pointer {
@@ -1746,10 +1740,26 @@ body {
     opacity: 0.8;
 }
 
-.badge-status.locked {
-    background: linear-gradient(135deg, rgba(255, 100, 50, 0.2) 0%, rgba(255, 50, 50, 0.2) 100%) !important;
-    color: #ff6432 !important;
-    border: 1px solid rgba(255, 100, 50, 0.5) !important;
+.badge-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    background: rgba(255,255,255,0.06);
+    border-radius: 10px;
+    padding: 1px 8px;
+    margin-left: 4px;
+}
+
+.card-device-split {
+    flex: 1;
+    text-align: center;
+    font-size: 22px;
+    color: var(--text-secondary);
+    font-weight: 300;
+    margin: 0 4px;
 }
 
 /* --- 高保真自定义下拉列表样式 --- */

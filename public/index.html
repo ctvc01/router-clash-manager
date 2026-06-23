@@ -51,7 +51,7 @@
                     </div>
                     <div class="card-value-group">
                         <h2 class="card-value text-green" id="status-text">运行中</h2>
-                        <p class="card-sub-value" id="status-mode">模式: 白名单</p>
+                        <p class="card-sub-value" id="status-uptime">已运行0天00时00分</p>
                     </div>
                 </div>
 
@@ -93,10 +93,10 @@
                     <div class="card-value-group">
                         <h2 class="card-value text-white">
                             <span id="devices-proxy" class="text-green">0</span>
-                            <span class="value-unit" style="font-size:0.6em;"> / </span>
-                            <span id="devices-total" style="font-size:0.6em;">0</span>
+                            <span class="card-device-split"> / </span>
+                            <span id="devices-total">0</span>
                         </h2>
-                        <p id="card-mode-dist" class="card-sub-value">代理(0) · AI(0) · 游戏(0)</p>
+                        <p id="card-mode-dist" class="card-sub-value">代理设备- 0 代理｜0 AI | 0 游戏，全部设备 - 0</p>
                     </div>
                 </div>
 
@@ -317,15 +317,14 @@
                 <!-- 网页代理模式 -->
                 <div class="form-group" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 0;">
                     <label class="form-label" style="display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 4px;">
-                        <div style="display: flex; align-items: center; gap: 6px; font-weight: 600;">
+                        <div style="display: flex; align-items: center; gap: 4px; font-weight: 600;">
                             <span>🚀 代理模式</span>
+                            <span id="badge-proxy-count" class="badge-count">「0」</span>
                         </div>
-                        <span id="badge-proxy-lock" class="badge-status font-proxy cursor-pointer" style="cursor:pointer;">UNLOCK</span>
+                        <span id="badge-proxy-lock" class="badge-status badge-unlocked" style="cursor:pointer;">UNLOCK</span>
                     </label>
                     <div class="node-info-card" style="position: relative; overflow: visible;">
-                        <!-- 展开触发区：点击这一行触发自定义的下拉菜单展示 -->
                         <div id="btn-toggle-proxy-dropdown" class="node-detail-row pt-2 cursor-pointer" style="transition: background-color 0.2s ease;">
-                            <span class="node-detail-label">当前节点</span>
                             <span id="node-proxy-real" class="node-detail-value font-highlight node-name-scrollable">--</span>
                             <div style="display: flex; align-items: center; gap: 4px; flex-shrink: 0;">
                                 <span id="node-proxy-delay" class="text-green">-- ms</span>
@@ -338,15 +337,14 @@
                 <!-- AI 强化分流模式 -->
                 <div class="form-group" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 0;">
                     <label class="form-label" style="display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 4px;">
-                        <div style="display: flex; align-items: center; gap: 6px; font-weight: 600;">
+                        <div style="display: flex; align-items: center; gap: 4px; font-weight: 600;">
                             <span>🤖 AI 强化模式</span>
+                            <span id="badge-ai-count" class="badge-count">「0」</span>
                         </div>
-                        <span id="badge-ai-lock" class="badge-status font-ai cursor-pointer" style="cursor:pointer;">UNLOCK</span>
+                        <span id="badge-ai-lock" class="badge-status badge-unlocked" style="cursor:pointer;">UNLOCK</span>
                     </label>
                     <div class="node-info-card" style="position: relative; overflow: visible;">
-                        <!-- 展开触发区：点击这一行触发自定义的下拉菜单展示 -->
                         <div id="btn-toggle-ai-dropdown" class="node-detail-row pt-2 cursor-pointer" style="transition: background-color 0.2s ease;">
-                            <span class="node-detail-label">当前节点</span>
                             <span id="node-ai-real" class="node-detail-value font-highlight node-name-scrollable">--</span>
                             <div style="display: flex; align-items: center; gap: 4px; flex-shrink: 0;">
                                 <span id="node-ai-delay" class="text-green">-- ms</span>
@@ -359,19 +357,19 @@
                 <!-- 游戏加速模式 -->
                 <div class="form-group" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 0;">
                     <label class="form-label" style="display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 4px;">
-                        <div style="display: flex; align-items: center; gap: 6px; font-weight: 600;">
+                        <div style="display: flex; align-items: center; gap: 4px; font-weight: 600;">
                             <span>🎮 游戏模式</span>
+                            <span id="badge-game-count" class="badge-count">「0」</span>
                         </div>
                         <div style="display: flex; align-items: center; gap: 6px;">
-                            <span id="badge-game-lock" class="badge-status font-game cursor-pointer" style="cursor:pointer;">UNLOCK</span>
+                            <span id="badge-game-lock" class="badge-status badge-unlocked" style="cursor:pointer;">UNLOCK</span>
                         </div>
                     </label>
                     <div class="node-info-card" style="position: relative; overflow: visible;">
-                        <!-- 展开触发区：点击这一行触发自定义的下拉菜单展示 -->
                         <div id="btn-toggle-game-dropdown" class="node-detail-row pt-2 cursor-pointer" style="transition: background-color 0.2s ease;">
-                            <span class="node-detail-label">当前节点</span>
                             <span id="node-game-real" class="node-detail-value font-highlight node-name-scrollable">--</span>
                             <div style="display: flex; align-items: center; gap: 4px; flex-shrink: 0;">
+                                <span id="node-game-loss" class="text-muted" style="font-size:11px;">loss:--%</span>
                                 <span id="node-game-delay" class="text-green">-- ms</span>
                                 <span id="icon-game-dropdown-arrow" class="material-symbols-outlined font-highlight" style="font-size: 16px;">expand_more</span>
                             </div>
