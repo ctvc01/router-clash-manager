@@ -1247,10 +1247,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // [新增] 打开节点详情弹窗函数
     async function openNodeDetailModal() {
         showLoading('正在获取各分流模式的节点详情...');
-        // 初始化时，先确保下拉框是折叠的
         closeGameDropdown();
         closeAiDropdown();
         closeProxyDropdown();
+
+        const groupKeywords = ['选择', '自动', 'DIRECT', 'GLOBAL', '测速'];
+        const hkKeywords = ['hk', 'hongkong', '香港', '港'];
         
         try {
             const res = await fetch('/api/nodes');
@@ -1289,7 +1291,6 @@ document.addEventListener('DOMContentLoaded', () => {
             // 4. 动态渲染游戏节点下拉菜单（仅物理节点，排除 Selector/URLTest）
             elGameDropdownListContainer.innerHTML = '';
             const allCandidates = [];
-            const groupKeywords = ['选择', '自动', 'DIRECT', 'GLOBAL', '测速'];
             (game.all || []).forEach(node => {
                 if (node && node.name) {
                     const isGroup = groupKeywords.some(k => node.name.includes(k));
@@ -1353,8 +1354,6 @@ document.addEventListener('DOMContentLoaded', () => {
             let lastSelectedAiNode = ai.now || '';
 
             const aiCandidates = [];
-            const groupKeywords = ['选择', '自动', 'DIRECT', 'GLOBAL', '测速'];
-            const hkKeywords = ['hk', 'hongkong', '香港', '港'];
             const aiPhysicalNodes = ai.all || [];
             aiPhysicalNodes.forEach(node => {
                 if (node && node.name) {
