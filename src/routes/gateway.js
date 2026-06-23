@@ -80,7 +80,7 @@ async function getCurrentNodeInfo() {
 router.get('/status', async (req, res) => {
     try {
         // 1. 一次性获取所有系统状态信息，将 5 次 SSH 连接优化为 1 次，并增加对 /data 分区 df -m 探测
-        const statsCmd = `pid=\$(pidof mihomo || pidof Clash || pidof CrashCore || pgrep -x mihomo || pgrep -x Clash || pgrep -x CrashCore); echo "PID:\$pid"; if [ -n "\$pid" ]; then cat /proc/\$pid/status | grep VmRSS; top -b -n 1 | grep -v grep | grep -E "CrashCore|clash|mihomo" | head -n 1; fi; cat /proc/meminfo | grep MemTotal; cat /proc/uptime; df -m /data | tail -n 1`;
+        const statsCmd = `pid=\$(pidof mihomo || pidof Clash || pidof CrashCore || pgrep -x mihomo || pgrep -x Clash || pgrep -x CrashCore); echo "PID:\$pid"; if [ -n "\$pid" ]; then echo "CLASH_UP:\$(( \$(cut -d' ' -f1 /proc/uptime | cut -d. -f1) - \$(awk '{print \$22}' /proc/\$pid/stat) / 100 ))"; cat /proc/\$pid/status | grep VmRSS; top -b -n 1 | grep -v grep | grep -E "CrashCore|clash|mihomo" | head -n 1; fi; cat /proc/meminfo | grep MemTotal; cat /proc/uptime; df -m /data | tail -n 1`;
         const statsOutput = await SshService.runRemoteCommand(statsCmd);
 
         // 解析输出
@@ -145,13 +145,11 @@ router.get('/status', async (req, res) => {
             }
         }
 
-        // 解析 Uptime
-        const uptimeLine = lines.find(l => /^\d+(\.\d+)?\s+\d+/.test(l.trim()));
-        if (uptimeLine) {
-            const match = uptimeLine.trim().match(/^(\d+(\.\d+)?)/);
-            if (match) {
-                uptime = Math.round(parseFloat(match[1]));
-            }
+        // 解析 Clash 进程启动时长
+        const clashUpLine = lines.find(l => l.startsWith('CLASH_UP:'));
+        if (clashUpLine) {
+            const upSec = parseInt(clashUpLine.split(':')[1], 10);
+            if (!isNaN(upSec) && upSec > 0) uptime = upSec;
         }
 
         if (!isRunning) {
@@ -260,6 +258,7 @@ router.get('/nodes', async (req, res) => {
     try {
         const nocache = req.query.nocache === '1';
         const proxiesData = await ClashService.getProxies(5000, nocache);
+        const proxies = proxiesData.proxies || {};
 
         const mainGroup = ProxyGroupDetector.findMainProxyGroup(proxies);
         const mainGroupName = mainGroup?.name || '🚀 节点选择';
