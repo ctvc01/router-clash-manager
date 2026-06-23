@@ -1339,10 +1339,15 @@ document.addEventListener('DOMContentLoaded', () => {
             if (elNodeGameLoss) {
                 const lossNum = gameState.lastLoss;
                 const lossPct = lossNum > 0 ? (lossNum * 100).toFixed(0) + '%' : (lossNum === 0 ? '0%' : '--%');
-                elNodeGameLoss.textContent = '丢包率 ' + lossPct;
-                if (lossNum === 0) elNodeGameLoss.className = 'text-green';
-                else if (lossNum <= 0.2) elNodeGameLoss.className = 'text-orange';
-                else elNodeGameLoss.className = 'text-red';
+                elNodeGameLoss.innerHTML = '';
+                const pctSpan = document.createElement('span');
+                pctSpan.textContent = lossPct + ' ';
+                pctSpan.className = lossNum === 0 ? 'text-green' : lossNum <= 0.2 ? 'text-orange' : 'text-red';
+                const labelSpan = document.createElement('span');
+                labelSpan.textContent = '丢包';
+                labelSpan.style.cssText = 'font-size:10px; color: var(--text-secondary);';
+                elNodeGameLoss.appendChild(pctSpan);
+                elNodeGameLoss.appendChild(labelSpan);
                 elNodeGameLoss.style.fontSize = '';
             }
             lastSelectedGameNode = game.now || '';
@@ -1397,7 +1402,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (isCurrent && gameState.lastLoss !== undefined) {
                     const lNum = gameState.lastLoss;
                     const lPct = lNum > 0 ? (lNum * 100).toFixed(0) + '%' : '0%';
-                    rightSpan.textContent = cand.delay > 0 ? `${cand.delay} ms · 丢包率 ${lPct}` : `-- · 丢包率 ${lPct}`;
+                    rightSpan.textContent = cand.delay > 0 ? `${cand.delay} ms · ${lPct} 丢包` : `-- · ${lPct} 丢包`;
                     rightSpan.className = getDelayClass(cand.delay);
                 } else if (cand.delay > 0) {
                     rightSpan.textContent = `${cand.delay} ms`;
@@ -1607,55 +1612,23 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // 核心切换请求逻辑
-    async function handleGameNodeSelect(newVal) {
-        const oldVal = lastSelectedGameNode;
-        let confirmTitle = '';
-        let confirmMsg = '';
-        let isDanger = false;
-        if (newVal === '⚡ 游戏自动测速') {
-            confirmTitle = '切换为自动测速';
-            confirmMsg = '确认要切换回“自动测速”模式吗？\n切换后系统将每 30 秒自动检测并锁定最优游戏节点。';
-        } else {
-            confirmTitle = '手动锁定节点';
-            confirmMsg = `确认要手动强行锁定游戏专线到该节点吗？\n\n目标节点: ${newVal}\n\n注意: 这会覆盖自动测速优化。`;
-            isDanger = true;
-        }
-
-        const confirmed = await showConfirm({
-            title: confirmTitle,
-            message: confirmMsg,
-            okText: isDanger ? '确认锁定' : '确认切换',
-            danger: isDanger
-        });
-
-        if (!confirmed) {
-            closeGameDropdown();
-            return;
-        }
-
+     async function handleGameNodeSelect(newVal) {
         // 关闭下拉框
         closeGameDropdown();
-        // 用户确认，发送请求
-        showLoading('正在切换并锁定游戏节点...');
+        // 发送节点切换请求
+        showLoading('正在切换游戏节点...');
         try {
             const res = await fetch('/api/select', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    group: '🎮 游戏加速',
-                    node: newVal
-                })
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ group: '🎮 游戏加速', node: newVal })
             });
 
             if (!res.ok) throw new Error('接口响应错误');
             const data = await res.json();
             if (data.status === 'success') {
-                showToast('已成功切换并锁定游戏专线节点！');
-                // 重新刷新详情展示与列表缓存
+                showToast('已成功切换游戏节点！');
                 await openNodeDetailModal();
-                // 刷新主页面的当前节点信息
                 await fetchStatus();
             } else {
                 throw new Error(data.message || '切换失败');
