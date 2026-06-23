@@ -345,9 +345,39 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         const total = proxyCount + aiCount + gameCount;
         elDevicesProxy.textContent = total;
-        if (elCardModeDist) {
-            elCardModeDist.textContent = `代理设备- ${proxyCount} 代理｜${aiCount} AI | ${gameCount} 游戏，全部设备 - ${state.lanDevices.length}`;
+
+        const barP = document.getElementById('mode-bar-proxy');
+        const barA = document.getElementById('mode-bar-ai');
+        const barG = document.getElementById('mode-bar-game');
+        const labP = document.getElementById('label-proxy');
+        const labA = document.getElementById('label-ai');
+        const labG = document.getElementById('label-game');
+
+        const modes = [
+            { count: proxyCount, bar: barP, lab: labP, name: '代理' },
+            { count: aiCount,    bar: barA, lab: labA, name: 'AI' },
+            { count: gameCount,  bar: barG, lab: labG, name: '游戏' }
+        ];
+
+        if (total === 0) {
+            [barP, barA, barG].forEach(b => b && (b.style.flex = '0'));
+            [labA, labG].forEach(l => l && (l.style.display = 'none'));
+            if (labP) { labP.style.display = ''; labP.style.flex = ''; labP.textContent = '代理 0'; }
+            return;
         }
+
+        modes.forEach(m => {
+            if (!m.bar || !m.lab) return;
+            m.bar.style.flex = m.count;
+            if (m.count > 0) {
+                m.lab.style.display = '';
+                m.lab.style.flex = m.count;
+                m.lab.textContent = m.name + ' ' + m.count;
+            } else {
+                m.lab.style.display = 'none';
+                m.lab.style.flex = '';
+            }
+        });
     }
 
     // 接口：获取 Clash 服务状态与监控数据的真实联动

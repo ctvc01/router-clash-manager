@@ -375,6 +375,31 @@ body {
     background-color: var(--warning) !important;
 }
 
+#device-mode-bar-container {
+    display: flex;
+    gap: 0;
+}
+#device-mode-bar-container > div {
+    height: 4px;
+    min-width: 0;
+    border-radius: 2px;
+}
+#device-mode-bar-container > div:first-child {
+    border-radius: 2px 0 0 2px;
+}
+#device-mode-bar-container > div:last-child {
+    border-radius: 0 2px 2px 0;
+}
+#mode-bar-proxy { background: var(--success); }
+#mode-bar-ai    { background: var(--primary); }
+#mode-bar-game  { background: var(--game-purple); }
+
+.mode-label {
+    font-size: 11px;
+    overflow: hidden;
+    white-space: nowrap;
+}
+
 .progress-bar-fill.danger-bar {
     background-color: var(--danger) !important;
 }

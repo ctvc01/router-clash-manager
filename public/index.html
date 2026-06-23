@@ -92,11 +92,20 @@
                     </div>
                     <div class="card-value-group">
                         <h2 class="card-value text-white">
-                            <span id="devices-total">0</span><span class="value-unit"> / 总数</span>
-                            <span class="space-split"></span>
-                            <span id="devices-proxy" class="text-green">0</span><span class="value-unit"> / 代理</span>
+                            <span id="devices-proxy" class="text-green">0</span>
+                            <span class="value-unit"> / </span>
+                            <span id="devices-total">0</span>
                         </h2>
-                        <p class="card-sub-value">局域网客户端监控中</p>
+                        <div class="progress-bar-container" id="device-mode-bar-container">
+                            <div id="mode-bar-proxy" style="flex:0"></div>
+                            <div id="mode-bar-ai"    style="flex:0"></div>
+                            <div id="mode-bar-game"  style="flex:0"></div>
+                        </div>
+                        <div id="device-mode-labels" class="card-sub-value" style="display: flex; margin-top: 4px;">
+                            <span id="label-proxy">代理 0</span>
+                            <span id="label-ai">AI 0</span>
+                            <span id="label-game">游戏 0</span>
+                        </div>
                     </div>
                 </div>
 
