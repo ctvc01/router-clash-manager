@@ -24,8 +24,8 @@ proxy-providers:
       url: http://www.gstatic.com/generate_204
 
 proxy-groups:
-  - {name: 🚀 节点选择, type: select, proxies: [♻️ 自动选择, DIRECT], use: [subscription], filter: "(?i)(IPLC|IEPL).*(A-[0-9]|gRPC)"}
-  - {name: ♻️ 自动选择, type: url-test, tolerance: 100, interval: 600, use: [subscription], filter: "(?i)(IPLC|IEPL).*(A-[0-9]|gRPC)"}
+  - {name: 🚀 节点选择, type: select, proxies: [♻️ 自动选择, DIRECT], use: [subscription], filter: "(?i)gRPC"}
+  - {name: ♻️ 自动选择, type: url-test, tolerance: 100, interval: 600, use: [subscription], filter: "(?i)gRPC"}
   - {name: ⚡ 游戏自动测速, type: url-test, tolerance: 50, interval: 300, use: [subscription], filter: "(?i)(Japan|Korea|Taiwan|日本|韩国|台灣|台湾|JP|KR|TW)"}
 
 rules:
