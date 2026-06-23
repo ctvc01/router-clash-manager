@@ -25,11 +25,11 @@ class GameAccService {
         return PersistenceService.writeText(config.paths.gameDevices, devices.join('\n') + '\n');
     }
 
-    // 寻找当前最快的游戏节点
-    // 返回 { name, delay } 对象，方便延迟差比较
+    // 寻找当前最快的游戏节点（含多采样丢包检测，对齐 check_modes.sh）
+    // 返回 { name, delay, loss } 对象，方便延迟差和丢包率比较
     static async findFastestGameNode() {
         try {
-            Logger.info('GameAcc', '🔍 开始并发测试游戏节点延迟，寻找最快节点...');
+            Logger.info('GameAcc', '🔍 开始多采样丢包+延迟检测，寻找最优游戏节点...');
             const proxiesData = await ClashService.getProxies(6000);
             
             const group = proxiesData.proxies['⚡ 游戏自动测速'];
@@ -37,21 +37,45 @@ class GameAccService {
                 Logger.warn('GameAcc', '未找到 ⚡ 游戏自动测速 组，无法自动寻优');
                 return null;
             }
+
+            const NODE_SAMPLES = 3;       // 每节点采样次数
+            const TIMEOUT_MS = 2000;      // 单次超时
+            const MAX_LOSS_RATE = 0.2;    // 最大容忍丢包率 20%
             
             const results = [];
             for (const nodeName of group.all) {
-                const delay = await ClashService.testNodeDelay(nodeName, 2000);
-                results.push({ name: nodeName, delay: delay > 0 ? delay : 99999 });
+                let successCount = 0;
+                let totalDelay = 0;
+                
+                for (let i = 0; i < NODE_SAMPLES; i++) {
+                    const delay = await ClashService.testNodeDelay(nodeName, TIMEOUT_MS);
+                    if (delay > 0) {
+                        successCount++;
+                        totalDelay += delay;
+                    }
+                    // 每次采样间隔 200ms（对齐 check_modes.sh）
+                    if (i < NODE_SAMPLES - 1) {
+                        await new Promise(r => setTimeout(r, 200));
+                    }
+                }
+                
+                const lossRate = (NODE_SAMPLES - successCount) / NODE_SAMPLES;
+                const avgDelay = successCount > 0 ? Math.round(totalDelay / successCount) : 99999;
+                
+                results.push({ name: nodeName, delay: avgDelay, loss: lossRate, samples: successCount });
             }
-            const validResults = results.filter(r => r.delay < 99999);
+            
+            // 过滤高丢包节点
+            const validResults = results.filter(r => r.loss <= MAX_LOSS_RATE && r.delay < 99999);
             if (validResults.length === 0) {
-                Logger.warn('GameAcc', `所有游戏节点测速全部超时，保持当前或退回原节点: ${group.now}`);
-                return group.now ? { name: group.now, delay: 99999 } : null;
+                Logger.warn('GameAcc', `所有游戏节点丢包过高或全部超时，保持当前或退回原节点: ${group.now}`);
+                return group.now ? { name: group.now, delay: 99999, loss: 1 } : null;
             }
             
             validResults.sort((a, b) => a.delay - b.delay);
-            Logger.info('GameAcc', `✅ 测速最优节点: ${validResults[0].name} (${validResults[0].delay} ms)`);
-            return validResults[0];
+            const best = validResults[0];
+            Logger.info('GameAcc', `✅ 测速最优: ${best.name} (avg=${best.delay}ms, loss=${(best.loss*100).toFixed(0)}%, ${best.samples}/${NODE_SAMPLES})`);
+            return best;
          } catch (err) {
               Logger.error('GameAcc', '寻找最快节点时发生异常', err);
               return null;
