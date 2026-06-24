@@ -449,24 +449,18 @@ router.post('/select', async (req, res) => {
             return res.status(400).json({ status: 'error', message: '缺少 group 或 node 参数' });
         }
 
-        const success = await ClashApiProxy.selectProxyNode(group, node);
+        const success = await ClashService.selectProxyNode(group, node);
         if (success) {
-            // 异步进行节点延迟测试，不阻塞响应
-            ClashApiProxy.testNodeDelay(node).catch(e =>
+            ClashService.testNodeDelay(node).catch(e =>
                 Logger.debug('Gateway', '节点延迟测试失败', e)
             );
-
             res.json({ status: 'success' });
         } else {
             res.status(500).json({ status: 'error', message: 'Clash API 切换节点失败' });
         }
     } catch (err) {
         Logger.error('Gateway', '切换节点路由发生异常', err);
-        res.status(500).json({
-            status: 'error',
-            message: '切换节点失败',
-            details: err.message
-        });
+        res.status(500).json({ status: 'error', message: '切换节点失败', details: err.message });
     }
 });
 
