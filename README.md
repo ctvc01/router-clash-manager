@@ -18,10 +18,14 @@
 
 ## 🎯 解决什么痛点？
 
-* **多设备差异化分流**：家里手机、PC、Switch、电视盒子等设备需不同网络策略。无需逐个手动配置，Web UI 一键切换。
-* **游戏联机掉线**：Switch 联机匹配时，代理节点自动切换会导致出口 IP 突变，匹配中断。游戏模式支持**锁定物理节点**，永不自动切换。
-* **AI 服务访问加速**：Gemini、ChatGPT、Claude 等 AI 平台直连被限速，AI 强化模式注入专属域名规则并选用 IPLC 中继节点，保障稳定连接。
-* **YouTube 播放失败**：QUIC 协议绕过透明代理，加装 UDP 443 阻断规则后强制回退 TCP，配合 SNI 嗅探器确保 REDIR 代理正常工作。
+* **🇨🇳 国内环境翻墙难，直连 Google/OpenAI 等 443 端口失败**：GFW 对 HTTPS 443 端口进行深度包检测，直连 YouTube、Google Gemini、ChatGPT 等海外服务频繁断连或超时。本项目通过 iptables MAC 地址劫持 + Clash Meta 透明代理，为本机设备自动分配最优代理节点。
+* **📱 多设备网络策略冲突**：家里手机、PC、Switch、电视盒子等设备同时在线，不同设备需要不同的网络策略——手机需要翻墙浏览，电视盒子需要国内直连（否则国内视频 App 卡顿），Switch 需要游戏专线。本系统通过 Web UI 一键为每台设备分配独立策略，不用逐台配置网络参数。
+* **🎮 Switch 联机掉线、商店打不开**：Switch 使用 UDP 联机匹配，但 UDP 无法被 REDIRECT 透明代理劫持，导致 NAT 类型为 B（受限）而非 A（开放）。且 Clash 自动测速切换节点时出口 IP 突变，直接打断任天堂联机匹配。游戏模式提供**锁定物理节点**功能和独立 Nintendo CDN 域名规则（`atum.download.nintendo.net` / `ctest.cdn.nintendo.net`），确保商店和下载全程走游戏专线，不掉线。
+* **🤖 AI 类服务（Gemini/ChatGPT）访问不稳定**：香港 IP 被 Google AI 服务封禁（Gemini 在香港不可用），普通代理节点可能路由到香港出口导致无法访问。AI 强化模式使用独立 **IPLC 中继节点池** + 排除香港节点 + 硬编码 28+ AI 域名规则（OpenAI/Claude/Gemini/Google AI 等），确保 AI API 走高质量专线。
+* **⚠️ 路由器重启后配置全丢**：OpenWrt 路由器重啟后`/tmp` 目录清空（Clash 内核、Country.mmdb），`/data/ShellCrash/configs/mac` 白名单文件有时清空。本系统容器在启动时自动检测路由器状态，从 NAS 备份恢复 Clash 内核、GeoIP 数据库、设备白名单和 iptables 规则，实现全自动自愈。
+* **❌ YouTube 播放失败（QUIC 绕过代理）**：浏览器优先使用 QUIC (UDP 443) 协议连接 YouTube，但 iptables REDIRECT 只劫持 TCP，UDP 协议直接走 GFW 被阻断。本系统通过 **UDP 443 REJECT 规则**（`forwarding_rule` 链）强制 QUIC 退回到 TCP + HTTPS，配合 Clash SNI 嗅探器，确保 REDIR 透明代理中的 443 端口 HTTPS 连接正常工作。
+* **⚠️ 设备配置状态不同步**：前端显示设备已开启 AI 模式，但路由器白名单中却没有该设备的 MAC，导致流量绕过 Clash 直连 GFW 被拦截（原因是容器本地文件与路由器 whitelist 不持久化同步，或并发 enable/disable 竞态冲突）。本系统在启动时以容器本地文件为权威数据源**反向同步**路由器白名单，并在禁用设备时使用原子操作替代读-改-写，消除竞态窗口。
+* **🔄 代理节点无效但无感知**：Clash 自动测速可能选中一个距离目标 CDN 延迟低但丢包率高的节点。游戏加速模式采用 **5 次多采样丢包+延迟测速**，优先按丢包率排序，确保联机不掉包。日常静默优化每 30 分钟重测一次，切换阈值 >200ms，避免频繁跳变。
 
 ---
 
