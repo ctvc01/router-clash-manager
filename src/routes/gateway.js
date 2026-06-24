@@ -79,8 +79,9 @@ async function getCurrentNodeInfo() {
 // 1. 获取网关/代理运行状态
 router.get('/status', async (req, res) => {
     try {
-        // 1. 一次性获取所有系统状态信息，将 5 次 SSH 连接优化为 1 次，并增加对 /data 分区 df -m 探测
-        const statsCmd = `pid=\$(pidof mihomo || pidof Clash || pidof CrashCore || pgrep -x mihomo || pgrep -x Clash || pgrep -x CrashCore); echo "PID:\$pid"; if [ -n "\$pid" ]; then echo "CLASH_UP:\$(( \$(cut -d' ' -f1 /proc/uptime | cut -d. -f1) - \$(cut -d' ' -f22 /proc/\$pid/stat) / 100 ))"; cat /proc/\$pid/status | grep VmRSS; top -b -n 1 | grep -v grep | grep -E "CrashCore|clash|mihomo" | head -n 1; fi; cat /proc/meminfo | grep MemTotal; cat /proc/uptime; df -m /data | tail -n 1`;
+        // 1. 并行：SSH 系统统计 + 代理节点信息（减少总延迟）
+        const statsCmd = `pid=\$(pidof mihomo || pidof Clash || pidof CrashCore || pgrep -x mihomo || pgrep -x Clash || pgrep -x CrashCore); echo "PID:\$pid"; if [ -n "\$pid" ]; then echo "CLASH_RAW:\$(awk '{print int(\$1)}' /proc/uptime 2>/dev/null):\$(awk '{print \$22}' /proc/\$pid/stat 2>/dev/null)"; cat /proc/\$pid/status | grep VmRSS; timeout 1 top -b -n 1 2>/dev/null | grep -v grep | grep -E "mihomo|Clash|CrashCore" | head -n 1; fi; cat /proc/meminfo | grep MemTotal; df -m /data | tail -n 1`;
+        const nodeInfoPromise = getCurrentNodeInfo();
         const statsOutput = await SshService.runRemoteCommand(statsCmd);
 
         // 解析输出
@@ -145,11 +146,16 @@ router.get('/status', async (req, res) => {
             }
         }
 
-        // 解析 Clash 进程启动时长
-        const clashUpLine = lines.find(l => l.startsWith('CLASH_UP:'));
-        if (clashUpLine) {
-            const upSec = parseInt(clashUpLine.split(':')[1], 10);
-            if (!isNaN(upSec) && upSec > 0) uptime = upSec;
+        // 解析 Clash 进程启动时长 (CLASH_RAW:sysUp:startTicks)
+        const clashRawLine = lines.find(l => l.startsWith('CLASH_RAW:'));
+        if (clashRawLine) {
+            const parts = clashRawLine.split(':');
+            const sysUp = parseInt(parts[1], 10);
+            const startTicks = parseInt(parts[2], 10);
+            if (!isNaN(sysUp) && !isNaN(startTicks) && startTicks > 0 && sysUp > 0) {
+                const CLK_TCK = 100;
+                uptime = Math.max(0, Math.round(sysUp - startTicks / CLK_TCK));
+            }
         }
 
         if (!isRunning) {
@@ -202,7 +208,7 @@ router.get('/status', async (req, res) => {
         }
 
         try {
-            const nodeInfo = await getCurrentNodeInfo();
+            const nodeInfo = await nodeInfoPromise;
             currentNode = nodeInfo.name;
             latency = nodeInfo.delay;
         } catch (e) {

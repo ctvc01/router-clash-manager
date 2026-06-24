@@ -422,21 +422,23 @@ document.addEventListener('DOMContentLoaded', () => {
                     elStatusText.textContent = '加载中';
                     elStatusText.className = 'card-value text-orange';
                     elStatusMode.textContent = '';
-                    
+                    // 即使加载中也更新 uptime state（但不显示）
+                    if (data.uptime && data.uptime > 0) {
+                        state.systemUptimeMinutes = Math.round(data.uptime / 60);
+                    }
                     elCurrentNode.textContent = '加载中';
                     elCurrentNode.classList.remove('long-text');
                     elNodeLatency.textContent = '';
                 } else {
-                    // 先更新 uptime 再显示，避免使用初始值 20482（14天）
-                    if (data.uptime && data.uptime > 0) {
-                        state.systemUptimeMinutes = Math.round(data.uptime / 60);
-                    } else {
-                        state.systemUptimeMinutes = 0;
-                    }
-
                     elStatusText.textContent = '运行中';
                     elStatusText.className = 'card-value text-green';
-                    elStatusMode.textContent = formatGatewayUptime(state.systemUptimeMinutes);
+                    if (data.uptime && data.uptime > 0) {
+                        state.systemUptimeMinutes = Math.round(data.uptime / 60);
+                        elStatusMode.textContent = formatGatewayUptime(state.systemUptimeMinutes);
+                    } else {
+                        state.systemUptimeMinutes = 0;
+                        elStatusMode.textContent = '计算中...';
+                    }
                     
                     // 更新当前节点与延迟
                     elCurrentNode.textContent = data.currentNode;
