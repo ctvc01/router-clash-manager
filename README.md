@@ -1,56 +1,95 @@
-# Router Clash Manager — Clash Meta 透明代理控制系统
+# Clash Meta 🚀
+> 家用路由器 Clash (Mihomo) 网页端设备分流与游戏加速管理器
 
-基于 NAS 容器的 Clash Meta 代理管理系统，通过 iptables MAC 劫持实现对局域网设备的透明代理，支持 AI 强化、游戏加速等多种模式。
+<table align="center" border="0">
+  <tr>
+    <td align="center" valign="middle" style="border: none;">
+      <img src="docs/images/mobile_preview.jpg" height="360" alt="Mobile Preview" />
+    </td>
+    <td align="center" valign="middle" style="border: none;">
+      <img src="docs/images/web_preview.png" height="360" alt="Web Preview" />
+    </td>
+  </tr>
+</table>
 
-## 架构
+**Clash Meta** 是一款专为家用/软路由环境打造的 Clash (Mihomo) 辅助控制台。通过 NAS 容器部署，以 SSH 协议安全联动路由器上的 Clash Meta 内核，提供设备级透明代理、AI 强化分流和 Switch 游戏加速功能。
+
+---
+
+## 🎯 解决什么痛点？
+
+* **多设备差异化分流**：家里手机、PC、Switch、电视盒子等设备需不同网络策略。无需逐个手动配置，Web UI 一键切换。
+* **游戏联机掉线**：Switch 联机匹配时，代理节点自动切换会导致出口 IP 突变，匹配中断。游戏模式支持**锁定物理节点**，永不自动切换。
+* **AI 服务访问加速**：Gemini、ChatGPT、Claude 等 AI 平台直连被限速，AI 强化模式注入专属域名规则并选用 IPLC 中继节点，保障稳定连接。
+* **YouTube 播放失败**：QUIC 协议绕过透明代理，加装 UDP 443 阻断规则后强制回退 TCP，配合 SNI 嗅探器确保 REDIR 代理正常工作。
+
+---
+
+## 🌟 核心功能
+
+* **📱 设备自动发现与三态分流**：自动扫描 ARP+DCHP 的局域网在线设备，支持自定义别名。一键切换**直连/代理/AI 强化/游戏加速**四种状态。
+* **🎮 游戏加速（Switch 优化）**：
+  * 独立 **日本/韩国/台湾** 节点池，Nintendo CDN 实测选优。
+  * 5 次多采样丢包+延迟测速，**丢包率优先**再比延迟。
+  * LOCK/UNLOCK 锁定机制：锁定后不触发测速切换，永不掉线。
+  * 注入 Nintendo CDN 域名规则（`atum.download.nintendo.net` 等），确保商店和下载走游戏节点。
+* **🤖 AI 强化**：
+  * 硬编码 OpenAI、Gemini、Claude、Google AI 等 28+ 域名规则。
+  * 独立 IPLC 中继节点池（排除香港节点，避免 Gemini 不可用）。
+  * 单次延迟测速，日常更新不产生额外丢包。
+* **🧬 SNI 嗅探器 (Sniffer)**：Clash Meta 内置 TLS 连接嗅探，无需 geoip/geosite 数据库即可识别目标域名，REDIR 模式下 443 端口 HTTPS 正常连接。
+* **🔒 设备锁定与状态持久化**：测速结果（delay/loss/perNodeResults）、锁定状态（LOCK/UNLOCK）持久化到 `speedtest_state.json`，容器重启后自动恢复。
+* **🛡️ SystemValidator 智能清理**：设备连续 3 次 DHCP 检查不在线后才从配置中移除，防止容器启动瞬间 DHCP 未恢复就误清设备。
+* **⏰ 定时优化**：每日 04:00 重测最优节点。游戏模式每 30 分钟静默测速，克制切换阈值 >200ms，避免频繁跳变。
+
+---
+
+## 📁 项目结构
 
 ```
-路由器 (192.168.31.1, OpenWrt, MIPS 4.4.60)
-├─ iptables REDIRECT TCP → Clash Meta (Mihomo v1.19.27)
-├─ iptables REJECT UDP 443 → 强制 QUIC → TCP 回退
-├─ s-s-r / Trojan 出口节点（IPLC / gRPC / Reality）
-└─ /data/ShellCrash/configs/mac — 设备白名单
-
-NAS 容器 (191.168.31.66:3000)
-├─ Web 管理界面（状态监控、设备管理、节点切换）
-├─ SSH 隧道 → 路由器 Clash API (:9999)
-├─ GameAccService — 游戏节点 5 采祥丢包+延迟测速
-├─ AIBoostService — AI 节点单采祥延迟测速（HK 过滤）
-├─ RulesEngine — Clash 配置规则注入（AI 域名 / Nintendo 域名 / 代理组）
-├─ SpeedtestState — 测速结果持久化与 LOCK/UNLOCK 状态管理
-└─ SystemValidator — 设备 3 次检查确认后才清理
-
-用户设备（192.168.31.x）
-├─ 普通模式 → TCP 透明代理 → 全局自动节点
-├─ AI 强化 → TCP 透明代理（IPLC 节点池，排除 HK）
-└─ 游戏加速 → TCP 透明代理（日韩台节点池，Nintendo CDN 测速）
+src/
+├── server.js               # 启动入口：设备同步、规则注入、守护进程
+├── app.js                  # Express 路由挂载
+├── config.js               # 配置管理
+├── services/
+│   ├── rulesEngine.js      # Clash 规则/代理组注入引擎（AI 域名 + Nintendo CDN）
+│   ├── gameAccService.js   # 游戏加速：5 采样 Nintendo CDN 测速、日本加权
+│   ├── aiBoostService.js   # AI 强化：单采样延迟测速、HK 过滤
+│   ├── accelerationService.js # 启用/禁用加速统一入口
+│   ├── sshService.js       # SSH 命令执行与文件传输
+│   ├── clashService.js     # Clash HTTP API（带 10s 缓存）
+│   ├── speedtestState.js   # 测速结果持久化 + LOCK/UNLOCK 状态
+│   └── systemValidator.js  # 启动完整性验证（3 次确认后清理）
+├── routes/
+│   ├── gateway.js          # /api/status, /api/nodes, /api/select
+│   ├── devices.js          # /api/devices 设备发现
+│   ├── ai.js / game.js     # AI/Game 模式开关
+│   ├── speedtest.js        # /api/speedtest/status, /lock, /trigger
+│   └── whitelist.js        # MAC 白名单
+├── utils/
+│   ├── clashApiProxy.js    # Clash API 代理（SSH 隧道 + 10s 缓存）
+│   └── proxyGroupDetector.js # 代理组链解析器
+scripts/
+├── setup_iptables.sh       # iptables TCP REDIRECT 重建
+├── setup_quic_block.sh     # UDP 443 QUIC 阻断
+└── check_modes.sh          # 四模式连通性检测
+public/
+├── index.html + app.js + style.css  # 前端 UI
 ```
 
-## 核心功能
+---
 
-### 透明代理（iptables REDIRECT）
-- `TCP:7892` — REDIRECT 劫持白名单设备的 TCP 流量
-- `UDP:1053` — DNS 监听（可选）
-- `UDP 443 REJECT` — 阻断 QUIC，强制浏览器回退 TCP
-- `forwarding_rule` 链 — OpenWrt 自定义转发规则
+## 🛠️ 前置条件
 
-### 智能节点选择
-| 模式 | 节点池 | 测速 URL | 策略 |
-|------|--------|---------|------|
-| 通用代理 | 全球 ~60 gRPC 节点 | gstatic.com | URLTest 自动选最优 |
-| AI 强化 | ~17 IPLC 中继节点（过滤 HK） | generativeai.googleapis.com | 单采祥延迟排序 |
-| 游戏加速 | ~20 日韩台节点 | Nintendo CDN | 5 采祥丢包→延迟加权排序 |
+1. **路由器**：OpenWrt 或类似系统，已开启 SSH，安装 **Clash Meta (Mihomo)** 内核。
+2. **NAS/服务器**：一台常开设备部署 Docker 容器。MIPS 内核 4.4.60+。
+3. **SSH 凭证**：路由器 SSH 用户名和密码。
 
-### 持久化状态
-- 设备列表 → `/data/ai_devices` / `/data/game_devices`
-- 测速结果 → `/data/speedtest_state.json`
-- 白名单 → 路由器 `/data/ShellCrash/configs/mac`
-- 配置备份 → `/data/configs_backup/`
+---
 
-## 快速部署
+## ⚡ 快速启动
 
 ```yaml
-# docker-compose.yml
 services:
   clash-meta:
     build: .
@@ -70,67 +109,72 @@ services:
       - ./aliases.json:/data/aliases.json
       - ./speedtest_state.json:/data/speedtest_state.json
       - ./validator_pending.json:/data/validator_pending.json
-      - ./logs:/data/logs
       - ./Clash:/data/clash_backup/Clash
       - ./Country.mmdb:/data/clash_backup/Country.mmdb
       - ./configs_backup:/data/configs_backup
-      - ./config_versions:/data/config_versions
 ```
 
 ```bash
 docker compose up -d --build
 ```
 
-## 项目结构
+---
 
-```
-src/
-├── server.js               # 启动入口：设备同步、规则注入、守护进程
-├── app.js                  # Express 路由挂载
-├── config.js               # 配置管理
-├── services/
-│   ├── rulesEngine.js      # Clash 配置规则/代理组注入引擎
-│   ├── gameAccService.js   # 游戏加速：5 采祥丢包+延迟测速、节点锁定
-│   ├── aiBoostService.js   # AI 强化：单采祥延迟测速、HK 过滤
-│   ├── accelerationService.js # 启用/禁用加速（统一入口）
-│   ├── sshService.js        # SSH 远程命令执行与文件传输
-│   ├── clashService.js      # Clash HTTP API 通信（带 10s 缓存）
-│   ├── speedtestState.js    # 测速状态持久化与 LOCK/UNLOCK
-│   └── systemValidator.js   # 启动完整性验证
-├── routes/
-│   ├── gateway.js           # /api/status, /api/nodes, /api/select
-│   ├── devices.js           # /api/devices 设备发现与分组
-│   ├── ai.js / game.js      # AI/Game 模式开关
-│   ├── speedtest.js         # /api/speedtest 测速状态与锁
-│   └── whitelist.js         # MAC 白名单管理
-├── utils/
-│   ├── clashApiProxy.js     # Clash API 代理（带 SSH 隧道 + 10s 缓存）
-│   └── proxyGroupDetector.js # 代理组链解析器
-scripts/
-├── setup_iptables.sh        # iptables TCP REDIRECT 重建设
-├── setup_quic_block.sh      # UDP 443 QUIC 阻断
-└── check_modes.sh           # 四模式连通性检测工具
-public/
-├── index.html               # 前端页面
-├── app.js                   # 前端逻辑
-└── style.css                # 样式
-```
+## 🚀 使用指南
 
-## Web UI
+### 三模式节点选择策略
+
+| 模式 | 节点池 | 测速目标 | 策略 |
+|------|--------|---------|------|
+| 🌐 通用代理 | ~60 gRPC 全球节点 | gstatic.com | URLTest 自动选最优 |
+| 🤖 AI 强化 | ~17 IPLC 中继节点（过滤 HK） | generativeai.googleapis.com | 单次延迟排序 |
+| 🎮 游戏加速 | ~20 日韩台节点（日本加权 25%） | Nintendo CDN（ctest + atum download） | 5 次采样 → 丢包优先 → 加权延迟 |
+| 🔒 LOCKED | 锁定当前物理节点 | 不触发测速 | 仅 delay=0 或 loss=100% 时故障转移 |
+
+### 持久化状态
+
+启动时自动恢复上次锁定节点（`speedtest_state.json`），容器重启不会丢失锁定状态。
+
+---
+
+## 🖥️ 前端功能
 
 | 卡片 | 说明 |
 |------|------|
-| 网关状态 | Clash 进程运行状态 + 启动时长 |
-| 当前节点 | 当前代理物理节点 + 延迟 |
-| 设备状态 | 代理设备数/全部设备数 + 模式分布进度条 |
-| 磁盘占用 | /data 分区磁盘用量 |
+| 网关状态 | Clash 进程运行 + 启动时长 |
+| 当前节点 | 已解析的物理节点名 + 实时延迟 |
+| 设备状态 | 代理设备/全部 + 模式分布进度条 |
+| 磁盘占用 | /data 分区磁盘 / 内存用量 |
 
-节点详情弹窗支持：
-- 三模式独立节点池
-- 实时延迟/丢包数据（游戏模式）
-- LOCK/UNLOCK 一键锁定（不触发测速）
-- 延迟排序下拉选择
+**节点详情弹窗**：三模式独立节点下拉（延迟排序）、游戏丢包率、LOCK/UNLOCK 一键切换。
 
-## 许可
+---
+
+## 🎮 游戏模式网络链路
+
+```
+Switch 设备
+└─ TCP 流量（商店/下载/联机匹配）
+   └─ iptables REDIRECT → Clash :7892
+      └─ 🎮 游戏加速
+         └─ 日韩台节点（日本加权优先）
+            └─ Nintendo CDN (东京)
+```
+
+UDP（联机对战）不经代理，NAT 类型由运营商决定。路由器内核 4.4.60 不支持 TPROXY。
+
+---
+
+## 三种速度测试对比
+
+| 测试 | DIRECT (直连) | 通用代理 | 游戏模式 |
+|------|:---:|:--------:|:--------:|
+| 百度首页 | ✅ 61ms | — | — |
+| YouTube | ✅ 173ms | ✅ 200ms | — |
+| Nintendo CDN | — | — | ✅ 58ms (0% loss) |
+
+---
+
+## 📄 许可证
 
 MIT
