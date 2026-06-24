@@ -55,6 +55,7 @@ router.post('/lock', async (req, res) => {
 });
 
 // POST /api/speedtest/trigger { mode: 'ai'|'game' }
+// 立即返回，后台异步执行测速（游戏模式 ~40s，AI 模式 ~10s）
 router.post('/trigger', async (req, res) => {
     try {
         const { mode } = req.body;
@@ -62,17 +63,25 @@ router.post('/trigger', async (req, res) => {
             return res.status(400).json({ error: 'mode must be ai or game' });
         }
 
-        let result;
-        if (mode === 'game') {
-            result = await GameAccService.findBestAndLock(true);
-        } else {
-            result = await AiBoostService.findBestAndLock(true);
-        }
+        // 立即返回，不阻塞
+        res.json({ success: true, message: '测速已开始' });
 
-        res.json({ success: true, result });
+        // 后台异步执行
+        (async () => {
+            try {
+                if (mode === 'game') {
+                    await GameAccService.findBestAndLock(true);
+                } else {
+                    await AiBoostService.findBestAndLock(true);
+                }
+                Logger.info('SpeedtestAPI', `${mode} 手动测速完成`);
+            } catch (err) {
+                Logger.error('SpeedtestAPI', `${mode} 手动测速失败`, err);
+            }
+        })();
     } catch (err) {
         Logger.error('SpeedtestAPI', '手动触发测速失败', err);
-        res.status(500).json({ error: err.message });
+        if (!res.headersSent) res.status(500).json({ error: err.message });
     }
 });
 

@@ -1254,6 +1254,32 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // 触发测速并轮询等待结果更新
+    async function triggerAndPollSpeedtest(mode) {
+        // Trigger speedtest (fire-and-forget)
+        fetch('/api/speedtest/trigger', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mode })
+        }).catch(() => {});
+
+        // Poll for results (game ~40s, AI ~10s, max 60s)
+        const modeLabel = mode === 'game' ? 'game' : 'ai';
+        let attempts = 0;
+        const pollInterval = setInterval(async () => {
+            await fetchSpeedtestStatus();
+            attempts++;
+            const result = state.speedtest[modeLabel] || {};
+            if ((result.lastNode || result.lastDelay > 0) && result.timestamp > Date.now() - 120000) {
+                clearInterval(pollInterval);
+                await openNodeDetailModal(true);
+                showToast('测速完成，节点已更新');
+            } else if (attempts > 20) {
+                clearInterval(pollInterval);
+            }
+        }, 3000);
+    }
+
     // 更新 LOCK/UNLOCK 徽标（统一颜色：绿色 UNLOCK，橙色 LOCKED）
     function updateLockBadges() {
         const game = state.speedtest.game || {};
@@ -1663,8 +1689,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 await new Promise(r => setTimeout(r, 500));
                 await openNodeDetailModal(true);
                 await fetchStatus();
-                // Trigger speedtest (fire-and-forget)
-                fetch('/api/speedtest/trigger', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'game' }) }).catch(() => {});
+                // Trigger speedtest and poll for results
+                triggerAndPollSpeedtest('game');
             } else {
                 throw new Error(data.message || '切换失败');
             }
@@ -1700,7 +1726,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 await new Promise(r => setTimeout(r, 500));
                 await openNodeDetailModal(true);
                 await fetchStatus();
-                fetch('/api/speedtest/trigger', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'ai' }) }).catch(() => {});
+                triggerAndPollSpeedtest('ai');
             } else {
                 throw new Error(data.message || '切换失败');
             }
