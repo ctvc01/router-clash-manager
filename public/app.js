@@ -1361,6 +1361,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // 4. 动态渲染游戏节点下拉菜单（仅物理节点，排除 Selector/URLTest）
             elGameDropdownListContainer.innerHTML = '';
             const allCandidates = [];
+            const perNodeResults = gameState.perNodeResults || [];
             (game.all || []).forEach(node => {
                 if (node && node.name) {
                     const isGroup = groupKeywords.some(k => node.name.includes(k));
@@ -1379,6 +1380,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     displayName: lastSelectedGameNode
                 });
             }
+
+            // Sort by delay ascending (0-delay nodes at bottom)
+            allCandidates.sort((a, b) => {
+                if (a.delay <= 0 && b.delay <= 0) return 0;
+                if (a.delay <= 0) return 1;
+                if (b.delay <= 0) return -1;
+                return a.delay - b.delay;
+            });
 
             // 循环添加节点项
             allCandidates.forEach(cand => {
@@ -1400,25 +1409,30 @@ document.addEventListener('DOMContentLoaded', () => {
                 leftDiv.appendChild(nameSpan);
                 itemDiv.appendChild(leftDiv);
                 
-                const rightSpan = document.createElement('span');
-                const isCurrent = cand.name === lastSelectedGameNode;
-                // Look up per-node loss from speedtest results (if available)
-                const perNodeResults = gameState.perNodeResults || [];
+                const rightDiv = document.createElement('span');
+                rightDiv.style.cssText = 'display:flex;align-items:center;gap:2px;flex-shrink:0;';
                 const nodeResult = perNodeResults.find(r => r.name === cand.name);
                 const hasLoss = nodeResult && nodeResult.loss !== undefined;
                 if (hasLoss) {
                     const lNum = nodeResult.loss;
                     const lPct = lNum > 0 ? (lNum * 100).toFixed(0) + '%' : '0%';
-                    rightSpan.textContent = cand.delay > 0 ? `${lPct}丢包 ${cand.delay}ms` : `${lPct}丢包 --`;
-                    rightSpan.className = getDelayClass(cand.delay) + ' flex-shrink-0';
+                    const lossColor = lNum === 0 ? 'text-green' : lNum <= 0.2 ? 'text-orange' : 'text-red';
+                    const pctSpan = document.createElement('span');
+                    pctSpan.textContent = lPct; pctSpan.className = lossColor;
+                    const unitSpan = document.createElement('span');
+                    unitSpan.textContent = '丢包'; unitSpan.style.cssText = 'font-size:10px;color:var(--text-secondary);';
+                    const delaySpan = document.createElement('span');
+                    delaySpan.textContent = cand.delay > 0 ? cand.delay + 'ms' : '--';
+                    delaySpan.className = getDelayClass(cand.delay);
+                    rightDiv.appendChild(pctSpan); rightDiv.appendChild(unitSpan); rightDiv.appendChild(delaySpan);
                 } else if (cand.delay > 0) {
-                    rightSpan.textContent = `${cand.delay} ms`;
-                    rightSpan.className = getDelayClass(cand.delay) + ' flex-shrink-0';
+                    rightDiv.textContent = cand.delay + ' ms';
+                    rightDiv.className = getDelayClass(cand.delay) + ' flex-shrink-0';
                 } else {
-                    rightSpan.textContent = '--';
-                    rightSpan.className = 'text-muted flex-shrink-0';
+                    rightDiv.textContent = '--';
+                    rightDiv.className = 'text-muted flex-shrink-0';
                 }
-                itemDiv.appendChild(rightSpan);
+                itemDiv.appendChild(rightDiv);
                 
                 itemDiv.addEventListener('click', async (e) => {
                     e.stopPropagation();
@@ -1455,6 +1469,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     displayName: lastSelectedAiNode
                 });
             }
+
+            aiCandidates.sort((a, b) => {
+                if (a.delay <= 0 && b.delay <= 0) return 0;
+                if (a.delay <= 0) return 1;
+                if (b.delay <= 0) return -1;
+                return a.delay - b.delay;
+            });
 
             // 渲染 AI 下拉列表
             aiCandidates.forEach(cand => {
@@ -1530,6 +1551,13 @@ document.addEventListener('DOMContentLoaded', () => {
                         displayName: lastSelectedProxyNode
                     });
                 }
+
+                proxyCandidates.sort((a, b) => {
+                    if (a.delay <= 0 && b.delay <= 0) return 0;
+                    if (a.delay <= 0) return 1;
+                    if (b.delay <= 0) return -1;
+                    return a.delay - b.delay;
+                });
 
                 // 渲染代理下拉列表
                 proxyCandidates.forEach(cand => {
