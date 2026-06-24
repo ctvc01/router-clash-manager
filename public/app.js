@@ -468,18 +468,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 elFooterVersion.textContent = `内核版本: ${data.version} (Mihomo)`;
                 elFooterCpu.textContent = `CPU: ${data.cpu}`;
             } else {
-                updateDiskBar(0, 20, '--', '--');
-                elStatusText.textContent = '已停止';
-                elStatusText.className = 'card-value text-muted';
-                elStatusMode.innerHTML = `<span class="error-log-link" id="view-error-log" style="color: var(--danger); text-decoration: underline; cursor: pointer; font-size: 11px;">错误日志</span>`;
-                
-                // 停止时隐藏展示节点
-                elCurrentNode.textContent = '已关闭';
-                elCurrentNode.classList.remove('long-text');
-                elNodeLatency.textContent = '延迟: --';
-                
-                elFooterVersion.textContent = '内核版本: 未知 (Mihomo)';
-                elFooterCpu.textContent = 'CPU: 0.0%';
+                // Clash 未运行 — 不立即展示"已停止"，等连续 3 次确认再显示
+                state.consecutiveOfflineFailures++;
+                if (state.consecutiveOfflineFailures >= 3) {
+                    updateDiskBar(0, 20, '--', '--');
+                    elStatusText.textContent = '已停止';
+                    elStatusText.className = 'card-value text-muted';
+                    elStatusMode.innerHTML = `<span class="error-log-link" id="view-error-log" style="color: var(--danger); text-decoration: underline; cursor: pointer; font-size: 11px;">错误日志</span>`;
+                    elCurrentNode.textContent = '已关闭';
+                    elCurrentNode.classList.remove('long-text');
+                    elNodeLatency.textContent = '延迟: --';
+                    elFooterVersion.textContent = '内核版本: 未知 (Mihomo)';
+                    elFooterCpu.textContent = 'CPU: 0.0%';
+                }
             }
         } catch (e) {
             // 如果处于重载过渡态，静默忽略此次异常
@@ -489,20 +490,13 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // 递增连续失败计数
             state.consecutiveOfflineFailures++;
-            
-            // 如果连续失败次数小于 3，展示“连接中”黄色过渡状态
-            if (state.consecutiveOfflineFailures < 3) {
-                elStatusText.textContent = '连接中';
-                elStatusText.className = 'card-value text-orange animate-pulse';
-                elStatusMode.innerHTML = `正在尝试重新连接 (${state.consecutiveOfflineFailures}/3)...`;
-                
-                elCurrentNode.textContent = '已关闭';
-                elCurrentNode.classList.remove('long-text');
-                elNodeLatency.textContent = '延迟: --';
+
+            // 连续失败 < 5：保持当前 UI 不动，不展示中间态
+            if (state.consecutiveOfflineFailures < 5) {
                 return;
             }
 
-            // 达到 3 次连续失败，正式判定为离线/未知
+            // 达到 5 次连续失败（75秒），正式判定为离线/未知
             updateDiskBar(0, 20);
             elStatusText.textContent = '离线/未知';
             elStatusText.className = 'card-value text-muted';

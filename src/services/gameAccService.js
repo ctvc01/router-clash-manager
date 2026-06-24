@@ -8,6 +8,7 @@ const SpeedtestState = require('./speedtestState');
 let gameAccCheckTimer = null;
 let dailyCheckTimer = null;
 let dailyCheckDone = false;
+let gameAccStartTimeout = null;
 let silentPeriodicalTimer = null;
 let silentStartTimeout = null;
 
