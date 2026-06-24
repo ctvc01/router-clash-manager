@@ -130,10 +130,11 @@ docker compose up -d --build
 
 | 模式 | 节点池 | 测速目标 | 策略 |
 |------|--------|---------|------|
-| 🌐 通用代理 | ~60 gRPC 全球节点 | gstatic.com | URLTest 自动选最优 |
-| 🤖 AI 强化 | ~17 IPLC 中继节点（过滤 HK） | generativeai.googleapis.com | 单次延迟排序 |
-| 🎮 游戏加速 | ~20 日韩台节点（日本加权 25%） | Nintendo CDN（ctest + atum download） | 5 次采样 → 丢包优先 → 加权延迟 |
-| 🔒 LOCKED | 锁定当前物理节点 | 不触发测速 | 仅 delay=0 或 loss=100% 时故障转移 |
+| 🌐 通用代理 | gRPC 全球节点 | gstatic.com | URLTest 自动选最优 |
+| 🤖 AI 强化 | IPLC 中继节点（过滤香港） | generativeai.googleapis.com | 单次测速按延迟排序 |
+| 🎮 游戏加速 | 日韩台节点（日本加权 25%） | Nintendo CDN | 5 次采样 → 丢包优先 → 加权延迟 |
+
+所有模式均支持 **LOCK/UNLOCK 锁定功能**：LOCKED 状态下只更新测速结果不切换节点，仅当当前节点完全断连 (delay=0) 或 100% 丢包时才故障转移。适合对稳定性要求高的场景（如游戏联机），防止自动测速切换打断连接。
 
 ### 持久化状态
 
