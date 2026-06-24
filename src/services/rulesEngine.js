@@ -130,6 +130,15 @@ class RulesEngine {
             return true;
         });
 
+        // 5b. 清理旧的游戏分流规则
+        configLines = configLines.filter(line => {
+            const trimmed = line.trim();
+            if (trimmed.includes('GAME RULES START')) return false;
+            if (trimmed.includes('GAME RULES END')) return false;
+            if (trimmed.includes('🎮 游戏加速') && !trimmed.includes('{name:')) return false;
+            return true;
+        });
+
         // 6. 注入最新的 AI 分流规则
         if (aiMacs.length > 0) {
             Logger.info('RulesEngine', '发现开启 AI 强化的设备，正在注入 AI 域名分流规则...');
@@ -189,6 +198,37 @@ class RulesEngine {
             } else {
                 Logger.error('RulesEngine', '未找到 rules: 配置段，无法注入规则！');
                 throw new Error('未找到 rules: 配置段');
+            }
+        }
+
+        // 6b. 注入 Nintendo 游戏域名规则
+        if (gameMacs.length > 0) {
+            Logger.info('RulesEngine', '发现开启游戏加速的设备，正在注入 Nintendo 域名分流规则...');
+            const rulesIdx = configLines.findIndex(line => line.trim() === 'rules:');
+            if (rulesIdx !== -1) {
+                let rulesIndent = '  ';
+                for (let i = rulesIdx + 1; i < configLines.length; i++) {
+                    const line = configLines[i];
+                    if (line.trim().startsWith('-')) {
+                        const match = line.match(/^(\s*)-/);
+                        if (match) rulesIndent = match[1];
+                        break;
+                    }
+                    if (line.trim() !== '' && !line.trim().startsWith('#')) break;
+                }
+
+                const gameRuleLines = [
+                    '# === GAME RULES START ===',
+                    '- DOMAIN-SUFFIX,atlas-content.nintendo.net,🎮 游戏加速',
+                    '- DOMAIN-SUFFIX,atum-ec.nintendo.net,🎮 游戏加速',
+                    '- DOMAIN-SUFFIX,atum.download.nintendo.net,🎮 游戏加速',
+                    '- DOMAIN-SUFFIX,receive-lp1.dg.srv.nintendo.net,🎮 游戏加速',
+                    '- DOMAIN-SUFFIX,ctest.cdn.nintendo.net,🎮 游戏加速',
+                    '# === GAME RULES END ==='
+                ];
+
+                const ruleLines = gameRuleLines.map(line => `${rulesIndent}${line}`);
+                configLines.splice(rulesIdx + 1, 0, ...ruleLines);
             }
         }
 
