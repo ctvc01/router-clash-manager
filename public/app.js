@@ -427,6 +427,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     elCurrentNode.classList.remove('long-text');
                     elNodeLatency.textContent = '';
                 } else {
+                    // 先更新 uptime 再显示，避免使用初始值 20482（14天）
+                    if (data.uptime && data.uptime > 0) {
+                        state.systemUptimeMinutes = Math.round(data.uptime / 60);
+                    } else {
+                        state.systemUptimeMinutes = 0;
+                    }
+
                     elStatusText.textContent = '运行中';
                     elStatusText.className = 'card-value text-green';
                     elStatusMode.textContent = formatGatewayUptime(state.systemUptimeMinutes);
@@ -454,12 +461,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 const memTotal = data.totalMemory || '';
                 updateDiskBar(diskUsedMB, diskTotalMB, memUsed, memTotal);
                 
-                // 更新真实的 Uptime
-                if (data.uptime && data.uptime > 0) {
-                    state.systemUptimeMinutes = Math.round(data.uptime / 60);
-                } else {
-                    state.systemUptimeMinutes = 0;
-                }
                 elFooterUptime.textContent = formatUptime(state.systemUptimeMinutes);
                 
                 elFooterVersion.textContent = `内核版本: ${data.version} (Mihomo)`;
