@@ -1409,7 +1409,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (hasLoss) {
                     const lNum = nodeResult.loss;
                     const lPct = lNum > 0 ? (lNum * 100).toFixed(0) + '%' : '0%';
-                    rightSpan.textContent = cand.delay > 0 ? `${cand.delay} ms · ${lPct} 丢包` : `-- · ${lPct} 丢包`;
+                    rightSpan.textContent = cand.delay > 0 ? `${lPct}丢包 ${cand.delay}ms` : `${lPct}丢包 --`;
                     rightSpan.className = getDelayClass(cand.delay) + ' flex-shrink-0';
                 } else if (cand.delay > 0) {
                     rightSpan.textContent = `${cand.delay} ms`;

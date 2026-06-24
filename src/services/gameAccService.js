@@ -31,7 +31,7 @@ class GameAccService {
                 return null;
             }
             const NODE_SAMPLES = 5;
-            const TIMEOUT_MS = 2000;
+            const TIMEOUT_MS = 3000;
             const TEST_URLS = ['http://ctest.cdn.nintendo.net/', 'http://atum.download.nintendo.net/'];
             
             const results = [];
