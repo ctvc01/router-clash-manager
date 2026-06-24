@@ -82,7 +82,7 @@ class SpeedtestState {
         if (Array.isArray(results)) {
             state.game.perNodeResults = results.map(r => ({
                 name: r.name,
-                delay: r.delay,
+                delay: r.rawDelay || r.delay,
                 loss: r.loss,
                 samples: r.samples
             }));

@@ -94,15 +94,20 @@ class ClashApiProxy {
         try {
             const encodedGroup = encodeURIComponent(groupName);
             const jsonData = JSON.stringify({ name: nodeName });
-            // 需要转义用于 shell 命令
             const escapedData = jsonData.replace(/'/g, "'\\''");
 
-            // 使用 curl -d 和 PUT 方法
-            const curlCmd = `curl -s -X PUT -d '${escapedData}' http://127.0.0.1:9999/proxies/${encodedGroup}`;
-            await SshService.runRemoteCommand(curlCmd);
+            const curlCmd = `curl -s -w '\\n%{http_code}' -X PUT -d '${escapedData}' http://127.0.0.1:9999/proxies/${encodedGroup}`;
+            const output = await SshService.runRemoteCommand(curlCmd);
+            const lines = output.trim().split('\n');
+            const httpCode = parseInt(lines[lines.length - 1], 10);
+            const success = httpCode === 204 || httpCode === 200;
 
-            Logger.info('ClashApiProxy', `Successfully selected ${nodeName} for group ${groupName}`);
-            return true;
+            if (success) {
+                Logger.info('ClashApiProxy', `Successfully selected ${nodeName} for group ${groupName}`);
+            } else {
+                Logger.warn('ClashApiProxy', `Select proxy node failed, HTTP ${httpCode}: ${nodeName} -> ${groupName}`);
+            }
+            return success;
         } catch (err) {
             Logger.error('ClashApiProxy', `Failed to select proxy node`, err.message);
             return false;

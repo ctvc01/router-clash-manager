@@ -33,14 +33,13 @@ class GameAccService {
             }
             const NODE_SAMPLES = 5;
             const TIMEOUT_MS = 3000;
-            const TEST_URLS = ['http://ctest.cdn.nintendo.net/', 'http://atum.download.nintendo.net/'];
+            const TEST_URL = 'http://ctest.cdn.nintendo.net/';
             
             const results = [];
             for (const nodeName of group.all) {
                 let successCount = 0, totalDelay = 0;
                 for (let i = 0; i < NODE_SAMPLES; i++) {
-                    const url = i < 3 ? TEST_URLS[0] : TEST_URLS[1];
-                    const delay = await ClashService.testNodeDelay(nodeName, TIMEOUT_MS, url);
+                    const delay = await ClashService.testNodeDelay(nodeName, TIMEOUT_MS, TEST_URL);
                     if (delay > 0) { successCount++; totalDelay += delay; }
                     if (i < NODE_SAMPLES - 1) await new Promise(r => setTimeout(r, 200));
                 }
