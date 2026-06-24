@@ -1660,8 +1660,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await res.json();
             if (data.status === 'success') {
                 showToast('已成功切换游戏节点！');
+                await new Promise(r => setTimeout(r, 500));
                 await openNodeDetailModal(true);
                 await fetchStatus();
+                // Trigger speedtest (fire-and-forget)
+                fetch('/api/speedtest/trigger', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'game' }) }).catch(() => {});
             } else {
                 throw new Error(data.message || '切换失败');
             }
@@ -1694,8 +1697,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await res.json();
             if (data.status === 'success') {
                 showToast('已成功切换 AI 强化节点！');
+                await new Promise(r => setTimeout(r, 500));
                 await openNodeDetailModal(true);
                 await fetchStatus();
+                fetch('/api/speedtest/trigger', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'ai' }) }).catch(() => {});
             } else {
                 throw new Error(data.message || '切换失败');
             }
@@ -1728,6 +1733,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await res.json();
             if (data.status === 'success') {
                 showToast('已成功切换代理节点！');
+                await new Promise(r => setTimeout(r, 500));
                 await openNodeDetailModal(true);
                 await fetchStatus();
             } else {

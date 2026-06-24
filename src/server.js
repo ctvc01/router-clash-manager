@@ -89,12 +89,12 @@ Logger.info('Server', '✅ 配置版本管理系统已初始化');
         Logger.info('Daemon', `检测到当前有 ${activeGameDevices.length} 个加速设备，正在自动激活游戏加速守护进程...`);
         GameAccService.startGameAccMonitor();
 
-        // 启动后 2 分钟内触发一次轻量测速，填充 perNodeResults
+        // 启动后 3 分钟内触发一次测速并锁定最优节点
         setTimeout(() => {
-            Logger.info('Server', '🔄 启动后首次游戏节点测速...');
-            GameAccService.findFastestGameNode().catch(e =>
+            Logger.info('Server', '🔄 启动后首次游戏节点测速+锁定...');
+            GameAccService.findBestAndLock().catch(e =>
                 Logger.warn('Server', '启动测速失败', e.message));
-        }, 120000);
+        }, 180000);
     }
 
     // 启动北京时间每日凌晨 04:00 定时测速重测与锁定自愈任务
@@ -104,6 +104,13 @@ Logger.info('Server', '✅ 配置版本管理系统已初始化');
     if (activeAiDevices.length > 0) {
         Logger.info('Daemon', `检测到当前有 ${activeAiDevices.length} 个 AI 强化设备，正在自动激活 AI 强化守护进程...`);
         AiBoostService.startAiBoostMonitor();
+
+        // 启动后 3 分钟内触发一次测速并锁定最优节点
+        setTimeout(() => {
+            Logger.info('Server', '🔄 启动后首次 AI 节点测速+锁定...');
+            AiBoostService.findBestAndLock().catch(e =>
+                Logger.warn('Server', 'AI 启动测速失败', e.message));
+        }, 210000);
     }
 
     // 启动 AI 强化每日凌晨定时切换任务
