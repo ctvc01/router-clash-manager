@@ -335,13 +335,13 @@ router.get('/nodes', async (req, res) => {
 
             // 模式特定的特殊过滤
             if (mode === 'ai') {
-                // AI 模式过滤：不包含香港、直连、通用选择
+                // AI 模式过滤：仅 IPLC/IEPL 中继节点（排除香港）
                 nodes = nodes.filter(node => {
                     const lowerName = node.name.toLowerCase();
-                    return !lowerName.includes('hk') && 
-                           !lowerName.includes('hongkong') && 
-                           !lowerName.includes('香港') && 
-                           !lowerName.includes('港');
+                    const isIPLC = lowerName.includes('iplc') || lowerName.includes('iepl');
+                    const isHK = lowerName.includes('hk') || lowerName.includes('hongkong') || 
+                                 lowerName.includes('香港') || lowerName.includes('港');
+                    return isIPLC && !isHK;
                 });
             } else if (mode === 'game') {
                 // 游戏模式过滤：仅保留带有专线/游戏特征，或者延迟低于 120ms 的节点

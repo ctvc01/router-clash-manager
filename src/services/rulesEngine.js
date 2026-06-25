@@ -275,7 +275,7 @@ class RulesEngine {
                 // 注入 AI 自动测速组（IPLC 中继节点，排除直連以提高稳定性）
                 groupLines.push(`${indent}- {name: '${PROXY_GROUPS.AI_SPEEDTEST}', type: url-test, tolerance: 100, interval: 600, use: [subscription], filter: "(?i)(IPLC|IEPL).*(A-[0-9]|gRPC)"}`);
                 // AI 强化选择器：AI 测速组优先，所有 IPLC 节点可供直选，兜底走主选择器
-                groupLines.push(`${indent}- {name: '${PROXY_GROUPS.AI_BOOST}', type: select, proxies: ['${PROXY_GROUPS.AI_SPEEDTEST}', '${actualNodeSelect}', 'DIRECT'], use: [subscription], filter: "(?i)(IPLC|IEPL).*(A-[0-9]|gRPC)"}`);
+                groupLines.push(`${indent}- {name: '${PROXY_GROUPS.AI_BOOST}', type: select, proxies: ['${PROXY_GROUPS.AI_SPEEDTEST}', 'DIRECT'], use: [subscription], filter: "(?i)(IPLC|IEPL).*(A-[0-9]|gRPC)"}`);
             }
 
             if (groupLines.length > 0) {
