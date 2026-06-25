@@ -122,9 +122,15 @@ class GameAccService {
             if (['⚡ 游戏自动测速', '🚀 节点选择', '👑 高级节点', 'DIRECT'].includes(currentNode)) return;
             const delay = await ClashService.testNodeDelay(currentNode, 4000);
             if (delay === 0) {
-                Logger.warn('GameAcc', `⚠️ 当前锁定的游戏节点 [${currentNode}] 已完全断联！触发自动故障转移测速...`);
+                Logger.warn('GameAcc', `⚠️ 当前游戏节点 [${currentNode}] 已完全断联！触发自动故障转移测速...`);
                 const fastestNode = await this.findFastestGameNode();
-                if (fastestNode && fastestNode.name !== currentNode) await this.lockGameNode(fastestNode.name);
+                if (fastestNode && fastestNode.name !== currentNode) {
+                    await this.lockGameNode(fastestNode.name);
+                    // 更新锁定状态为新节点（如果已锁定）
+                    if (SpeedtestState.isLocked('game')) {
+                        SpeedtestState.setLockedNode('game', fastestNode.name);
+                    }
+                }
             }
         } catch (err) { Logger.error('GameAcc', '故障转移心跳检测发生异常', err); }
     }

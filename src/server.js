@@ -76,10 +76,14 @@ Logger.info('Server', '✅ 配置版本管理系统已初始化');
     const gameState = SpeedtestState.get('game');
     if (gameState.lock && gameState.lockedNode) {
         Logger.info('Server', `🔄 恢复游戏锁定节点: ${gameState.lockedNode}`);
-        try {
-            await GameAccService.lockGameNode(gameState.lockedNode);
-        } catch (e) {
-            Logger.warn('Server', `恢复游戏锁定节点失败: ${e.message}`);
+        const locked = await GameAccService.lockGameNode(gameState.lockedNode);
+        if (!locked) {
+            Logger.warn('Server', `⚠️ 锁定节点 ${gameState.lockedNode} 失败（可能不在当前组中），自动重测锁定最优节点`);
+            try {
+                await GameAccService.findBestAndLock();
+            } catch (e2) {
+                Logger.warn('Server', `重测锁定也失败: ${e2.message}`);
+            }
         }
     }
 
