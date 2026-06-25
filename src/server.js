@@ -62,6 +62,27 @@ Logger.info('Server', '✅ 配置版本管理系统已初始化');
         }
     }
 
+    // TPROXY 基础设施（仅需执行一次，后续 enable/disable 只增删 per-IP 规则）
+    if (activeGameDevices.length > 0) {
+        const { execSync } = require('child_process');
+        try {
+            execSync('ip rule add fwmark 0x1 table 100 2>/dev/null; ip route replace local 0.0.0.0/0 dev lo table 100 2>/dev/null; sysctl -w net.ipv4.conf.all.route_localnet=1 2>/dev/null; sysctl -w net.ipv4.conf.lo.route_localnet=1 2>/dev/null; iptables -t mangle -N GAME_UDP 2>/dev/null; iptables -t mangle -F GAME_UDP 2>/dev/null; iptables -t mangle -A GAME_UDP -p udp -j TPROXY --on-port 7893 --tproxy-mark 0x1', { timeout: 5000 });
+            Logger.info('Server', 'TPROXY 基础设置完成');
+
+            // 为已有游戏设备添加 per-IP PREROUTING 规则
+            const dhcp = await SshService.runRemoteCommand('cat /tmp/dhcp.leases').catch(() => '');
+            for (const mac of activeGameDevices) {
+                const m = dhcp.match(new RegExp(`\\S+\\s+${mac}\\s+([0-9.]+)`, 'i'));
+                if (m) {
+                    execSync(`iptables -t mangle -D PREROUTING -s ${m[1]} -p udp -j GAME_UDP 2>/dev/null; iptables -t mangle -A PREROUTING -s ${m[1]} -p udp -j GAME_UDP`, { timeout: 3000 });
+                    Logger.info('Server', `TPROXY: ${m[1]} -> Clash 7893`);
+                }
+            }
+        } catch (e) {
+            Logger.warn('Server', 'TPROXY 基础设置失败', e.message);
+        }
+    }
+
     // 如果有活跃的加速设备，启动时自动初始化规则注入
     if (activeGameDevices.length > 0 || activeAiDevices.length > 0) {
         Logger.info('Daemon', `检测到当前有 ${activeGameDevices.length} 个游戏设备 + ${activeAiDevices.length} 个 AI 设备，正在初始化规则注入...`);

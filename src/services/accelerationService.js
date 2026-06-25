@@ -66,6 +66,11 @@ class AccelerationService {
         // RulesEngine 成功后再持久化到文件
         service.writeAccelerationDevices?.(macs) || service.writeGameDevices?.(macs) || service.writeAiDevices(macs);
 
+        // TPROXY: 游戏模式设备 → 添加 UDP 代理规则
+        if (type === 'game') {
+            this._updateTproxyRule(mac, 'add', label);
+        }
+
         // 异步测速锁定
         this._startAsyncSpeedtest(mac, type, isGame ? 'game' : 'ai');
 
@@ -112,6 +117,11 @@ class AccelerationService {
             }
         }
 
+        // TPROXY: 游戏模式设备 → 移除 UDP 代理规则
+        if (isGame) {
+            this._updateTproxyRule(mac, 'del', label);
+        }
+
         // 停止守护进程
         const remainingMacs = service.readAccelerationDevices?.() || service.readGameDevices?.() || service.readAiDevices();
         if (remainingMacs.length === 0) {
@@ -148,6 +158,26 @@ class AccelerationService {
                 Logger.error(label, `异步开启测速与守护任务失败`, monitorErr);
             }
         })();
+    }
+
+    // TPROXY per-device rule: add or remove game device UDP proxy
+    static _updateTproxyRule(mac, action, label) {
+        try {
+            const { execSync } = require('child_process');
+            const dhcp = execSync('cat /tmp/dhcp.leases 2>/dev/null || echo ""', { timeout: 3000 }).toString();
+            const match = dhcp.match(new RegExp(`\\S+\\s+${mac}\\s+([0-9.]+)`, 'i'));
+            if (!match) return;
+            const ip = match[1];
+            if (action === 'add') {
+                execSync(`iptables -t mangle -D PREROUTING -s ${ip} -p udp -j GAME_UDP 2>/dev/null; iptables -t mangle -A PREROUTING -s ${ip} -p udp -j GAME_UDP`, { timeout: 3000 });
+                Logger.info(label, `TPROXY added: ${ip} -> Clash 7893`);
+            } else {
+                execSync(`iptables -t mangle -D PREROUTING -s ${ip} -p udp -j GAME_UDP 2>/dev/null; true`, { timeout: 3000 });
+                Logger.info(label, `TPROXY removed: ${ip}`);
+            }
+        } catch (e) {
+            Logger.warn(label, `TPROXY ${action} failed for ${mac}`, e.message);
+        }
     }
 }
 
