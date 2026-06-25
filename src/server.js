@@ -88,13 +88,14 @@ Logger.info('Server', '✅ 配置版本管理系统已初始化');
                 }
             }
 
-            // 容器内 TPROXY 设置（异步，不阻塞启动）
+            // 容器内 TPROXY 设置（异步，仅劫持游戏设备 IP 的 UDP）
             const { exec } = require('child_process');
-            exec(`sh ${__dirname}/../scripts/setup_tproxy.sh`, { timeout: 10000 }, (err, stdout, stderr) => {
+            const tproxyIps = gameIps.length > 0 ? gameIps.join(' ') : '';
+            exec(`sh ${__dirname}/../scripts/setup_tproxy.sh ${tproxyIps}`, { timeout: 10000 }, (err, stdout, stderr) => {
                 if (err) {
                     Logger.warn('Server', 'TPROXY 设置失败', stderr || err.message);
                 } else {
-                    Logger.info('Server', 'TPROXY 已启用: UDP -> Clash 7893');
+                    Logger.info('Server', `TPROXY 已启用: ${tproxyIps || '无游戏设备'} -> Clash 7893`);
                 }
             });
         } catch (err) {
