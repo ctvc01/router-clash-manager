@@ -88,14 +88,15 @@ Logger.info('Server', '✅ 配置版本管理系统已初始化');
                 }
             }
 
-            // 容器内 TPROXY 设置
-            try {
-                const { execSync } = require('child_process');
-                execSync(`sh ${__dirname}/../scripts/setup_tproxy.sh`, { timeout: 5000 });
-                Logger.info('Server', 'TPROXY 已启用: UDP -> Clash 7893');
-            } catch (e) {
-                Logger.warn('Server', 'TPROXY 设置失败（可能内核模块未加载）', e.message);
-            }
+            // 容器内 TPROXY 设置（异步，不阻塞启动）
+            const { exec } = require('child_process');
+            exec(`sh ${__dirname}/../scripts/setup_tproxy.sh`, { timeout: 10000 }, (err, stdout, stderr) => {
+                if (err) {
+                    Logger.warn('Server', 'TPROXY 设置失败', stderr || err.message);
+                } else {
+                    Logger.info('Server', 'TPROXY 已启用: UDP -> Clash 7893');
+                }
+            });
         } catch (err) {
             Logger.warn('Server', '路由器白名单/iptables初始化失败（稍后会重试）', err);
         }

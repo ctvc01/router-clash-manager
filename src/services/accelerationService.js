@@ -5,6 +5,19 @@ const ClashService = require('./clashService');
 const RulesEngine = require('./rulesEngine');
 const GameAccService = require('./gameAccService');
 const AiBoostService = require('./aiBoostService');
+const os = require('os');
+
+function getLocalIP() {
+    const nets = os.networkInterfaces();
+    for (const name of Object.keys(nets)) {
+        for (const net of nets[name]) {
+            if (net.family === 'IPv4' && !net.internal && !net.address.startsWith('127.')) {
+                return net.address;
+            }
+        }
+    }
+    return 'localhost';
+}
 
 class AccelerationService {
     // 启用加速（统一逻辑，支持 'game' 和 'ai' 两种类型）
@@ -66,6 +79,23 @@ class AccelerationService {
         // RulesEngine 成功后再持久化到文件
         service.writeAccelerationDevices?.(macs) || service.writeGameDevices?.(macs) || service.writeAiDevices(macs);
 
+        // 游戏模式：设置路由器 UDP 策略路由（设备 → NAS TPROXY）
+        if (type === 'game') {
+            try {
+                const nasIp = getLocalIP();
+                const dhcp = await SshService.runRemoteCommand('cat /tmp/dhcp.leases').catch(() => '');
+                const match = dhcp.match(new RegExp(`\\S+\\s+${mac}\\s+([0-9.]+)`, 'i'));
+                if (match) {
+                    await SshService.runRemoteCommand(
+                        `sh /data/ShellCrash/setup_game_udp.sh ${nasIp} ${match[1]}`
+                    );
+                    Logger.info(label, `游戏UDP策略路由已添加: ${match[1]} -> NAS ${nasIp}`);
+                }
+            } catch (e) {
+                Logger.warn(label, '游戏UDP策略路由设置失败', e.message);
+            }
+        }
+
         // 异步测速锁定
         this._startAsyncSpeedtest(mac, type, isGame ? 'game' : 'ai');
 
@@ -109,6 +139,21 @@ class AccelerationService {
                 await SshService.runRemoteCommand('sh /data/ShellCrash/setup_quic_block.sh');
             } catch (e) {
                 Logger.warn(label, `清除白名单或重建规则失败`, e.message);
+            }
+        }
+
+        // 游戏模式：清理路由器 UDP 策略路由
+        if (isGame) {
+            try {
+                const dhcp = await SshService.runRemoteCommand('cat /tmp/dhcp.leases').catch(() => '');
+                const match = dhcp.match(new RegExp(`\\S+\\s+${mac}\\s+([0-9.]+)`, 'i'));
+                const ip = match ? match[1] : null;
+                if (ip) {
+                    await SshService.runRemoteCommand(`ip rule del from ${ip} table 100 2>/dev/null; true`);
+                    Logger.info(label, `游戏UDP策略路由已移除: ${ip}`);
+                }
+            } catch (e) {
+                Logger.warn(label, '游戏UDP策略路由移除失败', e.message);
             }
         }
 
