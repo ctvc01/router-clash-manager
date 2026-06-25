@@ -66,11 +66,6 @@ class AccelerationService {
         // RulesEngine 成功后再持久化到文件
         service.writeAccelerationDevices?.(macs) || service.writeGameDevices?.(macs) || service.writeAiDevices(macs);
 
-        // TPROXY: 游戏模式设备 → 添加 UDP 代理规则
-        if (type === 'game') {
-            this._updateTproxyRule(mac, 'add', label);
-        }
-
         // 异步测速锁定
         this._startAsyncSpeedtest(mac, type, isGame ? 'game' : 'ai');
 
@@ -117,11 +112,6 @@ class AccelerationService {
             }
         }
 
-        // TPROXY: 游戏模式设备 → 移除 UDP 代理规则
-        if (isGame) {
-            this._updateTproxyRule(mac, 'del', label);
-        }
-
         // 停止守护进程
         const remainingMacs = service.readAccelerationDevices?.() || service.readGameDevices?.() || service.readAiDevices();
         if (remainingMacs.length === 0) {
@@ -158,42 +148,6 @@ class AccelerationService {
                 Logger.error(label, `异步开启测速与守护任务失败`, monitorErr);
             }
         })();
-    }
-
-    // TPROXY per-device: NAS-side iptables + Router-side policy route
-    static async _updateTproxyRule(mac, action, label) {
-        try {
-            // Get game device IP from router DHCP
-            const dhcp = await SshService.runRemoteCommand('cat /tmp/dhcp.leases').catch(() => '');
-            const match = dhcp.match(new RegExp(`\\S+\\s+${mac}\\s+([0-9.]+)`, 'i'));
-            if (!match) {
-                Logger.debug(label, `TPROXY: device ${mac} not in DHCP leases, skipping`);
-                return;
-            }
-            const ip = match[1];
-            const os = require('os');
-            const nasIp = Object.values(os.networkInterfaces()).flat().find(n => n.family === 'IPv4' && !n.internal)?.address || '192.168.31.66';
-
-            if (action === 'add') {
-                // NAS: add TPROXY iptables rule
-                const { execSync } = require('child_process');
-                execSync(`iptables -t mangle -D PREROUTING -s ${ip} -p udp -j GAME_UDP 2>/dev/null; iptables -t mangle -A PREROUTING -s ${ip} -p udp -j GAME_UDP`, { timeout: 3000 });
-                // Router: add policy route + FORWARD ACCEPT (prevent conntrack INVALID)
-                await SshService.runRemoteCommand(`sh /data/ShellCrash/setup_game_udp.sh ${nasIp} ${ip}`).catch(() => {});
-                await SshService.runRemoteCommand(`iptables -C FORWARD -s ${ip} -p udp -j ACCEPT 2>/dev/null || iptables -I FORWARD -s ${ip} -p udp -j ACCEPT`).catch(() => {});
-                Logger.info(label, `TPROXY added: ${ip} → NAS ${nasIp} (iptables + policy route)`);
-            } else {
-                // NAS: remove TPROXY iptables rule
-                const { execSync } = require('child_process');
-                execSync(`iptables -t mangle -D PREROUTING -s ${ip} -p udp -j GAME_UDP 2>/dev/null; true`, { timeout: 3000 });
-                // Router: remove policy route + FORWARD ACCEPT
-                await SshService.runRemoteCommand(`ip rule del from ${ip} table 100 2>/dev/null; true`).catch(() => {});
-                await SshService.runRemoteCommand(`iptables -D FORWARD -s ${ip} -p udp -j ACCEPT 2>/dev/null; true`).catch(() => {});
-                Logger.info(label, `TPROXY removed: ${ip}`);
-            }
-        } catch (e) {
-            Logger.warn(label, `TPROXY ${action} failed for ${mac}`, e.message);
-        }
     }
 }
 

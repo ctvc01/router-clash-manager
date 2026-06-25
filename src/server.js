@@ -57,59 +57,12 @@ Logger.info('Server', '✅ 配置版本管理系统已初始化');
 
             await SshService.runRemoteCommand('sh /data/ShellCrash/setup_quic_block.sh');
             Logger.info('Server', 'QUIC (UDP 443) 阻断规则已添加');
-
-            // 路由器 br-lan hairpin 启用（UDP 策略路由回传需要）
-            await SshService.runRemoteCommand('sh /data/ShellCrash/setup_hairpin.sh').catch(() => {});
         } catch (err) {
             Logger.warn('Server', '路由器白名单/iptables初始化失败（稍后会重试）', err);
         }
     }
 
-    // 游戏设备 UDP 策略路由: 路由器 → NAS (TPROXY)
-    if (activeGameDevices.length > 0) {
-        try {
-            const os = require('os');
-            const nasIp = Object.values(os.networkInterfaces()).flat().find(n => n.family === 'IPv4' && !n.internal)?.address || '192.168.31.66';
-            const dhcp = await SshService.runRemoteCommand('cat /tmp/dhcp.leases').catch(() => '');
-            const gameIps = [];
-            for (const mac of activeGameDevices) {
-                const m = dhcp.match(new RegExp(`\\S+\\s+${mac}\\s+([0-9.]+)`, 'i'));
-                if (m) gameIps.push(m[1]);
-            }
-            if (gameIps.length > 0) {
-                await SshService.runRemoteCommand(`sh /data/ShellCrash/setup_game_udp.sh ${nasIp} ${gameIps.join(' ')}`).catch(e =>
-                    Logger.warn('Server', '游戏UDP策略路由失败', e.message));
-                // FORWARD ACCEPT: prevent conntrack INVALID drop (asymmetric routing through br-lan)
-                for (const ip of gameIps) {
-                    await SshService.runRemoteCommand(`iptables -C FORWARD -s ${ip} -p udp -j ACCEPT 2>/dev/null || iptables -I FORWARD -s ${ip} -p udp -j ACCEPT`).catch(() => {});
-                }
-                Logger.info('Server', `游戏UDP策略路由: ${gameIps.join(', ')} → NAS ${nasIp}`);
-            }
-        } catch (e) {
-            Logger.warn('Server', '游戏UDP策略路由初始化失败', e.message);
-        }
-    }
-
-    // TPROXY 基础设施（仅需执行一次，后续 enable/disable 只增删 per-IP 规则）
-    if (activeGameDevices.length > 0) {
-        const { execSync } = require('child_process');
-        try {
-            execSync('ip rule add fwmark 0x1 table 100 2>/dev/null; ip route replace local 0.0.0.0/0 dev lo table 100 2>/dev/null; sysctl -w net.ipv4.conf.all.route_localnet=1 2>/dev/null; sysctl -w net.ipv4.conf.lo.route_localnet=1 2>/dev/null; iptables -t mangle -N GAME_UDP 2>/dev/null; iptables -t mangle -F GAME_UDP 2>/dev/null; iptables -t mangle -A GAME_UDP -p udp -j TPROXY --on-port 7893 --tproxy-mark 0x1', { timeout: 5000 });
-            Logger.info('Server', 'TPROXY 基础设置完成');
-
-            // 为已有游戏设备添加 per-IP PREROUTING 规则
-            const dhcp = await SshService.runRemoteCommand('cat /tmp/dhcp.leases').catch(() => '');
-            for (const mac of activeGameDevices) {
-                const m = dhcp.match(new RegExp(`\\S+\\s+${mac}\\s+([0-9.]+)`, 'i'));
-                if (m) {
-                    execSync(`iptables -t mangle -D PREROUTING -s ${m[1]} -p udp -j GAME_UDP 2>/dev/null; iptables -t mangle -A PREROUTING -s ${m[1]} -p udp -j GAME_UDP`, { timeout: 3000 });
-                    Logger.info('Server', `TPROXY: ${m[1]} -> Clash 7893`);
-                }
-            }
-        } catch (e) {
-            Logger.warn('Server', 'TPROXY 基础设置失败', e.message);
-        }
-    }
+    // 如果有活跃的加速设备，启动时自动初始化规则注入
 
     // 如果有活跃的加速设备，启动时自动初始化规则注入
     if (activeGameDevices.length > 0 || activeAiDevices.length > 0) {
@@ -126,11 +79,11 @@ Logger.info('Server', '✅ 配置版本管理系统已初始化');
         Logger.info('Server', `🔄 恢复游戏锁定节点: ${gameState.lockedNode}`);
         const locked = await GameAccService.lockGameNode(gameState.lockedNode);
         if (!locked) {
-            Logger.warn('Server', `⚠️ 锁定节点 ${gameState.lockedNode} 失败（可能不在当前组中），自动重测锁定最优节点`);
-            try {
-                await GameAccService.findBestAndLock();
-            } catch (e2) {
-                Logger.warn('Server', `重测锁定也失败: ${e2.message}`);
+            Logger.warn('Server', `⚠️ 锁定节点 ${gameState.lockedNode} 失败，3秒后重试...`);
+            await new Promise(r => setTimeout(r, 3000));
+            const retry = await GameAccService.lockGameNode(gameState.lockedNode);
+            if (!retry) {
+                Logger.warn('Server', `⚠️ 重试仍失败，保持 LOCKED 状态不变。节点可能需要手动重新锁定。`);
             }
         }
     }
@@ -141,11 +94,17 @@ Logger.info('Server', '✅ 配置版本管理系统已初始化');
         Logger.info('Daemon', `检测到当前有 ${activeGameDevices.length} 个加速设备，正在自动激活游戏加速守护进程...`);
         GameAccService.startGameAccMonitor();
 
-        // 启动后 3 分钟内触发一次测速并锁定最优节点
+        // 启动后 3 分钟内触发一次测速（LOCKED 时仅更新结果不切换）
         setTimeout(() => {
-            Logger.info('Server', '🔄 启动后首次游戏节点测速+锁定...');
-            GameAccService.findBestAndLock().catch(e =>
-                Logger.warn('Server', '启动测速失败', e.message));
+            if (SpeedtestState.isLocked('game')) {
+                Logger.info('Server', '🔄 启动后首次游戏节点测速(LOCKED:仅更新)...');
+                GameAccService.findFastestGameNode().catch(e =>
+                    Logger.warn('Server', '启动测速失败', e.message));
+            } else {
+                Logger.info('Server', '🔄 启动后首次游戏节点测速+锁定...');
+                GameAccService.findBestAndLock().catch(e =>
+                    Logger.warn('Server', '启动测速失败', e.message));
+            }
         }, 180000);
     }
 

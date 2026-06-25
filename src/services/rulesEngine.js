@@ -233,6 +233,10 @@ class RulesEngine {
                     '- DOMAIN-SUFFIX,atum.download.nintendo.net,🎮 游戏加速',
                     '- DOMAIN-SUFFIX,receive-lp1.dg.srv.nintendo.net,🎮 游戏加速',
                     '- DOMAIN-SUFFIX,ctest.cdn.nintendo.net,🎮 游戏加速',
+                    '- DOMAIN-SUFFIX,bugyo.hac.lp1.eshop.nintendo.net,🎮 游戏加速',
+                    '- DOMAIN-SUFFIX,api.accounts.nintendo.com,🎮 游戏加速',
+                    '- DOMAIN-SUFFIX,accounts.nintendo.com,🎮 游戏加速',
+                    '- DOMAIN-SUFFIX,ec.nintendo.net,🎮 游戏加速',
                     '# === GAME RULES END ==='
                 ];
 
