@@ -57,8 +57,32 @@ Logger.info('Server', '✅ 配置版本管理系统已初始化');
 
             await SshService.runRemoteCommand('sh /data/ShellCrash/setup_quic_block.sh');
             Logger.info('Server', 'QUIC (UDP 443) 阻断规则已添加');
+
+            // 路由器 br-lan hairpin 启用（UDP 策略路由回传需要）
+            await SshService.runRemoteCommand('sh /data/ShellCrash/setup_hairpin.sh').catch(() => {});
         } catch (err) {
             Logger.warn('Server', '路由器白名单/iptables初始化失败（稍后会重试）', err);
+        }
+    }
+
+    // 游戏设备 UDP 策略路由: 路由器 → NAS (TPROXY)
+    if (activeGameDevices.length > 0) {
+        try {
+            const os = require('os');
+            const nasIp = Object.values(os.networkInterfaces()).flat().find(n => n.family === 'IPv4' && !n.internal)?.address || '192.168.31.66';
+            const dhcp = await SshService.runRemoteCommand('cat /tmp/dhcp.leases').catch(() => '');
+            const gameIps = [];
+            for (const mac of activeGameDevices) {
+                const m = dhcp.match(new RegExp(`\\S+\\s+${mac}\\s+([0-9.]+)`, 'i'));
+                if (m) gameIps.push(m[1]);
+            }
+            if (gameIps.length > 0) {
+                await SshService.runRemoteCommand(`sh /data/ShellCrash/setup_game_udp.sh ${nasIp} ${gameIps.join(' ')}`).catch(e =>
+                    Logger.warn('Server', '游戏UDP策略路由失败', e.message));
+                Logger.info('Server', `游戏UDP策略路由: ${gameIps.join(', ')} → NAS ${nasIp}`);
+            }
+        } catch (e) {
+            Logger.warn('Server', '游戏UDP策略路由初始化失败', e.message);
         }
     }
 

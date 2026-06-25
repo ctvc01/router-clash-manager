@@ -160,19 +160,33 @@ class AccelerationService {
         })();
     }
 
-    // TPROXY per-device rule: add or remove game device UDP proxy
-    static _updateTproxyRule(mac, action, label) {
+    // TPROXY per-device: NAS-side iptables + Router-side policy route
+    static async _updateTproxyRule(mac, action, label) {
         try {
-            const { execSync } = require('child_process');
-            const dhcp = execSync('cat /tmp/dhcp.leases 2>/dev/null || echo ""', { timeout: 3000 }).toString();
+            // Get game device IP from router DHCP
+            const dhcp = await SshService.runRemoteCommand('cat /tmp/dhcp.leases').catch(() => '');
             const match = dhcp.match(new RegExp(`\\S+\\s+${mac}\\s+([0-9.]+)`, 'i'));
-            if (!match) return;
+            if (!match) {
+                Logger.debug(label, `TPROXY: device ${mac} not in DHCP leases, skipping`);
+                return;
+            }
             const ip = match[1];
+            const os = require('os');
+            const nasIp = Object.values(os.networkInterfaces()).flat().find(n => n.family === 'IPv4' && !n.internal)?.address || '192.168.31.66';
+
             if (action === 'add') {
+                // NAS: add TPROXY iptables rule
+                const { execSync } = require('child_process');
                 execSync(`iptables -t mangle -D PREROUTING -s ${ip} -p udp -j GAME_UDP 2>/dev/null; iptables -t mangle -A PREROUTING -s ${ip} -p udp -j GAME_UDP`, { timeout: 3000 });
-                Logger.info(label, `TPROXY added: ${ip} -> Clash 7893`);
+                // Router: add policy route
+                await SshService.runRemoteCommand(`sh /data/ShellCrash/setup_game_udp.sh ${nasIp} ${ip}`).catch(() => {});
+                Logger.info(label, `TPROXY added: ${ip} → NAS ${nasIp} (iptables + policy route)`);
             } else {
+                // NAS: remove TPROXY iptables rule
+                const { execSync } = require('child_process');
                 execSync(`iptables -t mangle -D PREROUTING -s ${ip} -p udp -j GAME_UDP 2>/dev/null; true`, { timeout: 3000 });
+                // Router: remove policy route
+                await SshService.runRemoteCommand(`ip rule del from ${ip} table 100 2>/dev/null; true`).catch(() => {});
                 Logger.info(label, `TPROXY removed: ${ip}`);
             }
         } catch (e) {
