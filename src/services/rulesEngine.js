@@ -47,6 +47,15 @@ class RulesEngine {
             }
         }
 
+        // 2b. 确保 tproxy-port 存在（游戏 UDP 透明代理）
+        const hasTproxy = configLines.findIndex(line => line.trim().startsWith('tproxy-port:')) !== -1;
+        if (!hasTproxy) {
+            let redirIdx = configLines.findIndex(line => line.trim().startsWith('redir-port:'));
+            if (redirIdx !== -1) {
+                configLines.splice(redirIdx + 1, 0, 'tproxy-port: 7893');
+            }
+        }
+
         // 3. 强制将 external-controller 的端口设置为 config.ports.clash (默认 9999)
         let controllerIdx = configLines.findIndex(line => line.trim().startsWith('external-controller:'));
         if (controllerIdx !== -1) {

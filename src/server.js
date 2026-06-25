@@ -1,4 +1,5 @@
 const app = require('./app');
+const os = require('os');
 const { config, validateEnvironment } = require('./config');
 const Logger = require('./utils/logger');
 const PersistenceService = require('./services/persistenceService');
@@ -14,6 +15,18 @@ const ChangelogManager = require('./services/changelogManager');
 const SystemValidator = require('./services/systemValidator');
 const SshService = require('./services/sshService');
 const { ROUTER_PATHS } = require('./constants');
+
+function getLocalIP() {
+    const nets = os.networkInterfaces();
+    for (const name of Object.keys(nets)) {
+        for (const net of nets[name]) {
+            if (net.family === 'IPv4' && !net.internal && !net.address.startsWith('127.')) {
+                return net.address;
+            }
+        }
+    }
+    return 'localhost';
+}
 
 // 1. 启动前强校验环境变量与核心凭证
 validateEnvironment();
@@ -55,9 +68,34 @@ Logger.info('Server', '✅ 配置版本管理系统已初始化');
             await SshService.runRemoteCommand('sh /data/ShellCrash/setup_iptables.sh');
             Logger.info('Server', 'iptables TCP REDIRECT 规则已重建');
 
-            // 添加 QUIC 阻断规则
             await SshService.runRemoteCommand('sh /data/ShellCrash/setup_quic_block.sh');
             Logger.info('Server', 'QUIC (UDP 443) 阻断规则已添加');
+
+            // 设置游戏设备 UDP 策略路由（路由器→NAS）
+            if (activeGameDevices.length > 0) {
+                const nasIp = getLocalIP();
+                const gameDhcp = await SshService.runRemoteCommand('cat /tmp/dhcp.leases').catch(() => '');
+                const gameIps = [];
+                for (const mac of activeGameDevices) {
+                    const match = gameDhcp.match(new RegExp(`\\S+\\s+${mac}\\s+([0-9.]+)`, 'i'));
+                    if (match) gameIps.push(match[1]);
+                }
+                if (gameIps.length > 0) {
+                    const ipList = gameIps.join(' ');
+                    await SshService.runRemoteCommand(`sh /data/ShellCrash/setup_game_udp.sh ${nasIp} ${ipList}`).catch(e =>
+                        Logger.warn('Server', '游戏UDP策略路由设置失败', e.message));
+                    Logger.info('Server', `游戏UDP策略路由: ${gameIps.join(', ')} -> NAS ${nasIp}`);
+                }
+            }
+
+            // 容器内 TPROXY 设置
+            try {
+                const { execSync } = require('child_process');
+                execSync(`sh ${__dirname}/../scripts/setup_tproxy.sh`, { timeout: 5000 });
+                Logger.info('Server', 'TPROXY 已启用: UDP -> Clash 7893');
+            } catch (e) {
+                Logger.warn('Server', 'TPROXY 设置失败（可能内核模块未加载）', e.message);
+            }
         } catch (err) {
             Logger.warn('Server', '路由器白名单/iptables初始化失败（稍后会重试）', err);
         }
