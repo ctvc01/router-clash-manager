@@ -79,6 +79,10 @@ Logger.info('Server', '✅ 配置版本管理系统已初始化');
             if (gameIps.length > 0) {
                 await SshService.runRemoteCommand(`sh /data/ShellCrash/setup_game_udp.sh ${nasIp} ${gameIps.join(' ')}`).catch(e =>
                     Logger.warn('Server', '游戏UDP策略路由失败', e.message));
+                // FORWARD ACCEPT: prevent conntrack INVALID drop (asymmetric routing through br-lan)
+                for (const ip of gameIps) {
+                    await SshService.runRemoteCommand(`iptables -C FORWARD -s ${ip} -p udp -j ACCEPT 2>/dev/null || iptables -I FORWARD -s ${ip} -p udp -j ACCEPT`).catch(() => {});
+                }
                 Logger.info('Server', `游戏UDP策略路由: ${gameIps.join(', ')} → NAS ${nasIp}`);
             }
         } catch (e) {

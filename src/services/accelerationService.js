@@ -178,15 +178,17 @@ class AccelerationService {
                 // NAS: add TPROXY iptables rule
                 const { execSync } = require('child_process');
                 execSync(`iptables -t mangle -D PREROUTING -s ${ip} -p udp -j GAME_UDP 2>/dev/null; iptables -t mangle -A PREROUTING -s ${ip} -p udp -j GAME_UDP`, { timeout: 3000 });
-                // Router: add policy route
+                // Router: add policy route + FORWARD ACCEPT (prevent conntrack INVALID)
                 await SshService.runRemoteCommand(`sh /data/ShellCrash/setup_game_udp.sh ${nasIp} ${ip}`).catch(() => {});
+                await SshService.runRemoteCommand(`iptables -C FORWARD -s ${ip} -p udp -j ACCEPT 2>/dev/null || iptables -I FORWARD -s ${ip} -p udp -j ACCEPT`).catch(() => {});
                 Logger.info(label, `TPROXY added: ${ip} → NAS ${nasIp} (iptables + policy route)`);
             } else {
                 // NAS: remove TPROXY iptables rule
                 const { execSync } = require('child_process');
                 execSync(`iptables -t mangle -D PREROUTING -s ${ip} -p udp -j GAME_UDP 2>/dev/null; true`, { timeout: 3000 });
-                // Router: remove policy route
+                // Router: remove policy route + FORWARD ACCEPT
                 await SshService.runRemoteCommand(`ip rule del from ${ip} table 100 2>/dev/null; true`).catch(() => {});
+                await SshService.runRemoteCommand(`iptables -D FORWARD -s ${ip} -p udp -j ACCEPT 2>/dev/null; true`).catch(() => {});
                 Logger.info(label, `TPROXY removed: ${ip}`);
             }
         } catch (e) {
