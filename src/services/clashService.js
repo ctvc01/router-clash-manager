@@ -155,28 +155,6 @@ class ClashService {
         Logger.warn('ClashAPI', `Clash 核心在尝试 ${maxAttempts} 次后仍未就绪。`);
         return false;
     }
-
-    // 通用指数退避重试执行器
-    static async runWithRetry(fn, maxRetries = 3, delayMs = 500) {
-        let lastError;
-        for (let i = 0; i < maxRetries; i++) {
-            try {
-                if (i > 0) {
-                    Logger.debug('Retry', `正在进行第 ${i + 1}/${maxRetries} 次重试尝试...`);
-                }
-                return await fn();
-            } catch (err) {
-                lastError = err;
-                Logger.warn('Retry', `重试任务第 ${i + 1} 次尝试失败: ${err.message}`);
-                if (i < maxRetries - 1) {
-                    // 指数退避：500ms, 1000ms, 2000ms...
-                    const waitTime = delayMs * Math.pow(2, i);
-                    await new Promise(resolve => setTimeout(resolve, waitTime));
-                }
-            }
-        }
-        throw lastError;
-    }
 }
 
 module.exports = ClashService;

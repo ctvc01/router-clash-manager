@@ -3,13 +3,9 @@ const StorageCleanupService = require('../services/storageCleanupService');
 const Logger = require('../utils/logger');
 
 class ClashApiProxy {
-    // Caches
-    static _cachedProxies = null;
-    static _cachedProxiesTime = 0;
+    // Version cache
     static _cachedVersion = null;
     static _cachedVersionTime = 0;
-
-    static _proxiesCacheTTL = 10000;   // 10 seconds
     static _versionCacheTTL = 30000;   // 30 seconds
     // 通过SSH在路由器上执行curl命令获取Clash API响应（带超时）
     static async fetchViaSSH(endpoint, timeoutMs = 5000) {
@@ -56,62 +52,6 @@ class ClashApiProxy {
     // 获取配置
     static async getConfigs(timeoutMs = 3000) {
         return this.fetchViaSSH('/configs');
-    }
-
-    // 获取所有代理节点（带10s缓存，避免每次/status触发SSH）
-    static async getProxies(timeoutMs = 5000) {
-        const now = Date.now();
-        if (this._cachedProxies && (now - this._cachedProxiesTime < this._proxiesCacheTTL)) {
-            return this._cachedProxies;
-        }
-        const data = await this.fetchViaSSH('/proxies');
-        this._cachedProxies = data;
-        this._cachedProxiesTime = now;
-        return data;
-    }
-
-    // 获取规则集
-    static async getRules(timeoutMs = 5000) {
-        return this.fetchViaSSH('/rules');
-    }
-
-    // 测试单个节点延迟
-    static async testNodeDelay(nodeName, timeoutMs = 4000, testUrl = 'http://www.gstatic.com/generate_204') {
-        try {
-            const encodedName = encodeURIComponent(nodeName);
-            const encodedUrl = encodeURIComponent(testUrl);
-            const endpoint = `/proxies/${encodedName}/delay?timeout=${Math.max(timeoutMs - 1000, 1000)}&url=${encodedUrl}`;
-            const result = await this.fetchViaSSH(endpoint);
-            return result.delay || 0;
-        } catch (err) {
-            Logger.debug('ClashApiProxy', `Node delay test failed for ${nodeName}`);
-            return 0;
-        }
-    }
-
-    // 选择/切换代理节点
-    static async selectProxyNode(groupName, nodeName, timeoutMs = 3000) {
-        try {
-            const encodedGroup = encodeURIComponent(groupName);
-            const jsonData = JSON.stringify({ name: nodeName });
-            const escapedData = jsonData.replace(/'/g, "'\\''");
-
-            const curlCmd = `curl -s -w '\\n%{http_code}' -X PUT -d '${escapedData}' http://127.0.0.1:9999/proxies/${encodedGroup}`;
-            const output = await SshService.runRemoteCommand(curlCmd);
-            const lines = output.trim().split('\n');
-            const httpCode = parseInt(lines[lines.length - 1], 10);
-            const success = httpCode === 204 || httpCode === 200;
-
-            if (success) {
-                Logger.info('ClashApiProxy', `Successfully selected ${nodeName} for group ${groupName}`);
-            } else {
-                Logger.warn('ClashApiProxy', `Select proxy node failed, HTTP ${httpCode}: ${nodeName} -> ${groupName}`);
-            }
-            return success;
-        } catch (err) {
-            Logger.error('ClashApiProxy', `Failed to select proxy node`, err.message);
-            return false;
-        }
     }
 }
 

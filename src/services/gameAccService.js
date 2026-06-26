@@ -4,6 +4,7 @@ const Logger = require('../utils/logger');
 const ClashService = require('./clashService');
 const PersistenceService = require('./persistenceService');
 const SpeedtestState = require('./speedtestState');
+const { getBeijingTimeParts } = require('../constants');
 
 let gameAccCheckTimer = null;
 let dailyCheckTimer = null;
@@ -77,14 +78,6 @@ class GameAccService {
         const best = await this.findFastestGameNode();
         if (best) { SpeedtestState.updateResult('game', best); if (force || !SpeedtestState.isLocked('game')) await this.lockGameNode(best.name); }
         return best;
-    }
-
-    static _getBeijingTimeParts() {
-        const formatter = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', hour12: false });
-        const parts = formatter.formatToParts(new Date());
-        const hourPart = parts.find(p => p.type === 'hour');
-        const minutePart = parts.find(p => p.type === 'minute');
-        return { hour: hourPart ? parseInt(hourPart.value, 10) : 0, minute: minutePart ? parseInt(minutePart.value, 10) : 0 };
     }
 
     static startGameAccMonitor() {
@@ -179,7 +172,7 @@ class GameAccService {
         if (dailyCheckTimer) return;
         Logger.info('GameAcc', '🕰️ 每日凌晨定时切换任务启动成功');
         dailyCheckTimer = setInterval(async () => {
-            const { hour, minute } = this._getBeijingTimeParts();
+            const { hour, minute } = getBeijingTimeParts();
             if (hour === 4 && minute === 0) {
                 if (!dailyCheckDone) {
                     dailyCheckDone = true;

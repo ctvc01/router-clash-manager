@@ -71,9 +71,7 @@ class Logger {
 
     // 获取当前 UTC+8 时间戳字符串
     static _getTimestamp() {
-        const now = new Date();
-        const utc8Time = new Date(now.getTime() + (8 * 60 * 60 * 1000));
-        return utc8Time.toISOString().replace('Z', '+08:00');
+        return new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }).replace(' ', 'T') + '+08:00';
     }
 
     static info(tag, msg, data = null) {

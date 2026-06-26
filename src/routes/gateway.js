@@ -266,6 +266,12 @@ router.get('/nodes', async (req, res) => {
         const proxiesData = await ClashService.getProxies(5000, nocache);
         const proxies = proxiesData.proxies || {};
 
+        const filterOutGroups = [
+            '⚡ 游戏自动测速', '🚀 节点选择', '🚀 选择节点', '👑 高级节点',
+            'DIRECT', 'GLOBAL', 'AI自动测速', '🤖 AI强化', '🎮 游戏加速',
+            'REJECT', 'REJECT-DROP', 'PASS', 'COMPATIBLE'
+        ];
+
         const mainGroup = ProxyGroupDetector.findMainProxyGroup(proxies);
         const mainGroupName = mainGroup?.name || '🚀 节点选择';
 
@@ -306,12 +312,6 @@ router.get('/nodes', async (req, res) => {
         // 辅助函数：对物理节点列表进行精简与特征过滤，减少传输和渲染负担，防止 OOM
         const getSortedAndFilteredNodes = (allNames, currentSelectedNode, mode = 'proxy', limit = 30, returnAll = false) => {
             if (!allNames) return [];
-            
-            const filterOutGroups = [
-                '⚡ 游戏自动测速', '🚀 节点选择', '🚀 选择节点', '👑 高级节点', 
-                'DIRECT', 'GLOBAL', 'AI自动测速', '🤖 AI强化', '🎮 游戏加速',
-                'REJECT', 'REJECT-DROP', 'PASS', 'COMPATIBLE'
-            ];
             
             let leafNames = getAllLeafNodes(allNames);
             leafNames = [...new Set(leafNames)];
@@ -393,11 +393,6 @@ router.get('/nodes', async (req, res) => {
         };
 
         const returnAll = req.query.all === 'true';
-        const filterOutGroups = [
-            '⚡ 游戏自动测速', '🚀 节点选择', '🚀 选择节点', '👑 高级节点', 
-            'DIRECT', 'GLOBAL', 'AI自动测速', '🤖 AI强化', '🎮 游戏加速',
-            'REJECT', 'REJECT-DROP', 'PASS', 'COMPATIBLE'
-        ];
         const proxyLeafNames = [...new Set(getAllLeafNodes(proxies[mainGroupName]?.all || []))];
         const proxyAllFiltered = proxyLeafNames.filter(name => !filterOutGroups.includes(name));
         const hasMore = proxyAllFiltered.length > 30 && !returnAll;

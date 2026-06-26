@@ -63,8 +63,6 @@ Logger.info('Server', '✅ 配置版本管理系统已初始化');
     }
 
     // 如果有活跃的加速设备，启动时自动初始化规则注入
-
-    // 如果有活跃的加速设备，启动时自动初始化规则注入
     if (activeGameDevices.length > 0 || activeAiDevices.length > 0) {
         Logger.info('Daemon', `检测到当前有 ${activeGameDevices.length} 个游戏设备 + ${activeAiDevices.length} 个 AI 设备，正在初始化规则注入...`);
         await RulesEngine.updateClashRules(activeGameDevices, activeAiDevices).catch(err => {

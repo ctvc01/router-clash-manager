@@ -64,16 +64,6 @@ class ProxyGroupDetector {
         return lowerType === 'select' || lowerType === 'selector';
     }
 
-    // 获取代理组的当前选中节点
-    static getCurrentNode(proxies, groupName) {
-        if (!proxies || !groupName) return null;
-
-        const group = proxies[groupName];
-        if (!group || !group.now) return null;
-
-        return group.now;
-    }
-
     // 递归获取物理节点（处理代理组嵌套）
     static getRealPhysicalNode(proxies, nodeName, visited = new Set()) {
         if (!nodeName || !proxies) {
@@ -109,60 +99,6 @@ class ProxyGroupDetector {
         }
 
         return { name: nodeName, delay };
-    }
-
-    // 获取所有代理组
-    static getAllProxyGroups(proxies) {
-        if (!proxies || typeof proxies !== 'object') {
-            return [];
-        }
-
-        const groups = [];
-        for (const [name, group] of Object.entries(proxies)) {
-            if (group && group.type === 'select') {
-                groups.push({
-                    name,
-                    now: group.now,
-                    all: group.all || []
-                });
-            }
-        }
-        return groups;
-    }
-
-    // 获取代理组的所有可选节点
-    static getGroupNodes(proxies, groupName) {
-        if (!proxies || !groupName) return [];
-
-        const group = proxies[groupName];
-        if (!group || !Array.isArray(group.all)) return [];
-
-        return group.all;
-    }
-
-    // 检查特定代理组是否存在
-    static hasProxyGroup(proxies, groupName) {
-        if (!proxies || !groupName) return false;
-        const group = proxies[groupName];
-        return group && group.type === 'select';
-    }
-
-    // 为代理组缓存实时显示所需的信息
-    static cacheProxyGroupInfo(proxies) {
-        const cache = {};
-
-        for (const [name, group] of Object.entries(proxies)) {
-            if (group && group.type === 'select') {
-                cache[name] = {
-                    now: group.now,
-                    all: group.all || [],
-                    realNode: this.getRealPhysicalNode(proxies, group.now).name,
-                    nodeCount: (group.all || []).length
-                };
-            }
-        }
-
-        return cache;
     }
 }
 

@@ -4,6 +4,7 @@ const Logger = require('../utils/logger');
 const ClashService = require('./clashService');
 const PersistenceService = require('./persistenceService');
 const SpeedtestState = require('./speedtestState');
+const { getBeijingTimeParts } = require('../constants');
 
 let aiBoostCheckTimer = null;
 let dailyCheckTimer = null;
@@ -103,24 +104,6 @@ class AiBoostService {
         return best;
     }
 
-    // 获取北京时间 (UTC+8) 的小时 and 分钟
-    static _getBeijingTimeParts() {
-        const formatter = new Intl.DateTimeFormat('zh-CN', {
-            timeZone: 'Asia/Shanghai',
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: false
-        });
-        const parts = formatter.formatToParts(new Date());
-        const hourPart = parts.find(p => p.type === 'hour');
-        const minutePart = parts.find(p => p.type === 'minute');
-        return {
-            hour: hourPart ? parseInt(hourPart.value, 10) : 0,
-            minute: minutePart ? parseInt(minutePart.value, 10) : 0
-        };
-    }
-
-    // 启动 AI 强化节点可用性守护进程 (错峰调度)
     static startAiBoostMonitor() {
         if (aiBoostCheckTimer || aiBoostStartTimeout) return;
         
@@ -261,7 +244,7 @@ class AiBoostService {
         Logger.info('AiBoost', '🕰️ AI 强化每日凌晨定时切换任务启动成功');
         
         dailyCheckTimer = setInterval(async () => {
-            const { hour, minute } = this._getBeijingTimeParts();
+            const { hour, minute } = getBeijingTimeParts();
             
             if (hour === 4 && minute === 0) {
                 if (!dailyCheckDone) {

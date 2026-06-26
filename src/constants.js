@@ -14,16 +14,6 @@ const PROXY_GROUPS = {
     DIRECT: 'DIRECT'
 };
 
-const DEVICE_CATEGORIES = {
-    PC: 'pc',
-    PHONE: 'phone',
-    TABLET: 'tablet',
-    GAME: 'game',
-    TV: 'tv',
-    IOT: 'iot',
-    OTHER: 'other'
-};
-
 const ROUTER_PATHS = {
     DHCP_LEASES: '/tmp/dhcp.leases',
     MAC_WHITELIST: '/data/ShellCrash/configs/mac',
@@ -32,14 +22,15 @@ const ROUTER_PATHS = {
     CRASH_CORE: '/tmp/ShellCrash/mihomo'
 };
 
-const SPEEDTEST_URLS = {
-    NINTENDO: 'http://ctest.cdn.nintendo.net/',
-    GOOGLE_AI: 'https://generativelanguage.googleapis.com/'
-};
-
 module.exports = {
     PROXY_GROUPS,
-    DEVICE_CATEGORIES,
     ROUTER_PATHS,
-    SPEEDTEST_URLS
+    getBeijingTimeParts: () => {
+        const f = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', hour12: false });
+        const parts = f.formatToParts(new Date());
+        return {
+            hour: parseInt(parts.find(p => p.type === 'hour')?.value || '0', 10),
+            minute: parseInt(parts.find(p => p.type === 'minute')?.value || '0', 10)
+        };
+    }
 };
