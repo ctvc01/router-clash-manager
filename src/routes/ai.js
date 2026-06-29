@@ -6,6 +6,9 @@ const AiBoostService = require('../services/aiBoostService');
 
 const router = express.Router();
 
+// 防止重复请求：同一 MAC 的 enable/disable 操作只允许一个在执行
+const inFlight = new Map();
+
 // 1. 获取开启 AI 强化的设备 MAC 列表
 router.get('/list', (req, res) => {
     res.json(AiBoostService.readAiDevices());
@@ -15,7 +18,15 @@ router.get('/list', (req, res) => {
 router.post('/enable', async (req, res) => {
     try {
         const mac = Validators.validateMAC(req.body.mac);
-        await AccelerationService.enableAcceleration(mac, 'ai');
+        const key = `enable:${mac}`;
+        const existing = inFlight.get(key);
+        if (existing) {
+            Logger.info('AiBoost', `设备 ${mac} 的 AI 强化请求正在进行中，复用已有执行`);
+            return res.json(await existing);
+        }
+        const promise = AccelerationService.enableAcceleration(mac, 'ai');
+        inFlight.set(key, promise);
+        const result = await promise;
         res.json({ success: true });
     } catch (err) {
         Logger.error('AiBoost', '启用 AI 强化接口异常', err);
@@ -23,6 +34,8 @@ router.post('/enable', async (req, res) => {
             success: false,
             message: err.message
         });
+    } finally {
+        inFlight.delete(`enable:${mac}`);
     }
 });
 
@@ -30,7 +43,15 @@ router.post('/enable', async (req, res) => {
 router.post('/disable', async (req, res) => {
     try {
         const mac = Validators.validateMAC(req.body.mac);
-        await AccelerationService.disableAcceleration(mac, 'ai');
+        const key = `disable:${mac}`;
+        const existing = inFlight.get(key);
+        if (existing) {
+            Logger.info('AiBoost', `设备 ${mac} 的 AI 强化关闭请求正在进行中，复用已有执行`);
+            return res.json(await existing);
+        }
+        const promise = AccelerationService.disableAcceleration(mac, 'ai');
+        inFlight.set(key, promise);
+        const result = await promise;
         res.json({ success: true });
     } catch (err) {
         Logger.error('AiBoost', '禁用 AI 强化接口异常', err);
@@ -38,6 +59,8 @@ router.post('/disable', async (req, res) => {
             success: false,
             message: err.message
         });
+    } finally {
+        inFlight.delete(`disable:${mac}`);
     }
 });
 

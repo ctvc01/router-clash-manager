@@ -67,31 +67,41 @@ class RulesEngine {
             }
         }
 
-        // 4. 强制重写或注入 dns 和 sniffer 配置段
-        // 4.1 如果已存在 dns，强制将 enable 设为 true 并将 listen 端口重写为 config.ports.dns (1053)
+       // 4. 强制重写或注入 dns 和 sniffer 配置段
+        // 4.1 如果已存在 dns，整体替换整个 dns 配置段（保证配置一致性，包括 nameserver、fallback、store-fake-ip）
         const hasDns = currentConfig.includes('\ndns:');
         if (hasDns) {
-            let inDnsBlock = false;
+            let dnsStart = -1, dnsEnd = -1, inDnsBlock = false;
             for (let i = 0; i < configLines.length; i++) {
-                const originalLine = configLines[i];
-                const line = originalLine.trim();
+                const line = configLines[i].trim();
                 if (line.startsWith('dns:')) {
-                    inDnsBlock = true;
-                    continue;
+                    inDnsBlock = true; dnsStart = i; dnsEnd = i; continue;
                 }
-                if (inDnsBlock && line.length > 0 && !originalLine.startsWith(' ') && !originalLine.startsWith('\t') && !line.startsWith('#')) {
-                    inDnsBlock = false;
+                if (inDnsBlock && line.length > 0 && !configLines[i].startsWith(' ') && !configLines[i].startsWith('\t') && !line.startsWith('#')) {
+                    break;
                 }
-                if (inDnsBlock) {
-                    if (line.startsWith('enable:')) {
-                        const indent = originalLine.match(/^\s*/)[0];
-                        configLines[i] = `${indent}enable: true`;
-                    }
-                    if (line.startsWith('listen:')) {
-                        const indent = originalLine.match(/^\s*/)[0];
-                        configLines[i] = `${indent}listen: 0.0.0.0:${config.ports.dns}`;
-                    }
-                }
+                if (inDnsBlock) dnsEnd = i;
+            }
+            if (dnsStart >= 0) {
+                configLines.splice(dnsStart, dnsEnd - dnsStart + 1,
+                    'dns:',
+                    '  enable: true',
+                    `  listen: 0.0.0.0:${config.ports.dns}`,
+                    '  enhanced-mode: fake-ip',
+                    '  fake-ip-range: 198.18.0.1/16',
+                    '  prefer-h3: false',
+                    '  nameserver:',
+                    '    - 114.114.114.114',
+                    '    - 223.5.5.5',
+                    '    - 119.29.29.29',
+                    '  fallback:',
+                    '    - 8.8.8.8',
+                    '    - 1.1.1.1',
+                    '  fallback-filter:',
+                    '    geoip: true',
+                    '    geoip-code: CN',
+                    '  store-fake-ip: true'
+                );
             }
         }
 
@@ -108,10 +118,18 @@ class RulesEngine {
                     `  listen: 0.0.0.0:${config.ports.dns}`,
                     '  enhanced-mode: fake-ip',
                     '  fake-ip-range: 198.18.0.1/16',
+                    '  prefer-h3: false',
                     '  nameserver:',
                     '    - 114.114.114.114',
                     '    - 223.5.5.5',
-                    '    - 8.8.8.8'
+                    '    - 119.29.29.29',
+                    '  fallback:',
+                    '    - 8.8.8.8',
+                    '    - 1.1.1.1',
+                    '  fallback-filter:',
+                    '    geoip: true',
+                    '    geoip-code: CN',
+                    '  store-fake-ip: true'
                 ];
                 configLines.splice(insertIdx + 1, 0, ...dnsLines);
                 insertIdx += dnsLines.length;
@@ -147,6 +165,62 @@ class RulesEngine {
             if (trimmed.includes('🎮 游戏加速') && !trimmed.includes('{name:')) return false;
             return true;
         });
+
+        // 5c. 清理旧的国内直连规则
+        configLines = configLines.filter(line => {
+            const trimmed = line.trim();
+            if (trimmed.includes('CN DIRECT RULES START')) return false;
+            if (trimmed.includes('CN DIRECT RULES END')) return false;
+            return true;
+        });
+
+        // 5d. 注入国内主流 App 域名直连规则（始终注入，受益所有代理设备）
+        {
+            const rulesIdx = configLines.findIndex(line => line.trim() === 'rules:');
+            if (rulesIdx !== -1) {
+                let rulesIndent = '  ';
+                for (let i = rulesIdx + 1; i < configLines.length; i++) {
+                    const line = configLines[i];
+                    if (line.trim().startsWith('-')) {
+                        const match = line.match(/^(\s*)-/);
+                        if (match) rulesIndent = match[1];
+                        break;
+                    }
+                    if (line.trim() !== '' && !line.trim().startsWith('#')) break;
+                }
+
+                const cnRuleLines = [
+                    '# === CN DIRECT RULES START ===',
+                    // 视频/直播 CDN — 小红书、字节跳动/抖音、快手、B站
+                    '- DOMAIN-SUFFIX,xhscdn.com,DIRECT',
+                    '- DOMAIN-SUFFIX,snssdk.com,DIRECT',
+                    '- DOMAIN-SUFFIX,bytedance.com,DIRECT',
+                    '- DOMAIN-SUFFIX,ibytedtos.com,DIRECT',
+                    '- DOMAIN-SUFFIX,bytecdn.cn,DIRECT',
+                    '- DOMAIN-SUFFIX,volces.com,DIRECT',
+                    '- DOMAIN-SUFFIX,kuaishou.com,DIRECT',
+                    '- DOMAIN-SUFFIX,ksyun.com,DIRECT',
+                    '- DOMAIN-SUFFIX,bilibili.com,DIRECT',
+                    '- DOMAIN-SUFFIX,hdslb.com,DIRECT',
+                    '- DOMAIN-SUFFIX,bilivideo.com,DIRECT',
+                    // 电商图片 CDN — 阿里、京东、拼多多
+                    '- DOMAIN-SUFFIX,alicdn.com,DIRECT',
+                    '- DOMAIN-SUFFIX,aliyuncs.com,DIRECT',
+                    '- DOMAIN-SUFFIX,360buyimg.com,DIRECT',
+                    '- DOMAIN-SUFFIX,pddpic.com,DIRECT',
+                    // 音乐流媒体 — 网易云音乐
+                    '- DOMAIN-SUFFIX,126.net,DIRECT',
+                    // 腾讯 CDN
+                    '- DOMAIN-SUFFIX,gtimg.com,DIRECT',
+                    '- DOMAIN-SUFFIX,qpic.cn,DIRECT',
+                    '- DOMAIN-SUFFIX,myqcloud.com,DIRECT',
+                    '# === CN DIRECT RULES END ==='
+                ];
+
+                const ruleLines = cnRuleLines.map(line => `${rulesIndent}${line}`);
+                configLines.splice(rulesIdx + 1, 0, ...ruleLines);
+            }
+        }
 
         // 6. 注入最新的 AI 分流规则
         if (aiMacs.length > 0) {
@@ -237,6 +311,11 @@ class RulesEngine {
                     '- DOMAIN-SUFFIX,api.accounts.nintendo.com,🎮 游戏加速',
                     '- DOMAIN-SUFFIX,accounts.nintendo.com,🎮 游戏加速',
                     '- DOMAIN-SUFFIX,ec.nintendo.net,🎮 游戏加速',
+                    // Nintendo 游戏下载 CDN（Akamai edgesuite 入口）
+                    '- DOMAIN-SUFFIX,hac.lp1.d4c.nintendo.net,🎮 游戏加速',
+                    // 所有 Nintendo 域名兜底（覆盖未来 CDN 变化）
+                    '- DOMAIN-SUFFIX,nintendo.net,🎮 游戏加速',
+                    '- DOMAIN-SUFFIX,nintendo.com,🎮 游戏加速',
                     '# === GAME RULES END ==='
                 ];
 
@@ -306,7 +385,7 @@ class RulesEngine {
     static async updateClashRules(gameMacs, aiMacs, proxyMacs = []) {
         updatePromise = updatePromise.then(async () => {
             Logger.info('RulesEngine', `设备统计: 代理${proxyMacs.length}个, 游戏${gameMacs.length}个, AI${aiMacs.length}个 (排队执行中)`);
-            Logger.info('RulesEngine', '分流由全局 GEOIP 规则处理（GEOIP,CN→DIRECT, MATCH→代理）');
+            Logger.info('RulesEngine', '分流策略：国内域名→DIRECT, GEOIP,CN→DIRECT, MATCH→代理');
 
             // 1. 获取路由器当前的主配置文件内容
             let currentConfig = '';
@@ -377,16 +456,33 @@ class RulesEngine {
                     Logger.warn('RulesEngine', '配置有警告: ' + preCheckResult.warnings.join('; '));
                 }
 
-                // 5. 顺利通过所有检查！现在把工作文件安全写回 /data
-                await SshService.runRemoteCommand(`cp -f ${workFile} /data/ShellCrash/config.yaml`);
-                await SshService.runRemoteCommand(`rm -f ${workFile}`);
+                // 5. 检测配置是否真正发生了变化，避免无意义 Clash 重启
+                let configChanged = true;
+                try {
+                    const currentRouterConfig = await SshService.runRemoteCommand('cat /data/ShellCrash/config.yaml');
+                    if (currentRouterConfig === finalConfig) {
+                        Logger.info('RulesEngine', '配置内容未变化，跳过 Clash 重启');
+                        configChanged = false;
+                    }
+                } catch (e) {
+                    Logger.warn('RulesEngine', '无法读取当前配置进行对比，继续应用', e.message);
+                }
 
-                // Cold restart Clash core
-                await SshService.runRemoteCommand(
-                    'killall mihomo Clash 2>/dev/null; sleep 2; ( /tmp/ShellCrash/mihomo -d /data/ShellCrash -f /data/ShellCrash/config.yaml </dev/null >/dev/null 2>/dev/null & )'
-                );
-                Logger.info('RulesEngine', '等待 Clash 重启...');
-                await new Promise(r => setTimeout(r, 12000));
+                if (configChanged) {
+                    // 把工作文件安全写回 /data
+                    await SshService.runRemoteCommand(`cp -f ${workFile} /data/ShellCrash/config.yaml`);
+                    await SshService.runRemoteCommand(`rm -f ${workFile}`);
+
+                    // Cold restart Clash core
+                    await SshService.runRemoteCommand(
+                        'killall mihomo Clash 2>/dev/null; sleep 2; ( /tmp/ShellCrash/mihomo -d /data/ShellCrash -f /data/ShellCrash/config.yaml </dev/null >/dev/null 2>/dev/null & )'
+                    );
+                    Logger.info('RulesEngine', '等待 Clash 重启...');
+                    await new Promise(r => setTimeout(r, 5000));
+                } else {
+                    // 清理临时文件，不重启
+                    await SshService.runRemoteCommand(`rm -f ${workFile}`);
+                }
 
                 ConfigVersionManager.createSnapshot('/data/ShellCrash/config.yaml', '.applied');
                 try {
