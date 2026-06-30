@@ -6,8 +6,9 @@ const Logger = require('../utils/logger');
 const STATE_FILE = path.join(config.paths.dataDir, 'speedtest_state.json');
 
 const DEFAULT_STATE = {
-    game: { lock: false, lockedNode: null, lastNode: null, lastDelay: 0, lastLoss: 0, lastSamples: '', perNodeResults: [], timestamp: 0 },
-    ai:   { lock: false, lockedNode: null, lastNode: null, lastDelay: 0, lastSamples: '', timestamp: 0 }
+    game: { lock: false, lockedNode: null, lastNode: null, lastDelay: -1, lastLoss: -1, lastSamples: '', perNodeResults: [], timestamp: 0 },
+    ai:   { lock: false, lockedNode: null, lastNode: null, lastDelay: -1, lastSamples: '', timestamp: 0 },
+    proxy: { lock: false, lockedNode: null, lastNode: null, lastDelay: -1, lastSamples: '', timestamp: 0 }
 };
 
 class SpeedtestState {
@@ -18,7 +19,7 @@ class SpeedtestState {
         try {
             if (fs.existsSync(STATE_FILE)) {
                 this._state = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
-                for (const mode of ['game', 'ai']) {
+                for (const mode of ['game', 'ai', 'proxy']) {
                     if (!this._state[mode]) this._state[mode] = DEFAULT_STATE[mode];
                 }
             } else {
@@ -66,7 +67,7 @@ class SpeedtestState {
             state[mode].lastDelay = result.delay;
             if (mode === 'game' && result.loss !== undefined) {
                 state[mode].lastLoss = result.loss;
-                state[mode].lastSamples = `${result.samples}/5`;
+                state[mode].lastSamples = `${result.samples}/3`;
             } else {
                 state[mode].lastSamples = '1/1';
             }
@@ -84,7 +85,8 @@ class SpeedtestState {
                 name: r.name,
                 delay: r.rawDelay || r.delay,
                 loss: r.loss,
-                samples: r.samples
+                samples: r.samples,
+                timestamp: r.timestamp || Date.now()
             }));
         }
         this._save();
@@ -102,7 +104,8 @@ class SpeedtestState {
         const state = this._load();
         return {
             game: { ...state.game },
-            ai: { ...state.ai }
+            ai: { ...state.ai },
+            proxy: { ...state.proxy }
         };
     }
 }

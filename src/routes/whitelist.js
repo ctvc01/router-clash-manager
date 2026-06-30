@@ -52,6 +52,12 @@ router.post('/add', async (req, res) => {
             return res.json({ status: 'success', message: '设备已在白名单中' });
         }
 
+        // 阻止 NAS 宿主机 MAC 加入代理白名单以防断网锁死
+        const localMacs = Validators.getLocalMACs();
+        if (localMacs.includes(mac)) {
+            return res.json({ status: 'success', message: 'NAS 宿主机已自动保护为直连，跳过白名单添加' });
+        }
+
         // 写入路由器配置文件
         await SshService.runRemoteCommand(`echo "${mac}" >> /data/ShellCrash/configs/mac`);
 

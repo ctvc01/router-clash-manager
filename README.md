@@ -1,5 +1,19 @@
-# Clash Meta 🚀
-> Clash (Mihomo) 网页端设备分流与游戏加速管理器
+# Clash Meta Manager 🚀
+
+<p align="center">
+  <!-- 扁平化状态徽章 -->
+  <a href="https://github.com/ctvc01/router-clash-manager"><img src="https://img.shields.io/badge/Release-v1.2.0-orange?style=flat-square" alt="Release"></a>
+  <a href="https://github.com/ctvc01/router-clash-manager"><img src="https://img.shields.io/badge/Build-passing-green?style=flat-square" alt="Build"></a>
+  <a href="https://github.com/ctvc01/router-clash-manager"><img src="https://img.shields.io/badge/License-MIT-blue?style=flat-square" alt="License"></a>
+  <a href="https://github.com/ctvc01/router-clash-manager"><img src="https://img.shields.io/badge/PRs-Welcome-brightgreen?style=flat-square" alt="PRs Welcome"></a>
+</p>
+
+<p align="center">
+  <strong>专为 Clash (Mihomo) 打造的网页端设备分流与游戏加速控制台。</strong><br>
+  提供设备级透明代理一键分流、AI 强化网络通道、Switch 联机节点锁定加速与防火墙自愈守护，免去逐台设备配置烦恼。
+</p>
+
+---
 
 <table align="center" border="0">
   <tr>
@@ -12,33 +26,60 @@
   </tr>
 </table>
 
-**Clash Meta** 是一款 Clash (Mihomo) 辅助控制台。通过容器部署，以 SSH 协议安全联动 Clash Meta 内核，提供设备级透明代理、AI 强化分流和 Switch 游戏加速功能。
+---
+
+## ✨ 核心特性
+
+* **📱 设备自动发现与一键分流**：局域网在线设备自动扫描并记录，支持设备别名映射。为不同成员一键分配“直连、网页代理、AI 强化、游戏加速”四种分流模式。
+* **🎮 游戏加速物理锁定**：提供专线节点测速组与手动**锁定机制**。游戏设备切换物理出口后自动设为锁定，防止后台测速任务重置出口引起联机中断。
+* **🤖 AI 模式避港加速**：硬编码注入 28+ 常见 AI 域名（OpenAI/Gemini/Claude 等），AI 强化出口物理过滤并排除香港节点，保障 AI 链路稳定连通。
+* **🛡️ 防火墙引流自愈与 QUIC 阻断**：后台常驻防火墙守护进程。防范防火墙重启规则冲刷，自动阻断 UDP 443 QUIC 流量以强制浏览器回退 TCP 接受 HTTPS 透明劫持。
+* **⚡ 极致优化的测速机制**：引入“死节点 3 秒熔断快速断联”与“2小时时效性缓存”策略，对不通节点直接短路跳过，测速流程耗时大减 60%。
 
 ---
 
-## 🎯 使用场景
+## 🚀 快速上手
 
-* **🧑‍👩‍👧‍👦 多设备策略统一管理**：手机要翻墙，电视要直连（否则国内 App 卡顿），Switch 需要游戏专线。Web UI 为每台设备一键分配独立策略，无需逐台配置。
-* **🎮 Switch 联机不掉线**：节点自动切换时出口 IP 突变会打断任天堂联机匹配。游戏模式提供节点**锁定功能**，永不自动切换。配合 Nintendo CDN 域名规则，商店和下载走游戏专线。
-* **🤖 AI 服务加速**：香港 IP 被 Google AI 服务封禁，普通代理可能路由到香港出口导致无法访问。AI 强化模式排除香港节点，保障 AI API 稳定连接。
-* **❌ YouTube 无法播放**：浏览器优先使用 QUIC (UDP 443) 绕过透明代理。系统自劫阻断 QUIC 回退到 TCP，配合 SNI 嗅探确保 HTTPS 正常代理。
-* **🔄 配置自愈**：系统启动时自动检测并恢复代理配置、设备白名单和转发规则，无需手动干预。
+### 1. 前置准备
+- 部署宿主机已安装 Docker / Docker Compose。
+- 路由器上已安装运行 Clash Meta (Mihomo) 内核并开启 SSH。
+- 获取路由器的 SSH 登录凭证。
+
+### 2. 启动容器
+```bash
+git clone https://github.com/ctvc01/router-clash-manager.git
+cd router-clash-manager
+
+# 参考 .env.example 配置环境变量
+cp .env.example .env
+nano .env
+
+# 构建并启动服务
+docker compose up -d --build
+```
+启动后访问 `http://<宿主机IP>:3000` 即可开启设备网关控制台。
 
 ---
 
-## 🌟 核心功能
+## ⚙️ 详细参数与架构细节
 
-* **📱 设备自动发现与策略分流**：自动扫描在线局域网设备，支持自定义别名。一键切换**直连/代理/AI 强化/游戏加速**四种状态。
-* **🎮 游戏加速**：独立游戏节点池，实测目标 CDN 选优。5 次多采样丢包+延迟测速，**丢包率优先**再比延迟。
-* **🤖 AI 强化**：硬编码 28+ AI 域名规则（OpenAI/Gemini/Claude/Google AI），独立节点池排除香港，确保 AI 服务稳定。
-* **🔒 LOCK/UNLOCK 锁定机制**：锁定节点后不触发测速切换，仅断连或 100% 丢包时才故障转移。任何模式均可启用。
-* **🧬 SNI 嗅探**：TLS 连接嗅探，无需 geoip/geosite 数据库即可识别目标域名。
-* **🛡️ SystemValidator**：设备连续多次检查不在线后才从配置中移除，防止启动瞬间误清。
-* **⏰ 定时优化**：每日凌晨重测最优节点。常规测速每 30 分钟一次，克制切换阈值 >200ms。
+<details>
+<summary><b>点击查看环境变量与高阶参数配置表 (Environment Variables)</b></summary>
 
----
+| 变量名 | 默认值 | 描述 |
+|--------|--------|------|
+| `PORT` | `3000` | 容器 Web UI 的服务监听端口 |
+| `ROUTER_IP` | `192.168.31.1` | 路由器的 LAN 局域网网关 IP |
+| `ROUTER_USER` | `root` | 路由器 SSH 登录用户名 |
+| `ROUTER_PASSWORD` | - | 路由器 SSH 登录密码 |
+| `CLASH_PORT` | `9999` | Clash 内核 REST API 的控制端口 |
+| `PROXY_PORT` | `7890` | Clash 内核监听的 HTTP/SOCKS 代理端口 |
+| `DNS_PORT` | `1053` | Clash 内核的 DNS 劫持监听端口 |
 
-## 📁 项目结构
+</details>
+
+<details>
+<summary><b>点击查看项目目录树结构 (Directory Structure)</b></summary>
 
 ```
 src/
@@ -47,77 +88,41 @@ src/
 ├── config.js               # 配置管理
 ├── services/
 │   ├── rulesEngine.js      # Clash 规则/代理组注入引擎（AI 域名 + Nintendo CDN 域名）
-│   ├── gameAccService.js   # 游戏加速：5 采样多目标 CDN 测速、区域加权
-│   ├── aiBoostService.js   # AI 强化：单采样延迟测速、香港过滤
+│   ├── gameAccService.js   # 游戏加速：3 采样多目标 CDN 测速、区域加权、死节点熔断
+│   ├── aiBoostService.js   # AI 强化：香港过滤与自愈锁定守护
 │   ├── accelerationService.js # 启用/禁用加速统一入口
-│   ├── sshService.js       # SSH 命令执行与文件传输
-│   ├── clashService.js     # Clash HTTP API（带缓存）
-│   ├── speedtestState.js   # 测速结果持久化 + LOCK/UNLOCK 状态
-│   └── systemValidator.js  # 启动完整性验证
+│   ├── sshService.js       # SSH 隧道建立、命令执行与文件传输
+│   ├── clashService.js     # Clash HTTP API 交互
+│   └── speedtestState.js   # 测速状态存盘与全局锁定持久化
 ├── routes/
-│   ├── gateway.js          # /api/status, /api/nodes, /api/select
+│   ├── gateway.js          # /api/status, /nodes 汇总, /select 切换
 │   ├── devices.js          # /api/devices 设备发现
-│   ├── ai.js / game.js     # AI/Game 模式开关
-│   ├── speedtest.js        # /api/speedtest/status, /lock, /trigger
-│   └── whitelist.js        # MAC 白名单管理
-├── utils/
-│   ├── clashApiProxy.js    # Clash API 代理（SSH 隧道 + 缓存）
-│   └── proxyGroupDetector.js # 代理组链解析器
-scripts/
-├── setup_iptables.sh       # iptables TCP REDIRECT 重建
-├── setup_quic_block.sh     # UDP 443 QUIC 阻断
-└── check_modes.sh          # 四模式连通性检测
+│   └── whitelist.js        # MAC 旁路白名单管理
 public/
-├── index.html + app.js + style.css  # 前端 UI
+├── index.html + app.js + style.css  # 前端单页 Web 控制台 (极简 HSL 深黑质感)
 ```
 
----
+</details>
 
-## 🛠️ 前置条件
+<details>
+<summary><b>点击查看游戏模式测速与精细分流逻辑 (Routing Specs)</b></summary>
 
-* 部署设备上安装 Docker 和 docker-compose
-* 目标路由器已开启 SSH，安装了 Clash Meta (Mihomo) 内核
-* 知晓路由器的 SSH 登录凭证
+* **采样降级与死节点熔断**：测速采样缩减为更轻量的 3 次。首包测试超时 (delay === 0) 触发熔断保护，直接判定为死节点跳出，不再对该节点进行余下 2 次测试。
+* **下载流量 DIRECT 逃逸**：联机与对局域名路由至 `🎮 游戏加速` 节点组，而普通大流量下载 CDN 域名（如 `*.download.nintendo.net` 等）强制直连 (`DIRECT`) 跑满物理大宽带。
+* **DNS fake-ip-filter 避让**：在 DNS 注入中自动写入 `+.nintendo.net` 与 `+.nintendo.com`，使主机在联机探测时获取真实公网 IP，确保 Switch 联机 P2P 能建立 Full Cone，维持 NAT-A/B 等级。
 
----
-
-## ⚡ 快速启动
-
-```bash
-git clone <your-repo-url>
-cd router-clash-manager
-
-# 参考 .env.example 配置环境变量
-docker compose up -d --build
-```
+</details>
 
 ---
 
-## 🖥️ 前端页面
+## 🤝 参与贡献
 
-| 卡片 | 说明 |
-|------|------|
-| 网关状态 | Clash 进程运行状态 + 启动时长 |
-| 当前节点 | 已解析的物理节点名 + 实时延迟 |
-| 设备状态 | 代理设备/全部设备 + 模式分布进度条 |
-| 磁盘占用 | 磁盘用量监控 |
+非常欢迎任何形式的贡献与建议！请查阅 [Contributing Guide](CONTRIBUTING.md)。
 
-**节点详情弹窗**：三模式独立节点下拉（延迟排序）、游戏丢包率显示、LOCK/UNLOCK 一键锁定。
+<a href="https://github.com/ctvc01/router-clash-manager/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=ctvc01/router-clash-manager" />
+</a>
 
----
+## 📄 开源协议
 
-## 🎮 游戏模式测速策略
-
-| 指标 | 说明 |
-|------|------|
-| 采样 | 每节点 5 次，间隔 200ms |
-| 测速目标 | 任天堂 CDN（连通性 + 下载点） |
-| 区域加权 | 日本节点权重 0.75、台湾 0.85、韩国 0.90 |
-| 排序策略 | 丢包率优先 → 同丢包按加权延迟 |
-| LOCKED | 只更新测速结果不切换，断连时故障转移 |
-
----
-
-## 📄 许可证
-
-MIT
+基于 [MIT](LICENSE) 协议开源。

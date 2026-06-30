@@ -84,7 +84,7 @@ class ClashService {
     }
 
     // 测试单个节点延迟 (全局串行队列保护，保证对路由器零并发冲击)
-    static async testNodeDelay(nodeName, timeoutMs = 4000, testUrl = 'http://ctest.cdn.nintendo.net/') {
+    static async testNodeDelay(nodeName, timeoutMs = 4000, testUrl = 'http://www.gstatic.com/generate_204') {
         return new Promise((resolve) => {
             delayTestQueue = delayTestQueue.then(async () => {
                 try {

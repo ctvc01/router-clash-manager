@@ -17,6 +17,14 @@ class AccelerationService {
         const otherModeName = isGame ? 'AI 强化' : '游戏加速';
 
         const macs = service.readAccelerationDevices?.() || service.readGameDevices?.() || service.readAiDevices();
+        
+        const Validators = require('../utils/validators');
+        const localMacs = Validators.getLocalMACs();
+        if (localMacs.includes(mac.toLowerCase())) {
+            Logger.warn(label, `已阻断为 NAS 宿主机设备 ${mac} 启用 ${modeName}，强制保持直连。`);
+            return false;
+        }
+
         let otherMacs = otherService.readAccelerationDevices?.() || otherService.readGameDevices?.() || otherService.readAiDevices();
 
         // 互斥处理

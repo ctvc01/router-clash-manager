@@ -138,7 +138,6 @@ class AiBoostService {
         }
     }
 
-    // 内部方法：执行单次 AI 节点可用性心跳检测
     static async _checkAiNodeHealth() {
         const aiMacs = this.readAiDevices();
         if (aiMacs.length === 0) {
@@ -147,10 +146,20 @@ class AiBoostService {
         }
 
         try {
+            const isLocked = SpeedtestState.isLocked('ai');
+            const lockedNode = SpeedtestState.getLockedNode('ai');
+
             const proxiesData = await ClashService.getProxies();
             const group = proxiesData.proxies['🤖 AI强化'];
             if (!group || !group.now) return;
-            
+
+            // 🛡️ 守护状态一致性：如果是锁定状态，且 Clash 当前选中的并不是该锁定物理节点，自动重置并恢复切换
+            if (isLocked && lockedNode && group.now !== lockedNode) {
+                Logger.info('AiBoost', `🛡️ 检测到 AI 模式锁定节点不一致 (当前: ${group.now}, 预期: ${lockedNode})，正在自动恢复重置...`);
+                const restored = await this.lockAiNode(lockedNode);
+                if (restored) return; // 恢复成功，本轮检测结束，防止并发冲突
+            }
+
             const currentNode = group.now;
             // 排除自动策略组名称，只有锁死到具体的物理节点才进行可用性保护
             if (['⚡ AI自动测速', '🚀 节点选择', '♻️ 自动选择', '👑 高级节点', 'DIRECT'].includes(currentNode)) {
@@ -163,6 +172,9 @@ class AiBoostService {
                 const fastestNode = await this.findFastestAiNode();
                 if (fastestNode && fastestNode.name !== currentNode) {
                     await this.lockAiNode(fastestNode.name);
+                    if (SpeedtestState.isLocked('ai')) {
+                        SpeedtestState.setLockedNode('ai', fastestNode.name);
+                    }
                 }
             }
         } catch (err) {

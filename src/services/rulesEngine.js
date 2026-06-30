@@ -91,16 +91,16 @@ class RulesEngine {
                     '  fake-ip-range: 198.18.0.1/16',
                     '  prefer-h3: false',
                     '  nameserver:',
+                    '    - 192.168.31.1',
                     '    - 114.114.114.114',
                     '    - 223.5.5.5',
                     '    - 119.29.29.29',
-                    '  fallback:',
-                    '    - 8.8.8.8',
-                    '    - 1.1.1.1',
-                    '  fallback-filter:',
-                    '    geoip: true',
-                    '    geoip-code: CN',
-                    '  store-fake-ip: true'
+                    '  store-fake-ip: true',
+                    '  fake-ip-filter:',
+                    '    - +.nintendo.net',
+                    '    - +.nintendo.com',
+                    '    - +.nintendowifi.net',
+                    '  cache-size: 8192'
                 );
             }
         }
@@ -120,17 +120,17 @@ class RulesEngine {
                     '  fake-ip-range: 198.18.0.1/16',
                     '  prefer-h3: false',
                     '  nameserver:',
-                    '    - 114.114.114.114',
-                    '    - 223.5.5.5',
-                    '    - 119.29.29.29',
-                    '  fallback:',
-                    '    - 8.8.8.8',
-                    '    - 1.1.1.1',
-                    '  fallback-filter:',
-                    '    geoip: true',
-                    '    geoip-code: CN',
-                    '  store-fake-ip: true'
-                ];
+                '    - 192.168.31.1',
+                '    - 114.114.114.114',
+                '    - 223.5.5.5',
+                '    - 119.29.29.29',
+                    '  store-fake-ip: true',
+                    '  fake-ip-filter:',
+                    '    - +.nintendo.net',
+                    '    - +.nintendo.com',
+                    '    - +.nintendowifi.net',
+                    '  cache-size: 8192'
+        ];
                 configLines.splice(insertIdx + 1, 0, ...dnsLines);
                 insertIdx += dnsLines.length;
             }
@@ -191,6 +191,8 @@ class RulesEngine {
 
                 const cnRuleLines = [
                     '# === CN DIRECT RULES START ===',
+                    // Apple CDN 全段直连（Shadowrocket skip-proxy 等效，17.0.0.0/8 为 Apple 专属 AS714）
+                    '- IP-CIDR,17.0.0.0/8,DIRECT,no-resolve',
                     // 视频/直播 CDN — 小红书、字节跳动/抖音、快手、B站
                     '- DOMAIN-SUFFIX,xhscdn.com,DIRECT',
                     '- DOMAIN-SUFFIX,snssdk.com,DIRECT',
@@ -302,20 +304,18 @@ class RulesEngine {
 
                 const gameRuleLines = [
                     '# === GAME RULES START ===',
-                    '- DOMAIN-SUFFIX,atlas-content.nintendo.net,🎮 游戏加速',
-                    '- DOMAIN-SUFFIX,atum-ec.nintendo.net,🎮 游戏加速',
-                    '- DOMAIN-SUFFIX,atum.download.nintendo.net,🎮 游戏加速',
-                    '- DOMAIN-SUFFIX,receive-lp1.dg.srv.nintendo.net,🎮 游戏加速',
+                    // 联机匹配、商城与连通测速走游戏加速
                     '- DOMAIN-SUFFIX,ctest.cdn.nintendo.net,🎮 游戏加速',
                     '- DOMAIN-SUFFIX,bugyo.hac.lp1.eshop.nintendo.net,🎮 游戏加速',
                     '- DOMAIN-SUFFIX,api.accounts.nintendo.com,🎮 游戏加速',
                     '- DOMAIN-SUFFIX,accounts.nintendo.com,🎮 游戏加速',
                     '- DOMAIN-SUFFIX,ec.nintendo.net,🎮 游戏加速',
-                    // Nintendo 游戏下载 CDN（Akamai edgesuite 入口）
-                    '- DOMAIN-SUFFIX,hac.lp1.d4c.nintendo.net,🎮 游戏加速',
-                    // 所有 Nintendo 域名兜底（覆盖未来 CDN 变化）
-                    '- DOMAIN-SUFFIX,nintendo.net,🎮 游戏加速',
-                    '- DOMAIN-SUFFIX,nintendo.com,🎮 游戏加速',
+                    '- DOMAIN-SUFFIX,atlas-content.nintendo.net,🎮 游戏加速',
+                    '- DOMAIN-SUFFIX,atum-ec.nintendo.net,🎮 游戏加速',
+                    '- DOMAIN-SUFFIX,receive-lp1.dg.srv.nintendo.net,🎮 游戏加速',
+                    // 大流量游戏/补丁下载 CDN 走直连 (DIRECT) 跑满物理大宽带
+                    '- DOMAIN-SUFFIX,atum.download.nintendo.net,DIRECT',
+                    '- DOMAIN-SUFFIX,hac.lp1.d4c.nintendo.net,DIRECT',
                     '# === GAME RULES END ==='
                 ];
 
@@ -353,21 +353,78 @@ class RulesEngine {
             }
 
             const groupLines = [];
-            const selectMatch = currentConfig.match(/name:\s*['"]?([^'"\n]*(?:选择节点|节点选择))['"]?/);
+            const selectMatch = currentConfig.match(/name:\s*['"]?([^\n'",{}]*(?:选择节点|节点选择))['"]?/);
             const actualNodeSelect = selectMatch ? selectMatch[1] : PROXY_GROUPS.NODE_SELECT;
 
+            // 提取物理节点名称以供自适应注入
+            const physicalNodeNames = [];
+            let inProxiesBlock = false;
+            for (let i = 0; i < configLines.length; i++) {
+                const line = configLines[i].trim();
+                if (line === 'proxies:') {
+                    inProxiesBlock = true;
+                    continue;
+                }
+                if (inProxiesBlock) {
+                    if (line.length > 0 && !line.startsWith('-') && !line.startsWith(' ') && !line.startsWith('#')) {
+                        inProxiesBlock = false;
+                    } else if (line.startsWith('-')) {
+                        const nameMatch = line.match(/"name"\s*:\s*"([^"]+)"/) || line.match(/name:\s*['"]?([^'"\n]+)['"]?/);
+                        if (nameMatch) {
+                            physicalNodeNames.push(nameMatch[1].trim());
+                        }
+                    }
+                }
+            }
+
+            // 获取可用的 proxy-provider 名称进行兜底
+            let providerName = 'subscription';
+            const providerMatch = currentConfig.match(/^\s*([^\s#:]+):\s*\n\s*type:\s*http/m);
+            if (providerMatch) {
+                providerName = providerMatch[1];
+            }
+
             if (gameMacs.length > 0) {
-                // 注入游戏自动测速组（日韩台节点，URLTest自动选最快）
-                groupLines.push(`${indent}- {name: '${PROXY_GROUPS.GAME_SPEEDTEST}', type: url-test, tolerance: 50, interval: 300, use: [subscription], filter: "(?i)(Japan|Korea|Taiwan|日本|韩国|台灣|台湾|JP|KR|TW)"}`);
-                // 游戏加速选择器：游戏测速组优先，所有日韩台节点可供直选，兜底走主选择器
-                groupLines.push(`${indent}- {name: '${PROXY_GROUPS.GAME_ACC}', type: select, proxies: ['${PROXY_GROUPS.GAME_SPEEDTEST}', '${actualNodeSelect}', 'DIRECT'], use: [subscription], filter: "(?i)(Japan|Korea|Taiwan|日本|韩国|台灣|台湾|JP|KR|TW)"}`);
+                if (physicalNodeNames.length > 0) {
+                    let gameNodes = physicalNodeNames.filter(name => /(Japan|Korea|Taiwan|日本|韩国|台灣|台湾|JP|KR|TW)/i.test(name));
+                    if (gameNodes.length === 0) gameNodes = physicalNodeNames.slice(0, 15);
+                    const nodesStr = gameNodes.map(n => `'${n}'`).join(', ');
+                    groupLines.push(`${indent}- {name: '${PROXY_GROUPS.GAME_SPEEDTEST}', type: url-test, tolerance: 50, interval: 300, proxies: [${nodesStr}]}`);
+                    groupLines.push(`${indent}- {name: '${PROXY_GROUPS.GAME_ACC}', type: select, proxies: ['${PROXY_GROUPS.GAME_SPEEDTEST}', '${actualNodeSelect}', 'DIRECT']}`);
+                } else {
+                    groupLines.push(`${indent}- {name: '${PROXY_GROUPS.GAME_SPEEDTEST}', type: url-test, tolerance: 50, interval: 300, use: [${providerName}], filter: "(?i)(Japan|Korea|Taiwan|日本|韩国|台灣|台湾|JP|KR|TW)"}`);
+                    groupLines.push(`${indent}- {name: '${PROXY_GROUPS.GAME_ACC}', type: select, proxies: ['${PROXY_GROUPS.GAME_SPEEDTEST}', '${actualNodeSelect}', 'DIRECT'], use: [${providerName}], filter: "(?i)(Japan|Korea|Taiwan|日本|韩国|台灣|台湾|JP|KR|TW)"}`);
+                }
             }
 
             if (aiMacs.length > 0) {
-                // 注入 AI 自动测速组（IPLC 中继节点，排除直連以提高稳定性）
-                groupLines.push(`${indent}- {name: '${PROXY_GROUPS.AI_SPEEDTEST}', type: url-test, tolerance: 100, interval: 600, use: [subscription], filter: "(?i)(IPLC|IEPL).*(A-[0-9]|gRPC)"}`);
-                // AI 强化选择器：AI 测速组优先，所有 IPLC 节点可供直选，兜底走主选择器
-                groupLines.push(`${indent}- {name: '${PROXY_GROUPS.AI_BOOST}', type: select, proxies: ['${PROXY_GROUPS.AI_SPEEDTEST}', 'DIRECT'], use: [subscription], filter: "(?i)(IPLC|IEPL).*(A-[0-9]|gRPC)"}`);
+                const aiGroupProxies = [actualNodeSelect];
+                const groupMatches = currentConfig.matchAll(/name:\s*['"]?([^\n'",{}]*(?:自动|Auto|节点)[^\n'",{}]*)['"]?/gi);
+                for (const match of groupMatches) {
+                    const gName = match[1].trim();
+                    if (gName !== PROXY_GROUPS.AI_BOOST && gName !== PROXY_GROUPS.AI_SPEEDTEST &&
+                        gName !== PROXY_GROUPS.GAME_ACC && gName !== PROXY_GROUPS.GAME_SPEEDTEST &&
+                        !aiGroupProxies.includes(gName)) {
+                        aiGroupProxies.push(gName);
+                    }
+                }
+                
+                // 将所有物理节点也追加入备选，使其支持任意节点的点选锁定
+                if (physicalNodeNames.length > 0) {
+                    for (const pName of physicalNodeNames) {
+                        if (!aiGroupProxies.includes(pName)) {
+                            aiGroupProxies.push(pName);
+                        }
+                    }
+                }
+                
+                const aiProxiesStr = aiGroupProxies.map(n => `'${n}'`).join(', ');
+                
+                if (physicalNodeNames.length > 0) {
+                    groupLines.push(`${indent}- {name: '${PROXY_GROUPS.AI_BOOST}', type: select, proxies: [${aiProxiesStr}]}`);
+                } else {
+                    groupLines.push(`${indent}- {name: '${PROXY_GROUPS.AI_BOOST}', type: select, proxies: [${aiProxiesStr}], use: [${providerName}]}`);
+                }
             }
 
             if (groupLines.length > 0) {
@@ -477,6 +534,7 @@ class RulesEngine {
                     await SshService.runRemoteCommand(
                         'killall mihomo Clash 2>/dev/null; sleep 2; ( /tmp/ShellCrash/mihomo -d /data/ShellCrash -f /data/ShellCrash/config.yaml </dev/null >/dev/null 2>/dev/null & )'
                     );
+                    SshService.updateLastRestartTime();
                     Logger.info('RulesEngine', '等待 Clash 重启...');
                     await new Promise(r => setTimeout(r, 5000));
                 } else {

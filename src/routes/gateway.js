@@ -211,6 +211,18 @@ router.get('/status', async (req, res) => {
             const nodeInfo = await nodeInfoPromise;
             currentNode = nodeInfo.name;
             latency = nodeInfo.delay;
+
+            // 自动测速自愈：如果当前正在代理的物理节点无延迟数据，后台异步触发一次单次测速
+            if (latency === 0 && currentNode && currentNode !== 'DIRECT' && currentNode !== '未知') {
+                ClashService.testNodeDelay(currentNode, 3000, 'http://www.gstatic.com/generate_204')
+                    .then(newDelay => {
+                        if (newDelay > 0) {
+                            Logger.info('Gateway', `已自动为无延迟当前节点 ${currentNode} 触发异步测速: ${newDelay} ms`);
+                            ClashService.clearProxiesCache(); // 强制清除节点信息缓存
+                        }
+                    })
+                    .catch(() => {});
+            }
         } catch (e) {
             Logger.debug('Gateway', '获取当前节点失败', e);
         }
@@ -354,6 +366,25 @@ router.get('/nodes', async (req, res) => {
                                      lowerName.includes('游戏');
                     return isGameKey || (node.delay > 0 && node.delay < 120);
                 });
+
+                // 2小时时效性兜底：合并 cache 中 2 小时以内的丢包率测速结果
+                try {
+                    const SpeedtestState = require('../services/speedtestState');
+                    const state = SpeedtestState.get('game') || {};
+                    const perNode = state.perNodeResults || [];
+                    const cacheMap = new Map(perNode.map(item => [item.name, item]));
+                    nodes.forEach(node => {
+                        const cached = cacheMap.get(node.name);
+                        if (cached && cached.loss !== undefined && cached.timestamp) {
+                            const age = Date.now() - cached.timestamp;
+                            if (age < 7200000) { // 2小时 (120 分钟)
+                                node.loss = cached.loss;
+                            }
+                        }
+                    });
+                } catch (e) {
+                    Logger.debug('Gateway', '组装游戏节点丢包率缓存数据异常', e);
+                }
             }
 
             // 分离存活节点和无测速死节点
@@ -446,9 +477,69 @@ router.post('/select', async (req, res) => {
 
         const success = await ClashService.selectProxyNode(group, node);
         if (success) {
-            ClashService.testNodeDelay(node).catch(e =>
-                Logger.debug('Gateway', '节点延迟测试失败', e)
-            );
+            try {
+                const SshService = require('../services/sshService');
+                SshService.updateLastRestartTime();
+            } catch (e) {
+                Logger.debug('Gateway', '更新重启自愈冷却时间失败', e);
+            }
+            const isGame = group.includes('游戏') || group.toLowerCase().includes('game');
+            const isAi = group.includes('AI');
+            
+            const testUrl = isGame ? 'http://ctest.cdn.nintendo.net/' 
+                                   : (isAi ? 'https://generativelanguage.googleapis.com/' : 'http://www.gstatic.com/generate_204');
+
+            // 自动将模式锁定到用户手动选定的物理节点，避免被后台轮询自动覆盖
+            const mode = isGame ? 'game' : (isAi ? 'ai' : 'proxy');
+            if (mode && node !== 'DIRECT' && !['⚡ AI自动测速', '⚡ 游戏自动测速', '🚀 节点选择', '♻️ 自动选择', '👑 高级节点'].includes(node)) {
+                try {
+                    const SpeedtestState = require('../services/speedtestState');
+                    SpeedtestState.setLockedNode(mode, node);
+                    Logger.info('Gateway', `用户手动切换物理节点，已自动将 ${mode} 模式锁定到: ${node}`);
+                } catch (lockErr) {
+                    Logger.error('Gateway', `自动锁定 ${mode} 节点异常`, lockErr);
+                }
+            }
+
+            ClashService.testNodeDelay(node, 3000, testUrl).then(delay => {
+                if (delay > 0) ClashService.clearProxiesCache(); // 清缓存刷新
+            }).catch(e => Logger.debug('Gateway', '切换节点单次延迟测试失败', e));
+
+            // 游戏模式额外处理：启动新选中节点的丢包率背景估测并刷入 SpeedtestState
+            if (isGame && node !== 'DIRECT') {
+                (async () => {
+                    try {
+                        const NODE_SAMPLES = 3;
+                        let successCount = 0, totalDelay = 0;
+                        for (let i = 0; i < NODE_SAMPLES; i++) {
+                            const delay = await ClashService.testNodeDelay(node, 2500, 'http://ctest.cdn.nintendo.net/');
+                            if (delay > 0) { successCount++; totalDelay += delay; }
+                            await new Promise(r => setTimeout(r, 200));
+                        }
+                        const loss = (NODE_SAMPLES - successCount) / NODE_SAMPLES;
+                        const avgDelay = successCount > 0 ? Math.round(totalDelay / successCount) : 0;
+                        
+                        // 更新 perNodeResults 并写入存储，以便前端直接读取
+                        const SpeedtestState = require('../services/speedtestState');
+                        const currentStatus = SpeedtestState.getStatus();
+                        const results = currentStatus.game.perNodeResults || [];
+                        
+                        const nodeIdx = results.findIndex(r => r.name === node);
+                        const nodeRes = { name: node, delay: avgDelay, loss, samples: successCount };
+                        if (nodeIdx !== -1) {
+                            results[nodeIdx] = nodeRes;
+                        } else {
+                            results.push(nodeRes);
+                        }
+                        SpeedtestState.updateGamePerNodeResults(results);
+                        SpeedtestState.updateResult('game', nodeRes);
+                        Logger.info('Gateway', `已为新切换的游戏节点 ${node} 完成丢包率异步速测: ${loss * 100}% 丢包, ${avgDelay}ms`);
+                    } catch (e) {
+                        Logger.debug('Gateway', `切换游戏节点丢包速测失败: ${e.message}`);
+                    }
+                })();
+            }
+
             res.json({ status: 'success' });
         } else {
             res.status(500).json({ status: 'error', message: 'Clash API 切换节点失败' });

@@ -44,7 +44,7 @@ router.get('/', async (req, res) => {
                 }
             })(),
             SshService.runRemoteCommand('cat /data/ShellCrash/configs/mac'),
-            SshService.runRemoteCommand('ubus call trafficd hw').catch(() => '{}')
+            SshService.runRemoteCommand('timeout -t 3 ubus call trafficd hw 2>/dev/null || timeout 3 ubus call trafficd hw').catch(() => '{}')
         ]);
 
         const gameMacs = GameAccService.readGameDevices().map(m => m.toLowerCase());

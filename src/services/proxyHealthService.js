@@ -224,7 +224,7 @@ class ProxyHealthService {
             if (!proxiesData || !proxiesData.proxies) return;
 
             // 优先匹配主策略组
-            const testGroupName = '🚀 选择节点';
+            const testGroupName = '🚀 节点选择';
             const groupInfo = proxiesData.proxies[testGroupName];
             if (!groupInfo || !groupInfo.all || groupInfo.all.length === 0) {
                 Logger.warn('ProxyDaemon', `未找到策略组 [${testGroupName}]，跳过定时全节点刷新`);

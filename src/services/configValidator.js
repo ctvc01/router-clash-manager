@@ -125,31 +125,7 @@ class ConfigValidator {
         return results;
     }
 
-    // 对比两个配置的差异
-    static async compareConfigs(oldPath, newPath) {
-        try {
-            const oldContent = await SshService.runRemoteCommand(`cat ${oldPath}`);
-            const newContent = await SshService.runRemoteCommand(`cat ${newPath}`);
 
-            const oldLines = oldContent.split('\n').length;
-            const newLines = newContent.split('\n').length;
-
-            // 简单的diff统计
-            const changes = {
-                oldLineCount: oldLines,
-                newLineCount: newLines,
-                linesDiff: newLines - oldLines,
-                hasRulesChanges: oldContent.includes('# === AI RULES START') !== newContent.includes('# === AI RULES START'),
-                hasGroupChanges: oldContent.includes('proxy-groups:') !== newContent.includes('proxy-groups:')
-            };
-
-            Logger.debug('ConfigValidator', '配置差异分析完成');
-            return changes;
-        } catch (e) {
-            Logger.error('ConfigValidator', '配置对比失败', e);
-            return null;
-        }
-    }
 
     // 预检查：在应用规则前先验证
     static async preCheckBeforeApply(configPath) {

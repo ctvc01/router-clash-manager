@@ -114,6 +114,25 @@ const Validators = {
         }
 
         return trimmedCmd;
+    },
+
+    // 获取 NAS 宿主机所有网卡 MAC 地址
+    getLocalMACs() {
+        const os = require('os');
+        const macs = [];
+        try {
+            const interfaces = os.networkInterfaces();
+            for (const name of Object.keys(interfaces)) {
+                for (const net of interfaces[name]) {
+                    if (net.mac && net.mac !== '00:00:00:00:00:00') {
+                        macs.push(net.mac.toLowerCase());
+                    }
+                }
+            }
+        } catch (e) {
+            // Ignore
+        }
+        return macs;
     }
 };
 

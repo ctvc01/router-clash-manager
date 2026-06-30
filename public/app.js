@@ -1284,6 +1284,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function updateLockBadges() {
         const game = state.speedtest.game || {};
         const ai = state.speedtest.ai || {};
+        const proxy = state.speedtest.proxy || {};
         const updateBadge = (el, locked) => {
             if (!el) return;
             el.textContent = locked ? 'LOCKED' : 'UNLOCK';
@@ -1292,7 +1293,7 @@ document.addEventListener('DOMContentLoaded', () => {
         };
         updateBadge(elBadgeGameLock, game.lock);
         updateBadge(elBadgeAiLock, ai.lock);
-        updateBadge(elBadgeProxyLock, false);
+        updateBadge(elBadgeProxyLock, proxy.lock);
     }
 
     // LOCK/UNLOCK 切换
@@ -1308,7 +1309,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await res.json();
             state.speedtest[mode] = data;
             updateLockBadges();
-            showToast(newLock ? `${mode === 'ai' ? 'AI' : 'Game'} 已锁定` : `${mode === 'ai' ? 'AI' : 'Game'} 已解锁`);
+            const modeName = mode === 'ai' ? 'AI' : (mode === 'game' ? '游戏' : '常规代理');
+            showToast(newLock ? `${modeName}已锁定` : `${modeName}已解锁`);
         } catch (e) {
             showToast('操作失败');
         }
@@ -1364,11 +1366,12 @@ document.addEventListener('DOMContentLoaded', () => {
             elNodeGameDelay.className = `${getDelayClass(game.delay)}`;
             if (elNodeGameLoss) {
                 const lossNum = gameState.lastLoss;
-                const lossPct = lossNum > 0 ? (lossNum * 100).toFixed(0) + '%' : (lossNum === 0 ? '0%' : '--%');
+                const hasLoss = lossNum !== undefined && lossNum >= 0;
+                const lossPct = hasLoss ? (lossNum > 0 ? (lossNum * 100).toFixed(0) + '%' : '0%') : '--%';
                 elNodeGameLoss.innerHTML = '';
                 const pctSpan = document.createElement('span');
                 pctSpan.textContent = lossPct + ' ';
-                pctSpan.className = lossNum === 0 ? 'text-green' : lossNum <= 0.2 ? 'text-orange' : 'text-red';
+                pctSpan.className = hasLoss ? (lossNum === 0 ? 'text-green' : lossNum <= 0.2 ? 'text-orange' : 'text-red') : 'text-muted';
                 const labelSpan = document.createElement('span');
                 labelSpan.textContent = '丢包';
                 labelSpan.style.cssText = 'font-size:10px; color: var(--text-secondary);';
@@ -1384,12 +1387,11 @@ document.addEventListener('DOMContentLoaded', () => {
             // 4. 动态渲染游戏节点下拉菜单（仅物理节点，排除 Selector/URLTest）
             elGameDropdownListContainer.innerHTML = '';
             const allCandidates = [];
-            const perNodeResults = gameState.perNodeResults || [];
             (game.all || []).forEach(node => {
                 if (node && node.name) {
                     const isGroup = groupKeywords.some(k => node.name.includes(k));
                     if (!isGroup) {
-                        allCandidates.push({ name: node.name, delay: node.delay || 0, displayName: node.name });
+                        allCandidates.push({ name: node.name, delay: node.delay || 0, displayName: node.name, loss: node.loss });
                     }
                 }
             });
@@ -1404,7 +1406,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             }
 
-            // Sort by delay ascending (0-delay nodes at bottom)
             allCandidates.sort((a, b) => {
                 if (a.delay <= 0 && b.delay <= 0) return 0;
                 if (a.delay <= 0) return 1;
@@ -1434,23 +1435,25 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 const rightDiv = document.createElement('span');
                 rightDiv.style.cssText = 'display:flex;align-items:center;gap:2px;flex-shrink:0;';
-                const nodeResult = perNodeResults.find(r => r.name === cand.name);
-                const hasLoss = nodeResult && nodeResult.loss !== undefined;
-                if (hasLoss) {
-                    const lNum = nodeResult.loss;
-                    const lPct = lNum > 0 ? (lNum * 100).toFixed(0) + '%' : '0%';
-                    const lossColor = lNum === 0 ? 'text-green' : lNum <= 0.2 ? 'text-orange' : 'text-red';
+                const hasLoss = cand.loss !== undefined && cand.loss >= 0;
+                if (hasLoss || cand.delay > 0) {
+                    const lNum = hasLoss ? cand.loss : -1;
+                    const lPct = lNum >= 0 ? (lNum > 0 ? (cand.loss * 100).toFixed(0) + '%' : '0%') : '--%';
+                    const lossColor = lNum === 0 ? 'text-green' : (lNum > 0 && lNum <= 0.2) ? 'text-orange' : (lNum > 0.2 ? 'text-red' : 'text-muted');
+                    
                     const pctSpan = document.createElement('span');
                     pctSpan.textContent = lPct; pctSpan.className = lossColor;
+                    
                     const unitSpan = document.createElement('span');
                     unitSpan.textContent = '丢包'; unitSpan.style.cssText = 'font-size:10px;color:var(--text-secondary);';
+                    
                     const delaySpan = document.createElement('span');
                     delaySpan.textContent = cand.delay > 0 ? cand.delay + 'ms' : '--';
                     delaySpan.className = getDelayClass(cand.delay);
-                    rightDiv.appendChild(pctSpan); rightDiv.appendChild(unitSpan); rightDiv.appendChild(delaySpan);
-                } else if (cand.delay > 0) {
-                    rightDiv.textContent = cand.delay + ' ms';
-                    rightDiv.className = getDelayClass(cand.delay) + ' flex-shrink-0';
+                    
+                    rightDiv.appendChild(pctSpan); 
+                    rightDiv.appendChild(unitSpan); 
+                    rightDiv.appendChild(delaySpan);
                 } else {
                     rightDiv.textContent = '--';
                     rightDiv.className = 'text-muted flex-shrink-0';
@@ -1689,8 +1692,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 await new Promise(r => setTimeout(r, 500));
                 await openNodeDetailModal(true);
                 await fetchStatus();
-                // Trigger speedtest and poll for results
-                triggerAndPollSpeedtest('game');
             } else {
                 throw new Error(data.message || '切换失败');
             }
@@ -1726,7 +1727,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 await new Promise(r => setTimeout(r, 500));
                 await openNodeDetailModal(true);
                 await fetchStatus();
-                triggerAndPollSpeedtest('ai');
             } else {
                 throw new Error(data.message || '切换失败');
             }
@@ -1894,6 +1894,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Lock badge click handlers
         if (elBadgeGameLock) elBadgeGameLock.addEventListener('click', () => toggleLock('game'));
         if (elBadgeAiLock) elBadgeAiLock.addEventListener('click', () => toggleLock('ai'));
+        if (elBadgeProxyLock) elBadgeProxyLock.addEventListener('click', () => toggleLock('proxy'));
         
         await fetchStatus();
         await fetchDevices();

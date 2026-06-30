@@ -25,27 +25,36 @@ class GameAccService {
     // 优先丢包率 → 加权延迟（Japan/Taiwan/Korea region bias + gRPC penalty）
     static async findFastestGameNode() {
         try {
-            Logger.info('GameAcc', '🔍 5-采样 Nintendo CDN测速 日本加权 gRPC惩罚...');
+            Logger.info('GameAcc', '🔍 3-采样 Nintendo CDN测速 日本加权 gRPC惩罚...');
             const proxiesData = await ClashService.getProxies(6000);
             const group = proxiesData.proxies['⚡ 游戏自动测速'];
             if (!group || !group.all || group.all.length === 0) {
                 Logger.warn('GameAcc', '未找到 ⚡ 游戏自动测速 组，无法自动寻优');
                 return null;
             }
-            const NODE_SAMPLES = 5;
+            const NODE_SAMPLES = 3;
             const TIMEOUT_MS = 3000;
             const TEST_URL = 'http://ctest.cdn.nintendo.net/';
             
             const results = [];
             for (const nodeName of group.all) {
                 let successCount = 0, totalDelay = 0;
+                let isDead = false;
                 for (let i = 0; i < NODE_SAMPLES; i++) {
                     const delay = await ClashService.testNodeDelay(nodeName, TIMEOUT_MS, TEST_URL);
-                    if (delay > 0) { successCount++; totalDelay += delay; }
+                    if (delay > 0) { 
+                        successCount++; 
+                        totalDelay += delay; 
+                    } else {
+                        if (i === 0) {
+                            isDead = true;
+                            break;
+                        }
+                    }
                     if (i < NODE_SAMPLES - 1) await new Promise(r => setTimeout(r, 200));
                 }
-                const lossRate = (NODE_SAMPLES - successCount) / NODE_SAMPLES;
-                const avgDelay = successCount > 0 ? Math.round(totalDelay / successCount) : 99999;
+                const lossRate = isDead ? 1.0 : (NODE_SAMPLES - successCount) / NODE_SAMPLES;
+                const avgDelay = (!isDead && successCount > 0) ? Math.round(totalDelay / successCount) : 99999;
                 const lowerName = nodeName.toLowerCase();
                 const isJapan = lowerName.includes('japan') || lowerName.includes('日本') || lowerName.includes('jp');
                 const isTaiwan = lowerName.includes('taiwan') || lowerName.includes('台灣') || lowerName.includes('台湾') || lowerName.includes('tw');
@@ -54,8 +63,17 @@ class GameAccService {
                 let weight = 1.0;
                 if (isJapan) weight = 0.75; else if (isTaiwan) weight = 0.85; else if (isKorea) weight = 0.90;
                 if (isGRPC && !isJapan) weight *= 1.15;
-                const weightedDelay = successCount > 0 ? Math.round(avgDelay * weight) : 99999;
-                results.push({ name: nodeName, delay: weightedDelay, rawDelay: avgDelay, loss: lossRate, samples: successCount, region: isJapan ? 'JP' : (isTaiwan ? 'TW' : (isKorea ? 'KR' : 'OTHER')), isGRPC });
+                const weightedDelay = (!isDead && successCount > 0) ? Math.round(avgDelay * weight) : 99999;
+                results.push({ 
+                    name: nodeName, 
+                    delay: weightedDelay, 
+                    rawDelay: isDead ? -1 : avgDelay, 
+                    loss: lossRate, 
+                    samples: isDead ? 0 : successCount, 
+                    region: isJapan ? 'JP' : (isTaiwan ? 'TW' : (isKorea ? 'KR' : 'OTHER')), 
+                    isGRPC,
+                    timestamp: Date.now()
+                });
             }
             if (results.length === 0) { Logger.warn('GameAcc', '无可用游戏节点'); return null; }
             results.sort((a, b) => { if (a.loss !== b.loss) return a.loss - b.loss; return a.delay - b.delay; });
@@ -109,9 +127,20 @@ class GameAccService {
         const gameMacs = this.readGameDevices();
         if (gameMacs.length === 0) { this.stopGameAccMonitor(); return; }
         try {
+            const isLocked = SpeedtestState.isLocked('game');
+            const lockedNode = SpeedtestState.getLockedNode('game');
+
             const proxiesData = await ClashService.getProxies();
             const group = proxiesData.proxies['🎮 游戏加速'];
             if (!group || !group.now) return;
+
+            // 🛡️ 守护状态一致性：如果是锁定状态，且 Clash 当前选中的并不是该锁定物理节点，自动重置并恢复切换
+            if (isLocked && lockedNode && group.now !== lockedNode) {
+                Logger.info('GameAcc', `🛡️ 检测到游戏模式锁定节点不一致 (当前: ${group.now}, 预期: ${lockedNode})，正在自动恢复重置...`);
+                const restored = await this.lockGameNode(lockedNode);
+                if (restored) return; // 恢复成功，本轮检测结束
+            }
+
             const currentNode = group.now;
             if (['⚡ 游戏自动测速', '🚀 节点选择', '👑 高级节点', 'DIRECT'].includes(currentNode)) {
                 this._healthFailCounts[currentNode] = 0;
@@ -135,6 +164,30 @@ class GameAccService {
                 }
             } else {
                 this._healthFailCounts[currentNode] = 0;
+                try {
+                    let successCount = 1;
+                    let totalDelay = delay;
+                    const NODE_SAMPLES = 3;
+                    const TEST_URL = 'http://ctest.cdn.nintendo.net/';
+                    for (let i = 1; i < NODE_SAMPLES; i++) {
+                        const d = await ClashService.testNodeDelay(currentNode, 3000, TEST_URL);
+                        if (d > 0) {
+                            successCount++;
+                            totalDelay += d;
+                        }
+                        await new Promise(r => setTimeout(r, 100));
+                    }
+                    const lossRate = (NODE_SAMPLES - successCount) / NODE_SAMPLES;
+                    const avgDelay = Math.round(totalDelay / successCount);
+                    SpeedtestState.updateResult('game', {
+                        name: currentNode,
+                        delay: avgDelay,
+                        loss: lossRate,
+                        samples: successCount
+                    });
+                } catch (e) {
+                    Logger.debug('GameAcc', '心跳增量测速刷新失败', e);
+                }
             }
         } catch (err) { Logger.error('GameAcc', '故障转移心跳检测发生异常', err); }
     }

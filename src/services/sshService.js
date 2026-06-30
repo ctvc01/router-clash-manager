@@ -285,3 +285,4 @@ class SshService {
 
 module.exports = SshService;
 module.exports.getLastRestartTime = () => lastRestartTime;
+module.exports.updateLastRestartTime = () => { lastRestartTime = Date.now(); };

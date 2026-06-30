@@ -113,22 +113,7 @@ class PersistenceService {
         }
     }
 
-    // 从备份恢复
-    static restore(filePath) {
-        try {
-            const backupPath = `${filePath}.bak`;
-            if (fs.existsSync(backupPath)) {
-                fs.copyFileSync(backupPath, filePath);
-                Logger.info('Persistence', `已从备份恢复: ${filePath}`);
-                return true;
-            }
-            Logger.warn('Persistence', `备份文件不存在: ${backupPath}`);
-            return false;
-        } catch (err) {
-            Logger.error('Persistence', `恢复文件失败: ${filePath}`, err);
-            return false;
-        }
-    }
+
 
     // 安全读取JSON文件
     static readJSON(filePath, defaultValue = {}) {
