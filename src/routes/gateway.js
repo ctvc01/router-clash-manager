@@ -80,7 +80,7 @@ async function getCurrentNodeInfo() {
 router.get('/status', async (req, res) => {
     try {
         // 1. 并行：SSH 系统统计 + 代理节点信息（减少总延迟）
-        const statsCmd = `pid=\$(pidof mihomo || pidof Clash || pidof CrashCore || pgrep -x mihomo || pgrep -x Clash || pgrep -x CrashCore); echo "PID:\$pid"; if [ -n "\$pid" ]; then echo "CLASH_RAW:\$(awk '{print int(\$1)}' /proc/uptime 2>/dev/null):\$(awk '{print \$22}' /proc/\$pid/stat 2>/dev/null)"; cat /proc/\$pid/status | grep VmRSS; timeout 1 top -b -n 1 2>/dev/null | grep -v grep | grep -E "mihomo|Clash|CrashCore" | head -n 1; fi; cat /proc/meminfo | grep MemTotal; df -m /data | tail -n 1`;
+        const statsCmd = `pid=\$(pidof mihomo || pidof Clash || pidof CrashCore || pgrep -x mihomo || pgrep -x Clash || pgrep -x CrashCore); echo "PID:\$pid"; if [ -n "\$pid" ]; then echo "CLASH_RAW:\$(awk '{print int(\$1)}' /proc/uptime 2>/dev/null):\$(awk '{print \$22}' /proc/\$pid/stat 2>/dev/null)"; cat /proc/\$pid/status | grep VmRSS; timeout 1 top -b -n 1 2>/dev/null | grep -v grep | grep -E "mihomo|Clash|CrashCore" | head -n 1; fi; cat /proc/meminfo | grep -E "MemTotal|MemFree"; df -m /data | tail -n 1`;
         const nodeInfoPromise = getCurrentNodeInfo();
         const statsOutput = await SshService.runRemoteCommand(statsCmd);
 
@@ -112,7 +112,7 @@ router.get('/status', async (req, res) => {
         const isRunning = pid.length > 0;
 
         if (isRunning) {
-            // 解析 VmRSS
+            // 解析 VmRSS（保留解析作后备）
             const rssLine = lines.find(l => l.includes('VmRSS:'));
             if (rssLine) {
                 const match = rssLine.match(/VmRSS:\s+(\d+)\s+kB/i);
@@ -137,13 +137,27 @@ router.get('/status', async (req, res) => {
             }
         }
 
-        // 解析 MemTotal
+        // 解析 MemTotal 与 MemFree 算真实已用物理内存
+        let memTotalKb = 0;
+        let memFreeKb = 0;
         const memTotalLine = lines.find(l => l.includes('MemTotal:'));
         if (memTotalLine) {
             const match = memTotalLine.match(/MemTotal:\s+(\d+)\s+kB/i);
             if (match) {
-                totalMemory = `${Math.round(parseInt(match[1], 10) / 1024)} MB`;
+                memTotalKb = parseInt(match[1], 10);
+                totalMemory = `${Math.round(memTotalKb / 1024)} MB`;
             }
+        }
+        const memFreeLine = lines.find(l => l.includes('MemFree:'));
+        if (memFreeLine) {
+            const match = memFreeLine.match(/MemFree:\s+(\d+)\s+kB/i);
+            if (match) {
+                memFreeKb = parseInt(match[1], 10);
+            }
+        }
+        if (memTotalKb > 0 && memFreeKb > 0) {
+            const usedKb = memTotalKb - memFreeKb;
+            memory = `${Math.round(usedKb / 1024)} MB`;
         }
 
         // 解析 Clash 进程启动时长 (CLASH_RAW:sysUp:startTicks)
@@ -409,7 +423,13 @@ router.get('/nodes', async (req, res) => {
                     if (currentData) {
                         resultNodes.push(currentData);
                     } else {
-                        resultNodes.push({ name: currentSelectedNode, delay: 0 });
+                        // 从完整的 proxies 状态中直接读取延迟，防止赋 0 造成与顶部显示不一致的现象
+                        let delay = 0;
+                        if (p && p.history && p.history.length > 0) {
+                            const valid = p.history.filter(h => h.delay > 0);
+                            delay = valid.length > 0 ? valid[valid.length - 1].delay : 0;
+                        }
+                        resultNodes.push({ name: currentSelectedNode, delay });
                     }
                 }
             }

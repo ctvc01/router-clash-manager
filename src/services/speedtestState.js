@@ -105,7 +105,8 @@ class SpeedtestState {
         return {
             game: { ...state.game },
             ai: { ...state.ai },
-            proxy: { ...state.proxy }
+            proxy: { ...state.proxy },
+            perNodeResults: state.game.perNodeResults
         };
     }
 }

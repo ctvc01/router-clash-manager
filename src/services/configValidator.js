@@ -7,9 +7,9 @@ class ConfigValidator {
         try {
             const coreBinary = '/tmp/ShellCrash/mihomo';
             
-            // 使用 timeout -t 5 限制在路由器上最长运行 5 秒，防止下载 MMDB 卡死
+            // 使用 timeout -t 15 适应 AdBlock 规则膨胀后的配置验证（~268KB YAML）
             // 并把 stderr 重定向到 stdout 以便我们统一处理日志输出
-            const cmd = `timeout -t 5 ${coreBinary} -t -d /data/ShellCrash -f ${configPath} 2>&1`;
+            const cmd = `timeout -t 15 ${coreBinary} -t -d /data/ShellCrash -f ${configPath} 2>&1`;
             
             let output = '';
             let valid = false;

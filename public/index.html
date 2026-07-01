@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Clash Meta</title>
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
-    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -320,7 +319,10 @@
             <div class="modal-header">
                 <span class="modal-title">当前节点详情</span>
                 <button id="btn-close-node-modal" class="btn-close-modal" title="关闭" style="border: none; background: transparent; padding: 4px; display: flex; align-items: center; justify-content: center; cursor: pointer;">
-                    <span class="material-symbols-outlined" style="font-size: 20px;">close</span>
+                    <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="var(--text-primary)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
                 </button>
             </div>
             <div class="modal-body" style="max-height: 65vh; overflow-y: auto; overflow-x: visible; padding: 20px; display: flex; flex-direction: column; gap: 24px;">
@@ -338,7 +340,9 @@
                             <span id="node-proxy-real" class="node-detail-value font-highlight node-name-scrollable">--</span>
                             <div style="display: flex; align-items: center; gap: 4px; flex-shrink: 0;">
                                 <span id="node-proxy-delay" class="text-green">-- ms</span>
-                                <span id="icon-proxy-dropdown-arrow" class="material-symbols-outlined font-highlight" style="font-size: 16px;">expand_more</span>
+                                <svg id="icon-proxy-dropdown-arrow" class="icon-svg icon-arrow font-highlight" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width: 16px; height: 16px; transition: transform 0.2s ease;">
+                                    <polyline points="6 9 12 15 18 9"></polyline>
+                                </svg>
                             </div>
                         </div>
                     </div>
@@ -358,7 +362,9 @@
                             <span id="node-ai-real" class="node-detail-value font-highlight node-name-scrollable">--</span>
                             <div style="display: flex; align-items: center; gap: 4px; flex-shrink: 0;">
                                 <span id="node-ai-delay" class="text-green">-- ms</span>
-                                <span id="icon-ai-dropdown-arrow" class="material-symbols-outlined font-highlight" style="font-size: 16px;">expand_more</span>
+                                <svg id="icon-ai-dropdown-arrow" class="icon-svg icon-arrow font-highlight" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width: 16px; height: 16px; transition: transform 0.2s ease;">
+                                    <polyline points="6 9 12 15 18 9"></polyline>
+                                </svg>
                             </div>
                         </div>
                     </div>
@@ -381,7 +387,9 @@
                             <div style="display: flex; align-items: center; gap: 4px; flex-shrink: 0;">
                                 <span id="node-game-loss" class="text-muted" style="font-size:11px;">loss:--%</span>
                                 <span id="node-game-delay" class="text-green">-- ms</span>
-                                <span id="icon-game-dropdown-arrow" class="material-symbols-outlined font-highlight" style="font-size: 16px;">expand_more</span>
+                                <svg id="icon-game-dropdown-arrow" class="icon-svg icon-arrow font-highlight" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width: 16px; height: 16px; transition: transform 0.2s ease;">
+                                    <polyline points="6 9 12 15 18 9"></polyline>
+                                </svg>
                             </div>
                         </div>
                     </div>

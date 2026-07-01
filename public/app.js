@@ -1143,7 +1143,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const triggerRect = elBtnToggleGameDropdown.getBoundingClientRect();
         
         elGameNodeDropdownMenu.style.display = 'block';
-        elGameNodeDropdownMenu.style.top = (triggerRect.bottom + 6) + 'px';
         elGameNodeDropdownMenu.style.left = triggerRect.left + 'px';
         
         // 宽度与触发按钮完全一致，实现完美水平对齐
@@ -1151,8 +1150,24 @@ document.addEventListener('DOMContentLoaded', () => {
         elGameNodeDropdownMenu.style.minWidth = '240px';
         elGameNodeDropdownMenu.style.maxWidth = '90vw';
         
+        // 动态计算向上/向下朝向，防止延伸出屏幕下方
+        const menuHeight = elGameNodeDropdownMenu.offsetHeight || 200;
+        const spaceBelow = window.innerHeight - triggerRect.bottom;
+        const spaceAbove = triggerRect.top;
+        
+        if (spaceBelow < (menuHeight + 15) && spaceAbove > spaceBelow) {
+            elGameNodeDropdownMenu.style.top = (triggerRect.top - menuHeight - 6) + 'px';
+        } else {
+            elGameNodeDropdownMenu.style.top = (triggerRect.bottom + 6) + 'px';
+        }
+        
         elGameNodeDropdownMenu.classList.add('animate-dropdown');
-        elIconGameDropdownArrow.textContent = 'expand_less';
+        elIconGameDropdownArrow.classList.add('active');
+
+        // 平滑滚动，防止在 Bottom Sheet 底部被遮挡
+        try {
+            elBtnToggleGameDropdown.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        } catch (e) {}
     }
 
     function closeGameDropdown() {
@@ -1163,7 +1178,7 @@ document.addEventListener('DOMContentLoaded', () => {
         elGameNodeDropdownMenu.style.width = '';
         elGameNodeDropdownMenu.style.minWidth = '';
         elGameNodeDropdownMenu.style.maxWidth = '';
-        elIconGameDropdownArrow.textContent = 'expand_more';
+        elIconGameDropdownArrow.classList.remove('active');
     }
 
     // AI模式下拉菜单操作函数
@@ -1183,14 +1198,28 @@ document.addEventListener('DOMContentLoaded', () => {
         const triggerRect = elBtnToggleAiDropdown.getBoundingClientRect();
 
         elAiNodeDropdownMenu.style.display = 'block';
-        elAiNodeDropdownMenu.style.top = (triggerRect.bottom + 6) + 'px';
         elAiNodeDropdownMenu.style.left = triggerRect.left + 'px';
         elAiNodeDropdownMenu.style.width = triggerRect.width + 'px';
         elAiNodeDropdownMenu.style.minWidth = '240px';
         elAiNodeDropdownMenu.style.maxWidth = '90vw';
 
+        // 动态计算向上/向下朝向
+        const menuHeight = elAiNodeDropdownMenu.offsetHeight || 200;
+        const spaceBelow = window.innerHeight - triggerRect.bottom;
+        const spaceAbove = triggerRect.top;
+        
+        if (spaceBelow < (menuHeight + 15) && spaceAbove > spaceBelow) {
+            elAiNodeDropdownMenu.style.top = (triggerRect.top - menuHeight - 6) + 'px';
+        } else {
+            elAiNodeDropdownMenu.style.top = (triggerRect.bottom + 6) + 'px';
+        }
+
         elAiNodeDropdownMenu.classList.add('animate-dropdown');
-        elIconAiDropdownArrow.textContent = 'expand_less';
+        elIconAiDropdownArrow.classList.add('active');
+
+        try {
+            elBtnToggleAiDropdown.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        } catch (e) {}
     }
 
     function closeAiDropdown() {
@@ -1201,7 +1230,7 @@ document.addEventListener('DOMContentLoaded', () => {
         elAiNodeDropdownMenu.style.width = '';
         elAiNodeDropdownMenu.style.minWidth = '';
         elAiNodeDropdownMenu.style.maxWidth = '';
-        elIconAiDropdownArrow.textContent = 'expand_more';
+        elIconAiDropdownArrow.classList.remove('active');
     }
 
     // 代理模式下拉菜单操作函数
@@ -1221,14 +1250,28 @@ document.addEventListener('DOMContentLoaded', () => {
         const triggerRect = elBtnToggleProxyDropdown.getBoundingClientRect();
 
         elProxyNodeDropdownMenu.style.display = 'block';
-        elProxyNodeDropdownMenu.style.top = (triggerRect.bottom + 6) + 'px';
         elProxyNodeDropdownMenu.style.left = triggerRect.left + 'px';
         elProxyNodeDropdownMenu.style.width = triggerRect.width + 'px';
         elProxyNodeDropdownMenu.style.minWidth = '240px';
         elProxyNodeDropdownMenu.style.maxWidth = '90vw';
 
+        // 动态计算向上/向下朝向
+        const menuHeight = elProxyNodeDropdownMenu.offsetHeight || 200;
+        const spaceBelow = window.innerHeight - triggerRect.bottom;
+        const spaceAbove = triggerRect.top;
+        
+        if (spaceBelow < (menuHeight + 15) && spaceAbove > spaceBelow) {
+            elProxyNodeDropdownMenu.style.top = (triggerRect.top - menuHeight - 6) + 'px';
+        } else {
+            elProxyNodeDropdownMenu.style.top = (triggerRect.bottom + 6) + 'px';
+        }
+
         elProxyNodeDropdownMenu.classList.add('animate-dropdown');
-        elIconProxyDropdownArrow.textContent = 'expand_less';
+        elIconProxyDropdownArrow.classList.add('active');
+
+        try {
+            elBtnToggleProxyDropdown.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        } catch (e) {}
     }
 
     function closeProxyDropdown() {
@@ -1239,7 +1282,7 @@ document.addEventListener('DOMContentLoaded', () => {
         elProxyNodeDropdownMenu.style.width = '';
         elProxyNodeDropdownMenu.style.minWidth = '';
         elProxyNodeDropdownMenu.style.maxWidth = '';
-        elIconProxyDropdownArrow.textContent = 'expand_more';
+        elIconProxyDropdownArrow.classList.remove('active');
     }
 
     // [新增] 获取测速状态
@@ -1423,7 +1466,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const leftDiv = document.createElement('div');
                 leftDiv.className = 'game-dropdown-item-left';
                 if (isSelected) {
-                    leftDiv.innerHTML = `<span class="material-symbols-outlined icon-selected-check">check_circle</span>`;
+                    leftDiv.innerHTML = `<svg class="icon-svg icon-selected-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px; color: var(--primary);"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>`;
                 } else {
                     leftDiv.innerHTML = `<span class="icon-placeholder"></span>`;
                 }
@@ -1515,7 +1558,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 leftDiv.className = 'game-dropdown-item-left';
 
                 if (cand.name === lastSelectedAiNode) {
-                    leftDiv.innerHTML = `<span class="material-symbols-outlined icon-selected-check">check_circle</span>`;
+                    leftDiv.innerHTML = `<svg class="icon-svg icon-selected-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px; color: var(--primary);"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>`;
                 } else {
                     leftDiv.innerHTML = `<span class="icon-placeholder"></span>`;
                 }
@@ -1597,7 +1640,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     leftDiv.className = 'game-dropdown-item-left';
 
                     if (cand.name === lastSelectedProxyNode) {
-                        leftDiv.innerHTML = `<span class="material-symbols-outlined icon-selected-check">check_circle</span>`;
+                        leftDiv.innerHTML = `<svg class="icon-svg icon-selected-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px; color: var(--primary);"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>`;
                     } else {
                         leftDiv.innerHTML = `<span class="icon-placeholder"></span>`;
                     }

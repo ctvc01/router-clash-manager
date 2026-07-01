@@ -13,7 +13,7 @@ let updatePromise = Promise.resolve(); // 串行注入锁
 
 class RulesEngine {
     // 内存改写配置的纯函数，解耦 SSH 和文件 IO，方便单元测试
-    static modifyConfigText(currentConfig, gameMacs = [], aiMacs = []) {
+    static modifyConfigText(currentConfig, gameMacs = [], aiMacs = [], gameIps = []) {
         let configLines = currentConfig.split('\n');
 
         // 1. 强制关闭 tun: enable，因为本系统使用自定义 iptables 透明引流，无需 TUN 网卡且 TUN 在老旧内核上会导致 syscall 434 崩溃
@@ -96,9 +96,11 @@ class RulesEngine {
                     '    - 223.5.5.5',
                     '    - 119.29.29.29',
                     '  store-fake-ip: true',
+                    // NAT/联机关键域名需要真实 IP（Switch P2P），CDN 用 Fake-IP 走直连
                     '  fake-ip-filter:',
-                    '    - +.nintendo.net',
-                    '    - +.nintendo.com',
+                    '    - api.accounts.nintendo.com',
+                    '    - accounts.nintendo.com',
+                    '    - receive-lp1.dg.srv.nintendo.net',
                     '    - +.nintendowifi.net',
                     '  cache-size: 8192'
                 );
@@ -125,10 +127,12 @@ class RulesEngine {
                 '    - 223.5.5.5',
                 '    - 119.29.29.29',
                     '  store-fake-ip: true',
-                    '  fake-ip-filter:',
-                    '    - +.nintendo.net',
-                    '    - +.nintendo.com',
-                    '    - +.nintendowifi.net',
+                // NAT/联机关键域名需要真实 IP（Switch P2P），CDN 用 Fake-IP 走直连
+                '  fake-ip-filter:',
+                '    - api.accounts.nintendo.com',
+                '    - accounts.nintendo.com',
+                '    - receive-lp1.dg.srv.nintendo.net',
+                '    - +.nintendowifi.net',
                     '  cache-size: 8192'
         ];
                 configLines.splice(insertIdx + 1, 0, ...dnsLines);
@@ -147,7 +151,44 @@ class RulesEngine {
             }
         }
 
-        // 5. 清理旧的 AI 分流规则
+        // 4.3 强制替换/注入整个 hosts 广告拦截配置块
+        try {
+            const adBlockHosts = require('./adBlockService').getAdBlockHosts();
+            const adBlockKeys = Object.keys(adBlockHosts);
+            
+            // 清理已存在的旧 hosts 块
+            let hostsStart = -1, hostsEnd = -1, inHostsBlock = false;
+            for (let i = 0; i < configLines.length; i++) {
+                const line = configLines[i].trim();
+                if (line.startsWith('hosts:')) {
+                    inHostsBlock = true; hostsStart = i; hostsEnd = i; continue;
+                }
+                if (inHostsBlock && line.length > 0 && !configLines[i].startsWith(' ') && !configLines[i].startsWith('\t') && !line.startsWith('#')) {
+                    break;
+                }
+                if (inHostsBlock) hostsEnd = i;
+            }
+
+            const hostsLines = ['hosts:'];
+            if (adBlockKeys.length > 0) {
+                for (const key of adBlockKeys) {
+                    hostsLines.push(`  '${key}': ${adBlockHosts[key]}`);
+                }
+            }
+
+            if (hostsStart >= 0) {
+                configLines.splice(hostsStart, hostsEnd - hostsStart + 1, ...hostsLines);
+            } else {
+                const insertIdx = configLines.findIndex(line => line.trim().startsWith('mixed-port:'));
+                if (insertIdx !== -1) {
+                    configLines.splice(insertIdx + 1, 0, ...hostsLines);
+                }
+            }
+        } catch (adError) {
+            Logger.error('RulesEngine', '动态注入广告 Hosts 异常', adError);
+        }
+
+        // 5. 清理旧 of AI 分流规则
         configLines = configLines.filter(line => {
             const trimmed = line.trim();
             if (trimmed.includes('AI RULES START')) return false;
@@ -177,7 +218,13 @@ class RulesEngine {
         // 5d. 注入国内主流 App 域名直连规则（始终注入，受益所有代理设备）
         {
             const rulesIdx = configLines.findIndex(line => line.trim() === 'rules:');
-            if (rulesIdx !== -1) {
+            if (rulesIdx === -1) {
+                // 订阅模板不含 rules: 段，自动追加
+                Logger.info('RulesEngine', '订阅模板未包含 rules: 段，自动追加');
+                configLines.push('rules:', '- GEOIP,CN,DIRECT', '- MATCH,🚀 节点选择');
+            }
+            {
+                const actualIdx = configLines.findIndex(line => line.trim() === 'rules:');
                 let rulesIndent = '  ';
                 for (let i = rulesIdx + 1; i < configLines.length; i++) {
                     const line = configLines[i];
@@ -220,7 +267,7 @@ class RulesEngine {
                 ];
 
                 const ruleLines = cnRuleLines.map(line => `${rulesIndent}${line}`);
-                configLines.splice(rulesIdx + 1, 0, ...ruleLines);
+                configLines.splice(actualIdx + 1, 0, ...ruleLines);
             }
         }
 
@@ -311,16 +358,42 @@ class RulesEngine {
                     '- DOMAIN-SUFFIX,accounts.nintendo.com,🎮 游戏加速',
                     '- DOMAIN-SUFFIX,ec.nintendo.net,🎮 游戏加速',
                     '- DOMAIN-SUFFIX,atlas-content.nintendo.net,🎮 游戏加速',
-                    '- DOMAIN-SUFFIX,atum-ec.nintendo.net,🎮 游戏加速',
                     '- DOMAIN-SUFFIX,receive-lp1.dg.srv.nintendo.net,🎮 游戏加速',
-                    // 大流量游戏/补丁下载 CDN 走直连 (DIRECT) 跑满物理大宽带
-                    '- DOMAIN-SUFFIX,atum.download.nintendo.net,DIRECT',
-                    '- DOMAIN-SUFFIX,hac.lp1.d4c.nintendo.net,DIRECT',
+                    // 大流量游戏/补丁下载走游戏加速（与主代理解耦）
+                    '- DOMAIN-SUFFIX,atum.download.nintendo.net,🎮 游戏加速',
+                    '- DOMAIN-SUFFIX,hac.lp1.d4c.nintendo.net,🎮 游戏加速',
+                    '- DOMAIN-SUFFIX,atum-ec.nintendo.net,🎮 游戏加速',
                     '# === GAME RULES END ==='
                 ];
 
                 const ruleLines = gameRuleLines.map(line => `${rulesIndent}${line}`);
                 configLines.splice(rulesIdx + 1, 0, ...ruleLines);
+            }
+        }
+
+        // 6c. 清理旧的游戏设备 SRC-IP-CIDR 规则（防止 IP 变更后残留）
+        configLines = configLines.filter(line => {
+            const trimmed = line.trim();
+            if (trimmed.includes('GAME SRC-IP RULES')) return false;
+            return true;
+        });
+
+        // 6d. 注入游戏设备 SRC-IP-CIDR 规则（设备级全局拦截，解耦主代理）
+        if (gameIps.length > 0) {
+            const matchIdx = configLines.findIndex(line => line.trim().startsWith('- MATCH,'));
+            if (matchIdx !== -1) {
+                let rulesIndent = ' ';
+                const matchLine = configLines[matchIdx];
+                const indentMatch = matchLine.match(/^(\s*)-/);
+                if (indentMatch) rulesIndent = indentMatch[1];
+                
+                const ipRules = [
+                    `# === GAME SRC-IP RULES START ===`,
+                    ...gameIps.map(ip => `${rulesIndent}- SRC-IP-CIDR,${ip}/32,🎮 游戏加速`),
+                    `# === GAME SRC-IP RULES END ===`,
+                ];
+                // 注入在 MATCH 之前（GEOIP,CN 之后），确保国内流量仍直连
+                configLines.splice(matchIdx, 0, ...ipRules);
             }
         }
 
@@ -478,7 +551,21 @@ class RulesEngine {
             // 2. 在内存中改写配置文本
             let finalConfig;
             try {
-                finalConfig = RulesEngine.modifyConfigText(currentConfig, gameMacs, aiMacs);
+                // 读取 DHCP 租约，获取游戏设备的当前 IP
+                let gameIps = [];
+                try {
+                    const leasesOutput = await SshService.runRemoteCommand('cat /tmp/dhcp.leases');
+                    const leaseLines = leasesOutput.split('\n');
+                    const dhcpLeases = {};
+                    for (const line of leaseLines) {
+                        const parts = line.trim().split(/\s+/);
+                        if (parts.length >= 3) dhcpLeases[parts[1].toLowerCase()] = parts[2];
+                    }
+                    gameIps = gameMacs.map(mac => dhcpLeases[mac.toLowerCase()]).filter(Boolean);
+                } catch (e) {
+                    Logger.warn('RulesEngine', '读取 DHCP 租约失败，跳过 SRC-IP 规则注入', e.message);
+                }
+                finalConfig = RulesEngine.modifyConfigText(currentConfig, gameMacs, aiMacs, gameIps);
             } catch (modifyErr) {
                 Logger.error('RulesEngine', '内存解析并重写 YAML 配置失败', modifyErr);
                 throw modifyErr;

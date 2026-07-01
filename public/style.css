@@ -1437,6 +1437,7 @@ body {
         display: flex;
         flex-direction: column;
         justify-content: center;
+        align-items: flex-start; /* 显式重写，防止继承自 PC 端的 center 导致移动端垂直排列时文本居中不齐 */
         gap: 2px;
     }
 
@@ -1778,12 +1779,38 @@ body {
     margin-left: 4px;
 }
 
-/* --- 高保真自定义下拉列表样式 --- */
-.material-symbols-outlined {
-    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+/* SVG 图标通用对齐 */
+.icon-svg {
     display: inline-block;
     vertical-align: middle;
-    line-height: 1;
+    flex-shrink: 0;
+}
+
+/* 下拉菜单打开时箭头顺滑旋转 180 度 */
+.icon-arrow.active {
+    transform: rotate(180deg) !important;
+}
+
+/* 按钮与交互徽标物理触觉微缩 */
+.btn-add:active,
+.filter-btn:active,
+.badge-status.cursor-pointer:active,
+.game-dropdown-item:active,
+.btn-close-modal:active,
+.segment-btn:active {
+    transform: scale(0.96) !important;
+}
+
+/* 动态数据等宽数字，消除排版左右抖动 */
+.card-value,
+.card-sub-value,
+#node-proxy-delay,
+#node-ai-delay,
+#node-game-delay,
+#node-game-loss,
+#total-down-speed,
+#total-up-speed {
+    font-variant-numeric: tabular-nums;
 }
 
 .game-dropdown-menu {
