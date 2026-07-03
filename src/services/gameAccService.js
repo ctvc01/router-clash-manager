@@ -2,6 +2,7 @@ const fs = require('fs');
 const { config } = require('../config');
 const Logger = require('../utils/logger');
 const ClashService = require('./clashService');
+const SshService = require('./sshService');
 const PersistenceService = require('./persistenceService');
 const SpeedtestState = require('./speedtestState');
 const { getBeijingTimeParts } = require('../constants');
@@ -126,6 +127,15 @@ class GameAccService {
         if (!this._healthFailCounts) this._healthFailCounts = {};
         const gameMacs = this.readGameDevices();
         if (gameMacs.length === 0) { this.stopGameAccMonitor(); return; }
+
+        // 重启冷却期：重启或重载后 90s 内不执行检测（给内核就绪充足的缓冲时间）
+        const lastRestartTime = SshService.getLastRestartTime?.() || 0;
+        const timeSinceLastRestart = Date.now() - lastRestartTime;
+        if (timeSinceLastRestart < 90000) {
+            Logger.debug('GameAcc', `处于重启避让期，跳过健康心跳 (${Math.floor((90000 - timeSinceLastRestart) / 1000)}s 剩余)`);
+            return;
+        }
+
         try {
             const isLocked = SpeedtestState.isLocked('game');
             const lockedNode = SpeedtestState.getLockedNode('game');

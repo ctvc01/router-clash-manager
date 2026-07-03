@@ -19,7 +19,7 @@ RUN npm install --registry=https://registry.npmmirror.com
 COPY . .
 
 # 赋予 Expect 脚本和 SSH wrapper 可执行权限
-RUN chmod +x ssh_exec.exp ssh_wrapper.sh
+RUN chmod +x scp_to_remote.exp ssh_wrapper.sh
 
 EXPOSE 3000
 

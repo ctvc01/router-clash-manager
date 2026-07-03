@@ -84,8 +84,9 @@ class ClashService {
     }
 
     // 测试单个节点延迟 (全局串行队列保护，保证对路由器零并发冲击)
-    static async testNodeDelay(nodeName, timeoutMs = 4000, testUrl = 'http://www.gstatic.com/generate_204') {
+    static testNodeDelay(nodeName, timeoutMs = 3000, testUrl = 'http://www.gstatic.com/generate_204') {
         return new Promise((resolve) => {
+            // 串行队列
             delayTestQueue = delayTestQueue.then(async () => {
                 try {
                     const encodedName = encodeURIComponent(nodeName);
@@ -101,6 +102,9 @@ class ClashService {
                     Logger.debug('ClashAPI', `节点 [${nodeName}] 测速请求失败: ${err.message}`);
                     resolve(0);
                 }
+            }).catch(err => {
+                Logger.error('ClashAPI', `测速队列未捕获异常: ${err.message}`);
+                resolve(0);
             });
         });
     }
