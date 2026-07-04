@@ -252,7 +252,13 @@ class RulesEngine {
                     '- DOMAIN-SUFFIX,bilibili.com,DIRECT',
                     '- DOMAIN-SUFFIX,hdslb.com,DIRECT',
                     '- DOMAIN-SUFFIX,bilivideo.com,DIRECT',
-                    // 电商图片 CDN — 阿里、京东、拼多多
+                    // 电商图片与业务 CDN — 阿里/闲鱼/淘宝、京东、拼多多
+                    '- DOMAIN-SUFFIX,idlefish.com,DIRECT',
+                    '- DOMAIN-SUFFIX,taobao.com,DIRECT',
+                    '- DOMAIN-SUFFIX,tbcache.com,DIRECT',
+                    '- DOMAIN-SUFFIX,alipay.com,DIRECT',
+                    '- DOMAIN-SUFFIX,alipayobjects.com,DIRECT',
+                    '- DOMAIN-SUFFIX,alibaba.com,DIRECT',
                     '- DOMAIN-SUFFIX,alicdn.com,DIRECT',
                     '- DOMAIN-SUFFIX,aliyuncs.com,DIRECT',
                     '- DOMAIN-SUFFIX,360buyimg.com,DIRECT',
