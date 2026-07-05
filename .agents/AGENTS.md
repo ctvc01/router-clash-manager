@@ -79,3 +79,22 @@
 
 ## 🚀 第五部分：规则扩展锚点 (Extension Slot - 供后续追加使用)
 * *(此区域预留，方便未来追加特定的部署流水线规则、测试规则等)*
+
+### 核心规约区 (Core Rules)
+<!-- rule-evolution:core-start -->
+<!-- rule-evolution:core-end -->
+
+### 草案孵化区 (Draft Rules)
+<!-- rule-evolution:draft-start -->
+### 5.1 前端状态即时刷新与长耗时任务的静默自愈 (UI State Hydration & Silent Polling)
+* **正面指导原则**：当后端接口包含长耗时的异步后台测速或硬件交互，且为防止阻塞前端而立即返回 `success` 时，前端**必须**在收到成功响应后立即主动拉取一次最新状态（Instant UX），使 UI（如锁定徽标）实现零延迟更新。对于后端未完成的异步结果（如 3-4 秒后才得出的测速/丢包率），前端应通过 `setTimeout` 延迟几秒进行一次无 Loading 的静默拉取（Silent Hydration），从而无感地将最终数据刷入界面。
+* **反面避坑 (Anti-Pattern)**：严禁前端在执行完状态变更操作后，仅仅依赖全局的 `setInterval` 轮询（如 30s 一次）来被动刷新数据。这会导致用户产生“操作卡顿”或“延迟 5 秒才生效”的错觉（因为轮询的残余时间不可控）。状态变更操作必须配对主动状态拉取。 <!-- hits:1 created:2026-07-05 session:优化游戏模式节点锁定徽标5秒延迟UX -->
+<!-- rule-evolution:draft-end -->
+
+### 个人偏好区 (User Prefs)
+<!-- rule-evolution:user-prefs-start -->
+<!-- rule-evolution:user-prefs-end -->
+
+### 拒绝记录区 (Rejected Rules)
+<!-- rule-evolution:rejected-start -->
+<!-- rule-evolution:rejected-end -->

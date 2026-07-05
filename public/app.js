@@ -1733,8 +1733,18 @@ document.addEventListener('DOMContentLoaded', () => {
             if (data.status === 'success') {
                 showToast('已成功切换游戏节点！');
                 await new Promise(r => setTimeout(r, 500));
+                await fetchSpeedtestStatus(); // 立刻刷新出 LOCKED 徽标
                 await openNodeDetailModal(true);
                 await fetchStatus();
+                
+                // 游戏模式后台测速大概需3秒，4秒后做一次静默状态刷新（防抖刷新丢包率）
+                setTimeout(async () => {
+                    await fetchSpeedtestStatus();
+                    // 如果详情弹窗仍在打开状态，则无感回显最新的测速结果
+                    if (document.getElementById('node-detail-modal').style.display === 'flex') {
+                        openNodeDetailModal(false);
+                    }
+                }, 4000);
             } else {
                 throw new Error(data.message || '切换失败');
             }
@@ -1768,6 +1778,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (data.status === 'success') {
                 showToast('已成功切换 AI 强化节点！');
                 await new Promise(r => setTimeout(r, 500));
+                await fetchSpeedtestStatus(); // 立刻刷新出 LOCKED 徽标
                 await openNodeDetailModal(true);
                 await fetchStatus();
             } else {
@@ -1803,6 +1814,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (data.status === 'success') {
                 showToast('已成功切换代理节点！');
                 await new Promise(r => setTimeout(r, 500));
+                await fetchSpeedtestStatus(); // 立刻刷新出 LOCKED 徽标
                 await openNodeDetailModal(true);
                 await fetchStatus();
             } else {
