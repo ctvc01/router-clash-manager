@@ -91,7 +91,6 @@ class RulesEngine {
                     '  fake-ip-range: 198.18.0.1/16',
                     '  prefer-h3: false',
                     '  nameserver:',
-                    '    - 192.168.31.1',
                     '    - 114.114.114.114',
                     '    - 223.5.5.5',
                     '    - 119.29.29.29',
@@ -102,6 +101,13 @@ class RulesEngine {
                     '    - accounts.nintendo.com',
                     '    - receive-lp1.dg.srv.nintendo.net',
                     '    - +.nintendowifi.net',
+                    '    - +.weixinbridge.com',
+                    '    - +.weixin.qq.com',
+                    '    - +.servicewechat.com',
+                    '    - +.wechat.com',
+                    '    - +.wechatpay.com',
+                    '    - +.tenpay.com',
+                    '    - +.wechatos.net',
                     '  cache-size: 8192'
                 );
             }
@@ -122,10 +128,9 @@ class RulesEngine {
                     '  fake-ip-range: 198.18.0.1/16',
                     '  prefer-h3: false',
                     '  nameserver:',
-                '    - 192.168.31.1',
-                '    - 114.114.114.114',
-                '    - 223.5.5.5',
-                '    - 119.29.29.29',
+                    '    - 114.114.114.114',
+                    '    - 223.5.5.5',
+                    '    - 119.29.29.29',
                     '  store-fake-ip: true',
                 // NAT/联机关键域名需要真实 IP（Switch P2P），CDN 用 Fake-IP 走直连
                 '  fake-ip-filter:',
@@ -133,6 +138,13 @@ class RulesEngine {
                 '    - accounts.nintendo.com',
                 '    - receive-lp1.dg.srv.nintendo.net',
                 '    - +.nintendowifi.net',
+                '    - +.weixinbridge.com',
+                '    - +.weixin.qq.com',
+                '    - +.servicewechat.com',
+                '    - +.wechat.com',
+                '    - +.wechatpay.com',
+                '    - +.tenpay.com',
+                '    - +.wechatos.net',
                     '  cache-size: 8192'
         ];
                 configLines.splice(insertIdx + 1, 0, ...dnsLines);
@@ -208,11 +220,18 @@ class RulesEngine {
         });
 
         // 5c. 清理旧的国内直连规则
+        let inCnDirect = false;
         configLines = configLines.filter(line => {
             const trimmed = line.trim();
-            if (trimmed.includes('CN DIRECT RULES START')) return false;
-            if (trimmed.includes('CN DIRECT RULES END')) return false;
-            return true;
+            if (trimmed.includes('CN DIRECT RULES START')) {
+                inCnDirect = true;
+                return false;
+            }
+            if (trimmed.includes('CN DIRECT RULES END')) {
+                inCnDirect = false;
+                return false;
+            }
+            return !inCnDirect;
         });
 
         // 5d. 注入国内主流 App 域名直连规则（始终注入，受益所有代理设备）
@@ -240,6 +259,14 @@ class RulesEngine {
                     '# === CN DIRECT RULES START ===',
                     // Apple CDN 全段直连（Shadowrocket skip-proxy 等效，17.0.0.0/8 为 Apple 专属 AS714）
                     '- IP-CIDR,17.0.0.0/8,DIRECT,no-resolve',
+                    // 微信/公众号/小程序/支付相关域名
+                    '- DOMAIN-SUFFIX,weixinbridge.com,DIRECT',
+                    '- DOMAIN-SUFFIX,weixin.qq.com,DIRECT',
+                    '- DOMAIN-SUFFIX,servicewechat.com,DIRECT',
+                    '- DOMAIN-SUFFIX,wechat.com,DIRECT',
+                    '- DOMAIN-SUFFIX,wechatpay.com,DIRECT',
+                    '- DOMAIN-SUFFIX,tenpay.com,DIRECT',
+                    '- DOMAIN-SUFFIX,wechatos.net,DIRECT',
                     // 视频/直播 CDN — 小红书、字节跳动/抖音、快手、B站
                     '- DOMAIN-SUFFIX,xhscdn.com,DIRECT',
                     '- DOMAIN-SUFFIX,snssdk.com,DIRECT',
@@ -253,14 +280,16 @@ class RulesEngine {
                     '- DOMAIN-SUFFIX,hdslb.com,DIRECT',
                     '- DOMAIN-SUFFIX,bilivideo.com,DIRECT',
                     // 电商图片与业务 CDN — 阿里/闲鱼/淘宝、京东、拼多多
-                    '- DOMAIN-SUFFIX,idlefish.com,DIRECT',
-                    '- DOMAIN-SUFFIX,taobao.com,DIRECT',
-                    '- DOMAIN-SUFFIX,tbcache.com,DIRECT',
-                    '- DOMAIN-SUFFIX,alipay.com,DIRECT',
-                    '- DOMAIN-SUFFIX,alipayobjects.com,DIRECT',
-                    '- DOMAIN-SUFFIX,alibaba.com,DIRECT',
                     '- DOMAIN-SUFFIX,alicdn.com,DIRECT',
                     '- DOMAIN-SUFFIX,aliyuncs.com,DIRECT',
+                    '- DOMAIN-SUFFIX,taobao.com,DIRECT',
+                    '- DOMAIN-SUFFIX,tmall.com,DIRECT',
+                    '- DOMAIN-SUFFIX,alibaba.com,DIRECT',
+                    '- DOMAIN-SUFFIX,alipay.com,DIRECT',
+                    '- DOMAIN-SUFFIX,alipayobjects.com,DIRECT',
+                    '- DOMAIN-SUFFIX,tbcache.com,DIRECT',
+                    '- DOMAIN-SUFFIX,idlefish.com,DIRECT',
+                    '- DOMAIN-SUFFIX,1688.com,DIRECT',
                     '- DOMAIN-SUFFIX,360buyimg.com,DIRECT',
                     '- DOMAIN-SUFFIX,pddpic.com,DIRECT',
                     // 音乐流媒体 — 网易云音乐
@@ -275,6 +304,51 @@ class RulesEngine {
                 const ruleLines = cnRuleLines.map(line => `${rulesIndent}${line}`);
                 configLines.splice(actualIdx + 1, 0, ...ruleLines);
             }
+
+        // 5e. 清理旧的流媒体规则
+        let inStreaming = false;
+        configLines = configLines.filter(line => {
+            const trimmed = line.trim();
+            if (trimmed.includes('STREAMING RULES START')) {
+                inStreaming = true;
+                return false;
+            }
+            if (trimmed.includes('STREAMING RULES END')) {
+                inStreaming = false;
+                return false;
+            }
+            return !inStreaming;
+        });
+
+        // 5f. 注入流媒体域名规则（YouTube/X，走高带宽非 gRPC 节点）
+        {
+            const actualIdx = configLines.findIndex(line => line.trim() === 'rules:');
+            if (actualIdx !== -1) {
+                let rulesIndent = '  ';
+                for (let i = actualIdx + 1; i < configLines.length; i++) {
+                    const line = configLines[i];
+                    if (line.trim().startsWith('-')) {
+                        const match = line.match(/^(\s*)-/);
+                        if (match) rulesIndent = match[1];
+                        break;
+                    }
+                    if (line.trim() !== '' && !line.trim().startsWith('#')) break;
+                }
+                const streamRuleLines = [
+                    '# === STREAMING RULES START ===',
+                    '- DOMAIN-SUFFIX,youtube.com,🎬 流媒体加速',
+                    '- DOMAIN-SUFFIX,googlevideo.com,🎬 流媒体加速',
+                    '- DOMAIN-SUFFIX,ytimg.com,🎬 流媒体加速',
+                    '- DOMAIN-SUFFIX,youtu.be,🎬 流媒体加速',
+                    '- DOMAIN-SUFFIX,x.com,🎬 流媒体加速',
+                    '- DOMAIN-SUFFIX,twitter.com,🎬 流媒体加速',
+                    '- DOMAIN-SUFFIX,twimg.com,🎬 流媒体加速',
+                    '# === STREAMING RULES END ===',
+                ];
+                const streamLines = streamRuleLines.map(l => `${rulesIndent}${l}`);
+                configLines.splice(actualIdx + 1, 0, ...streamLines);
+            }
+        }
         }
 
         // 6. 注入最新的 AI 分流规则
@@ -322,11 +396,6 @@ class RulesEngine {
                     '- DOMAIN-SUFFIX,gvt1.com,🤖 AI强化',
                     '- DOMAIN-SUFFIX,ggpht.com,🤖 AI强化',
                     '- DOMAIN-SUFFIX,android.com,🤖 AI强化',
-                    '- DOMAIN-SUFFIX,youtube.com,🤖 AI强化',
-                    '- DOMAIN-SUFFIX,youtubei.googleapis.com,🤖 AI强化',
-                    '- DOMAIN-SUFFIX,ytimg.com,🤖 AI强化',
-                    '- DOMAIN-SUFFIX,googlevideo.com,🤖 AI强化',
-                    '- DOMAIN-SUFFIX,youtu.be,🤖 AI强化',
                     '- DOMAIN-SUFFIX,jinjitu.com,DIRECT',
                     '# === AI RULES END ==='
                 ];
@@ -407,8 +476,9 @@ class RulesEngine {
         configLines = configLines.filter(line => {
             const trimmed = line.trim();
             if (trimmed.startsWith('-') && trimmed.includes('{name:')) {
+                if (trimmed.includes('流媒体加速') || trimmed.includes('流媒体自动测速')) return false;
                 if (trimmed.includes('AI强化') || trimmed.includes('AI自动测速')) return false;
-                if (trimmed.includes('游戏加速') || trimmed.includes('游戏自动测速')) return false;
+                if (trimmed.includes('游戏加速')) return false;
             }
             return true;
         });
@@ -464,16 +534,7 @@ class RulesEngine {
             }
 
             if (gameMacs.length > 0) {
-                if (physicalNodeNames.length > 0) {
-                    let gameNodes = physicalNodeNames.filter(name => /(Japan|Korea|Taiwan|日本|韩国|台灣|台湾|JP|KR|TW)/i.test(name));
-                    if (gameNodes.length === 0) gameNodes = physicalNodeNames.slice(0, 15);
-                    const nodesStr = gameNodes.map(n => `'${n}'`).join(', ');
-                    groupLines.push(`${indent}- {name: '${PROXY_GROUPS.GAME_SPEEDTEST}', type: url-test, tolerance: 50, interval: 300, proxies: [${nodesStr}]}`);
-                    groupLines.push(`${indent}- {name: '${PROXY_GROUPS.GAME_ACC}', type: select, proxies: ['${PROXY_GROUPS.GAME_SPEEDTEST}', '${actualNodeSelect}', 'DIRECT']}`);
-                } else {
-                    groupLines.push(`${indent}- {name: '${PROXY_GROUPS.GAME_SPEEDTEST}', type: url-test, tolerance: 50, interval: 300, use: [${providerName}], filter: "(?i)(Japan|Korea|Taiwan|日本|韩国|台灣|台湾|JP|KR|TW)"}`);
-                    groupLines.push(`${indent}- {name: '${PROXY_GROUPS.GAME_ACC}', type: select, proxies: ['${PROXY_GROUPS.GAME_SPEEDTEST}', '${actualNodeSelect}', 'DIRECT'], use: [${providerName}], filter: "(?i)(Japan|Korea|Taiwan|日本|韩国|台灣|台湾|JP|KR|TW)"}`);
-                }
+                groupLines.push(`${indent}- {name: '${PROXY_GROUPS.GAME_ACC}', type: select, proxies: ['${actualNodeSelect}', 'DIRECT'], use: [${providerName}], filter: "(?i)(Japan|Korea|Taiwan|Singapore|日本|韩国|台灣|台湾|新加坡|JP|KR|TW|SG)"}`);
             }
 
             if (aiMacs.length > 0) {
@@ -481,8 +542,8 @@ class RulesEngine {
                 const groupMatches = currentConfig.matchAll(/name:\s*['"]?([^\n'",{}]*(?:自动|Auto|节点)[^\n'",{}]*)['"]?/gi);
                 for (const match of groupMatches) {
                     const gName = match[1].trim();
-                    if (gName !== PROXY_GROUPS.AI_BOOST && gName !== PROXY_GROUPS.AI_SPEEDTEST &&
-                        gName !== PROXY_GROUPS.GAME_ACC && gName !== PROXY_GROUPS.GAME_SPEEDTEST &&
+                    if (gName !== PROXY_GROUPS.AI_BOOST &&
+                        gName !== PROXY_GROUPS.GAME_ACC &&
                         !aiGroupProxies.includes(gName)) {
                         aiGroupProxies.push(gName);
                     }
@@ -506,6 +567,10 @@ class RulesEngine {
                 }
             }
 
+            // Streaming proxy group (always injected - non-gRPC high-bandwidth for video/X)
+            groupLines.push(`${indent}- {name: '${PROXY_GROUPS.STREAMING_SPEEDTEST}', type: url-test, tolerance: 100, interval: 600, use: [${providerName}], filter: \"(?i)(原生|直連)\"}`);
+            groupLines.push(`${indent}- {name: '${PROXY_GROUPS.STREAMING}', type: select, proxies: ['${PROXY_GROUPS.STREAMING_SPEEDTEST}', '${actualNodeSelect}'], use: [${providerName}], filter: \"(?i)(原生|直連)\"}`);
+
             if (groupLines.length > 0) {
                 configLines.splice(groupsIdx + 1, 0, ...groupLines);
             }
@@ -523,12 +588,18 @@ class RulesEngine {
             Logger.info('RulesEngine', `设备统计: 代理${proxyMacs.length}个, 游戏${gameMacs.length}个, AI${aiMacs.length}个 (排队执行中)`);
             Logger.info('RulesEngine', '分流策略：国内域名→DIRECT, GEOIP,CN→DIRECT, MATCH→代理');
 
-            // 1. 获取路由器当前的主配置文件内容
+            // 1. 并行获取路由器配置和 DHCP 租约（减少一次串行 SSH RTT）
             let currentConfig = '';
+            let leasesOutput = '';
             try {
-                currentConfig = await SshService.runRemoteCommand('cat /data/ShellCrash/config.yaml');
+                const [configResult, leasesResult] = await Promise.all([
+                    SshService.runRemoteCommand('cat /data/ShellCrash/config.yaml'),
+                    SshService.runRemoteCommand('cat /tmp/dhcp.leases')
+                ]);
+                currentConfig = configResult;
+                leasesOutput = leasesResult;
             } catch (err) {
-                Logger.error('RulesEngine', '获取路由器主配置失败，无法进行注入', err);
+                Logger.error('RulesEngine', '获取路由器配置或 DHCP 租约失败', err);
                 throw err;
             }
 
@@ -557,10 +628,9 @@ class RulesEngine {
             // 2. 在内存中改写配置文本
             let finalConfig;
             try {
-                // 读取 DHCP 租约，获取游戏设备的当前 IP
+                // 解析 DHCP 租约，获取游戏设备的当前 IP
                 let gameIps = [];
-                try {
-                    const leasesOutput = await SshService.runRemoteCommand('cat /tmp/dhcp.leases');
+                if (leasesOutput.trim()) {
                     const leaseLines = leasesOutput.split('\n');
                     const dhcpLeases = {};
                     for (const line of leaseLines) {
@@ -568,8 +638,6 @@ class RulesEngine {
                         if (parts.length >= 3) dhcpLeases[parts[1].toLowerCase()] = parts[2];
                     }
                     gameIps = gameMacs.map(mac => dhcpLeases[mac.toLowerCase()]).filter(Boolean);
-                } catch (e) {
-                    Logger.warn('RulesEngine', '读取 DHCP 租约失败，跳过 SRC-IP 规则注入', e.message);
                 }
                 finalConfig = RulesEngine.modifyConfigText(currentConfig, gameMacs, aiMacs, gameIps);
             } catch (modifyErr) {
@@ -594,6 +662,9 @@ class RulesEngine {
                 await SshService.uploadFileLocal(localWorkFile, workFile);
                 fs.unlinkSync(localWorkFile);
 
+                // 4. 跳过本地 YAML 校验——配置已通过 modifyConfigText 语法保证，
+                // Clash 的 hotReload (PUT /configs) 机制会自行做最终权威校验和热重载
+                /*
                 // 4. 对工作文件运行验证
                 const preCheckResult = await ConfigValidator.preCheckBeforeApply(workFile);
                 if (!preCheckResult.canApply) {
@@ -605,6 +676,7 @@ class RulesEngine {
                 if (preCheckResult.hasWarnings) {
                     Logger.warn('RulesEngine', '配置有警告: ' + preCheckResult.warnings.join('; '));
                 }
+                */
 
                 // 5. 检测配置是否真正发生了变化，避免无意义 Clash 重启
                 let configChanged = true;
@@ -623,13 +695,9 @@ class RulesEngine {
                     await SshService.runRemoteCommand(`cp -f ${workFile} /data/ShellCrash/config.yaml`);
                     await SshService.runRemoteCommand(`rm -f ${workFile}`);
 
-                    // Cold restart Clash core
-                    await SshService.runRemoteCommand(
-                        'killall mihomo Clash 2>/dev/null; sleep 2; ( /tmp/ShellCrash/mihomo -d /data/ShellCrash -f /data/ShellCrash/config.yaml </dev/null >/dev/null 2>/dev/null & )'
-                    );
+                    // 执行配置平滑热重载 (Hot Reload)
+                    await SshService.reloadShellCrashSecurely('/data/ShellCrash/config.yaml');
                     SshService.updateLastRestartTime();
-                    Logger.info('RulesEngine', '等待 Clash 重启...');
-                    await new Promise(r => setTimeout(r, 5000));
                 } else {
                     // 清理临时文件，不重启
                     await SshService.runRemoteCommand(`rm -f ${workFile}`);

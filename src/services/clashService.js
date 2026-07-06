@@ -123,6 +123,23 @@ class ClashService {
         return false;
     }
 
+    // 通过 Clash HTTP API 平滑热重载配置 (Zero-Downtime Hot Reload)
+    static async hotReloadConfig(configPath = '/data/ShellCrash/config.yaml', timeoutMs = 20000) {
+        try {
+            Logger.info('ClashAPI', `正在请求内核平滑热重载配置: ${configPath}`);
+            const res = await this._request('PUT', '/configs?force=true', { path: configPath }, timeoutMs);
+            if (res.status === 204 || res.status === 200 || res.status === 202) {
+                Logger.info('ClashAPI', '✅ 配置热重载成功，当前网络连接未中断！');
+                return true;
+            }
+            Logger.warn('ClashAPI', `配置热重载返回意外状态码: ${res.status}`);
+            return false;
+        } catch (error) {
+            Logger.error('ClashAPI', `配置热重载请求异常: ${error.message}`);
+            return false;
+        }
+    }
+
     // 触发指定 proxy-provider 的健康测速
     static async triggerProviderHealthCheck(providerName, timeoutMs = 5000) {
         const encodedProvider = encodeURIComponent(providerName);

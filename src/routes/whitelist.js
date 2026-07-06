@@ -84,7 +84,8 @@ router.post('/add', async (req, res) => {
         }
 
         // 安全重启防火墙与 Clash 核心
-        await SshService.restartShellCrashSecurely();
+        // 仅重建 iptables，无需 restart Clash（规则由 RulesEngine 热重载注入）
+        await SshService.runRemoteCommand('sh /data/ShellCrash/setup_iptables.sh');
 
         // 操作成功，强制清除缓存让前端刷新最新的设备状态
         cache.clear('deviceList');
@@ -155,7 +156,7 @@ router.post('/remove', async (req, res) => {
         await RulesEngine.updateClashRules(gameMacs, aiMacs, newMacList);
 
         // 安全重启防火墙与 Clash 核心
-        await SshService.restartShellCrashSecurely();
+        await SshService.runRemoteCommand('sh /data/ShellCrash/setup_iptables.sh');
 
         // 操作成功，强制清除缓存让前端刷新最新状态
         cache.clear('deviceList');

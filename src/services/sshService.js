@@ -2,6 +2,7 @@ const { execFile } = require('child_process');
 const { config } = require('../config');
 const Logger = require('../utils/logger');
 const Validators = require('../utils/validators');
+const ClashService = require('./clashService');
 const fs = require('fs');
 const path = require('path');
 
@@ -109,25 +110,25 @@ class SshService {
         });
     }
 
-    // 上传最新的安全防火墙引流脚本到路由器并赋权
+    // 上传最新的安全防火墙引流脚本到路由器并赋权，同时推送 AI 白名单
     static async pushIptablesScript() {
         try {
             const localIptablesScript = path.join(__dirname, '..', '..', 'scripts', 'setup_iptables.sh');
-            const localQuicScript = path.join(__dirname, '..', '..', 'scripts', 'setup_quic_block.sh');
             
             if (fs.existsSync(localIptablesScript)) {
                 Logger.info('ShellCrash', '正在上传最新安全引流脚本 setup_iptables.sh 至路由器...');
                 await this.uploadFileLocal(localIptablesScript, '/data/ShellCrash/setup_iptables.sh');
                 await this.runRemoteCommand('chmod +x /data/ShellCrash/setup_iptables.sh');
-                Logger.info('ShellCrash', '安全引流脚本推送成功');
+                
+                // 同步推送 AI 设备白名单
+                const aiDevicesPath = require('../config').config.paths.aiDevices;
+                if (fs.existsSync(aiDevicesPath)) {
+                    await this.uploadFileLocal(aiDevicesPath, '/data/ShellCrash/configs/ai_devices');
+                }
+                
+                Logger.info('ShellCrash', '安全引流脚本及依赖配置推送成功');
             } else {
                 Logger.warn('ShellCrash', `本地未找到安全引流脚本: ${localIptablesScript}，跳过推送`);
-            }
-            
-            if (fs.existsSync(localQuicScript)) {
-                await this.uploadFileLocal(localQuicScript, '/data/ShellCrash/setup_quic_block.sh');
-                await this.runRemoteCommand('chmod +x /data/ShellCrash/setup_quic_block.sh');
-                Logger.info('ShellCrash', 'QUIC阻断脚本推送成功');
             }
         } catch (err) {
             Logger.error('ShellCrash', '推送最新防火墙引流脚本失败', err);
@@ -140,12 +141,38 @@ class SshService {
         try {
             await this.pushIptablesScript();
             await this.runRemoteCommand('sh /data/ShellCrash/setup_iptables.sh');
-            await this.runRemoteCommand('sh /data/ShellCrash/setup_quic_block.sh');
             const ruleCount = await this.runRemoteCommand('iptables -t nat -L PREROUTING -n 2>/dev/null | grep -c "redir ports 7892" || echo 0');
             Logger.info('ShellCrash', `iptables 规则已初始化 (${ruleCount.trim()} 条 TCP REDIRECT)`);
         } catch (err) {
             Logger.warn('ShellCrash', 'iptables 规则初始化失败', err);
             throw err;
+        }
+    }
+
+    // 优先使用平滑热重载，失败后自动降级为安全冷重启
+    static async reloadShellCrashSecurely(configPath = '/data/ShellCrash/config.yaml') {
+        Logger.info('ShellCrash', `尝试执行平滑热重载配置: ${configPath}`);
+        const success = await ClashService.hotReloadConfig(configPath);
+        if (success) {
+            // 热重载成功后，仅需等待极短时间让内核完成内部路由树重建
+            await new Promise(r => setTimeout(r, 1000));
+            Logger.info('ShellCrash', '✅ 平滑热重载完成，网络连接未中断。');
+            return true;
+        } else {
+            Logger.warn('ShellCrash', '⚠️ 平滑热重载失败，等待 2秒 确认内核状态后再决定是否冷重启...');
+            // 给 Clash 内核 2 秒 settle 时间，避免因短暂 API 不可达而误判崩溃
+            await new Promise(r => setTimeout(r, 2000));
+            // 再次检查 Clash 是否真的挂了
+            try {
+                const versionCheck = await ClashService.getVersion(3000);
+                if (versionCheck && versionCheck.version) {
+                    Logger.info('ShellCrash', 'Clash 内核仍在运行，跳过冷重启（热重载可能因超时或不兼容而静默失败，但配置已被 rulesEngine 写入）。');
+                    return false;
+                }
+            } catch (e) { /* 确实挂了，继续降级冷重启 */ }
+            Logger.warn('ShellCrash', '确认 Clash 内核无响应，降级执行冷重启...');
+            await this.restartShellCrashSecurely();
+            return false;
         }
     }
 

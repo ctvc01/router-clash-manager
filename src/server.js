@@ -54,9 +54,6 @@ Logger.info('Server', '✅ 配置版本管理系统已初始化');
             // 重建 iptables 规则
             await SshService.runRemoteCommand('sh /data/ShellCrash/setup_iptables.sh');
             Logger.info('Server', 'iptables TCP REDIRECT 规则已重建');
-
-            await SshService.runRemoteCommand('sh /data/ShellCrash/setup_quic_block.sh');
-            Logger.info('Server', 'QUIC (UDP 443) 阻断规则已添加');
         } catch (err) {
             Logger.warn('Server', '路由器白名单/iptables初始化失败（稍后会重试）', err);
         }
@@ -92,7 +89,7 @@ Logger.info('Server', '✅ 配置版本管理系统已初始化');
         Logger.info('Daemon', `检测到当前有 ${activeGameDevices.length} 个加速设备，正在自动激活游戏加速守护进程...`);
         GameAccService.startGameAccMonitor();
 
-        // 启动后 3 分钟内触发一次测速（LOCKED 时仅更新结果不切换）
+        // 启动后 60 秒内触发首次测速（Clash 30s 内就绪足够）
         setTimeout(() => {
             if (SpeedtestState.isLocked('game')) {
                 Logger.info('Server', '🔄 启动后首次游戏节点测速(LOCKED:仅更新)...');
@@ -103,7 +100,7 @@ Logger.info('Server', '✅ 配置版本管理系统已初始化');
                 GameAccService.findBestAndLock().catch(e =>
                     Logger.warn('Server', '启动测速失败', e.message));
             }
-        }, 180000);
+        }, 60000);
     }
 
     // 启动北京时间每日凌晨 04:00 定时测速重测与锁定自愈任务
@@ -114,12 +111,12 @@ Logger.info('Server', '✅ 配置版本管理系统已初始化');
         Logger.info('Daemon', `检测到当前有 ${activeAiDevices.length} 个 AI 强化设备，正在自动激活 AI 强化守护进程...`);
         AiBoostService.startAiBoostMonitor();
 
-        // 启动后 3 分钟内触发一次测速并锁定最优节点
+        // 启动后 90 秒内触发首次 AI 测速（错峰 Clash 启动 + 游戏测速）
         setTimeout(() => {
             Logger.info('Server', '🔄 启动后首次 AI 节点测速+锁定...');
             AiBoostService.findBestAndLock().catch(e =>
                 Logger.warn('Server', 'AI 启动测速失败', e.message));
-        }, 210000);
+        }, 90000);
     }
 
     // 启动 AI 强化每日凌晨定时切换任务

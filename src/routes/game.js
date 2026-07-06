@@ -41,8 +41,9 @@ router.post('/enable', async (req, res) => {
 
 // 3. 关闭设备游戏加速模式
 router.post('/disable', async (req, res) => {
+    let mac = '';
     try {
-        const mac = Validators.validateMAC(req.body.mac);
+        mac = Validators.validateMAC(req.body.mac);
         const key = `disable:${mac}`;
         const existing = inFlight.get(key);
         if (existing) {

@@ -26,11 +26,23 @@ class GameAccService {
     // 优先丢包率 → 加权延迟（Japan/Taiwan/Korea region bias + gRPC penalty）
     static async findFastestGameNode() {
         try {
-            Logger.info('GameAcc', '🔍 3-采样 Nintendo CDN测速 日本加权 gRPC惩罚...');
+            Logger.info('GameAcc', '🔍 3-采样 Nintendo CDN测速 日/新/韩/台加权 gRPC惩罚...');
             const proxiesData = await ClashService.getProxies(6000);
-            const group = proxiesData.proxies['⚡ 游戏自动测速'];
+            const group = proxiesData.proxies['🎮 游戏加速'];
             if (!group || !group.all || group.all.length === 0) {
-                Logger.warn('GameAcc', '未找到 ⚡ 游戏自动测速 组，无法自动寻优');
+                Logger.warn('GameAcc', '未找到 🎮 游戏加速 组，无法自动寻优');
+                return null;
+            }
+            // 过滤掉策略组名称（节点选择、DIRECT 等），仅保留物理节点
+            const physicalNodes = group.all.filter(name => {
+                const lower = name.toLowerCase();
+                return !['direct', 'global', 'rejection'].includes(lower) &&
+                       !lower.includes('节点选择') &&
+                       !lower.includes('选择节点') &&
+                       !lower.includes('自动测速');
+            });
+            if (physicalNodes.length === 0) {
+                Logger.warn('GameAcc', '🎮 游戏加速 组中无可用物理节点，跳过测速');
                 return null;
             }
             const NODE_SAMPLES = 3;
@@ -38,7 +50,7 @@ class GameAccService {
             const TEST_URL = 'http://ctest.cdn.nintendo.net/';
             
             const results = [];
-            for (const nodeName of group.all) {
+            for (const nodeName of physicalNodes) {
                 let successCount = 0, totalDelay = 0;
                 let isDead = false;
                 for (let i = 0; i < NODE_SAMPLES; i++) {
@@ -60,9 +72,10 @@ class GameAccService {
                 const isJapan = lowerName.includes('japan') || lowerName.includes('日本') || lowerName.includes('jp');
                 const isTaiwan = lowerName.includes('taiwan') || lowerName.includes('台灣') || lowerName.includes('台湾') || lowerName.includes('tw');
                 const isKorea = lowerName.includes('korea') || lowerName.includes('韩国') || lowerName.includes('kr');
+                const isSingapore = lowerName.includes('singapore') || lowerName.includes('新加坡') || lowerName.includes('sg');
                 const isGRPC = lowerName.includes('grpc');
                 let weight = 1.0;
-                if (isJapan) weight = 0.75; else if (isTaiwan) weight = 0.85; else if (isKorea) weight = 0.90;
+                if (isJapan) weight = 0.75; else if (isTaiwan) weight = 0.85; else if (isSingapore) weight = 0.88; else if (isKorea) weight = 0.90;
                 if (isGRPC && !isJapan) weight *= 1.15;
                 const weightedDelay = (!isDead && successCount > 0) ? Math.round(avgDelay * weight) : 99999;
                 results.push({ 
@@ -71,7 +84,7 @@ class GameAccService {
                     rawDelay: isDead ? -1 : avgDelay, 
                     loss: lossRate, 
                     samples: isDead ? 0 : successCount, 
-                    region: isJapan ? 'JP' : (isTaiwan ? 'TW' : (isKorea ? 'KR' : 'OTHER')), 
+                    region: isJapan ? 'JP' : (isTaiwan ? 'TW' : (isSingapore ? 'SG' : (isKorea ? 'KR' : 'OTHER'))), 
                     isGRPC,
                     timestamp: Date.now()
                 });
@@ -152,7 +165,7 @@ class GameAccService {
             }
 
             const currentNode = group.now;
-            if (['⚡ 游戏自动测速', '🚀 节点选择', '👑 高级节点', 'DIRECT'].includes(currentNode)) {
+            if (['🚀 节点选择', '👑 高级节点', 'DIRECT'].includes(currentNode)) {
                 this._healthFailCounts[currentNode] = 0;
                 return;
             }

@@ -112,7 +112,20 @@ class ProxyHealthService {
             if (!isProcessRunning) {
                 consecutiveFailures++;
                 Logger.warn('ProxyDaemon', `⚠️ [${consecutiveFailures}/2] 检测到 Clash Core 进程已异常退出`);
-                if (consecutiveFailures >= 2) {
+                
+                // 【极简优化 4】：获取路由器系统运行时间 (Uptime)，若刚开机不到 5 分钟，说明是整机重启导致服务未拉起，
+                // 直接短路跳过 [2/2] 容错等待机制，一击必杀强制复活，将断网恢复期从 6 分钟压缩至数秒！
+                let isJustBooted = false;
+                try {
+                    const uptimeStr = await SshService.runRemoteCommand("cat /proc/uptime | awk '{print $1}'");
+                    const uptimeSec = parseFloat(uptimeStr);
+                    if (!isNaN(uptimeSec) && uptimeSec < 300) {
+                        isJustBooted = true;
+                        Logger.warn('ProxyDaemon', `🚀 检测到路由器刚开机仅 ${Math.floor(uptimeSec)}s，跳过防抖等待，立即执行闪电自愈！`);
+                    }
+                } catch (e) {}
+
+                if (consecutiveFailures >= 2 || isJustBooted) {
                     if (consecutiveRestarts >= 3) {
                         Logger.error('ProxyDaemon', '❌ 已经连续安全重启服务 3 次仍未恢复！疑似外网物理断开或订阅失效。为保护路由器 CPU，挂起自动重启自愈机制。');
                     } else {
@@ -248,6 +261,8 @@ class ProxyHealthService {
                 if (delay > 0) {
                     activeCount++;
                 }
+                // 【极简优化 5】：全量扫盘必定拉高弱鸡路由器 CPU 并挤占文件描述符，每次测完强制睡眠 1000ms 缓冲降压
+                await new Promise(r => setTimeout(r, 1000));
             }
 
             Logger.info('ProxyDaemon', `🎉 网页代理全节点定时测速刷新完成，共 ${activeCount}/${targetNodes.length} 个可用节点延迟已更新历史。`);

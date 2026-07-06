@@ -64,6 +64,9 @@ class AiBoostService {
             for (const nodeName of filteredNodes) {
                 const delay = await ClashService.testNodeDelay(nodeName, 2000, 'https://generativelanguage.googleapis.com/');
                 results.push({ name: nodeName, delay: delay > 0 ? delay : 99999 });
+                
+                // 【硬件防波段】：强制测速间隔，避免连续高并发请求拉跨弱机能路由器
+                await new Promise(r => setTimeout(r, 1000));
             }
             const validResults = results.filter(r => r.delay < 99999);
             if (validResults.length === 0) {
@@ -171,7 +174,7 @@ class AiBoostService {
 
             const currentNode = group.now;
             // 排除自动策略组名称，只有锁死到具体的物理节点才进行可用性保护
-            if (['⚡ AI自动测速', '🚀 节点选择', '♻️ 自动选择', '👑 高级节点', 'DIRECT'].includes(currentNode)) {
+            if (['🚀 节点选择', '♻️ 自动选择', '👑 高级节点', 'DIRECT'].includes(currentNode)) {
                 return;
             }
             
@@ -209,7 +212,16 @@ class AiBoostService {
             let currentDelay = await ClashService.testNodeDelay(currentNode, 4000, 'https://generativelanguage.googleapis.com/');
             if (currentDelay === 0) currentDelay = 99999;
 
-            // 2. 全量测速寻找最优节点（始终执行以更新 lastResult）
+            // 【极简优化 3】：如果当前节点延迟表现极佳 (<= 500ms)，直接判定为可用，免去无意义的全局扫盘测速
+            if (currentDelay <= 500) {
+                Logger.info('AiBoost', `定期检测：当前节点 [${currentNode}] 延迟极佳 (${currentDelay}ms) <= 500ms，免去全量测速寻优，减轻路由器负荷。`);
+                if (!isLocked) {
+                    SpeedtestState.updateResult('ai', { name: currentNode, delay: currentDelay });
+                }
+                return;
+            }
+
+            // 2. 全量测速寻找最优节点（当当前节点拉胯时才执行）
             const fastestNode = await this.findFastestAiNode();
             if (!fastestNode) return;
 
