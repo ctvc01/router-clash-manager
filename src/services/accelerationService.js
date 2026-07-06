@@ -58,19 +58,23 @@ class AccelerationService {
         await RulesEngine.updateClashRules(gameMacs, aiMacs);
 
         // 推送 AI 设备白名单（用于 QUIC 阻断）
+        let aiMacsWriteCmd = '';
         try {
             let currentAiMacs = AiBoostService.readAiDevices();
             if (!currentAiMacs.includes(mac) && type === 'ai') currentAiMacs = [...currentAiMacs, mac];
             const aiMacsStr = currentAiMacs.join('\\n');
-            await SshService.runRemoteCommand(`printf "${aiMacsStr}\\n" > /data/ShellCrash/configs/ai_devices`);
+            aiMacsWriteCmd = `printf "${aiMacsStr}\\n" > /data/ShellCrash/configs/ai_devices; `;
         } catch (e) {
             Logger.warn(label, '推送 AI 设备白名单失败', e.message);
         }
 
-        // 无条件重建 iptables（幂等，补充缺失规则并清理残留）
+        // 批处理：MAC写入 + AI设备 + iptables + QUIC阻断 合并为一次 SSH
         try {
-            await SshService.runRemoteCommand('sh /data/ShellCrash/setup_iptables.sh');
-            Logger.info(label, '已执行 setup_iptables.sh 重建 MAC 劫持规则');
+            const macWriteCmd = `grep -q "^${mac}$" /data/ShellCrash/configs/mac || echo "${mac}" >> /data/ShellCrash/configs/mac; `;
+            await SshService.runRemoteCommand(
+                `${macWriteCmd}${aiMacsWriteCmd}sh /data/ShellCrash/setup_iptables.sh && sh /data/ShellCrash/setup_quic_block.sh`
+            );
+            Logger.info(label, '已执行 iptables + QUIC 阻断重建 (批处理)');
         } catch (e) {
             Logger.warn(label, 'TCP 劫持规则重建失败', e.message);
         }
@@ -124,7 +128,7 @@ class AccelerationService {
         try {
             const aiMacsStr = aiMacs.join('\\n');
             await SshService.runRemoteCommand(`printf "${aiMacsStr}\\n" > /data/ShellCrash/configs/ai_devices`);
-            await SshService.runRemoteCommand('sh /data/ShellCrash/setup_iptables.sh');
+            await SshService.runRemoteCommand('sh /data/ShellCrash/setup_iptables.sh && sh /data/ShellCrash/setup_quic_block.sh');
             Logger.info(label, '已执行 setup_iptables.sh 重建 MAC 劫持规则');
         } catch (e) {
             Logger.warn(label, '重建 TCP 劫持规则失败', e.message);
