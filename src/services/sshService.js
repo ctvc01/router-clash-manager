@@ -164,7 +164,7 @@ class SshService {
             await new Promise(r => setTimeout(r, 2000));
             // 再次检查 Clash 是否真的挂了
             try {
-                const versionCheck = await ClashService.getVersion(3000);
+                const versionCheck = await ClashService.getVersion(5000);
                 if (versionCheck && versionCheck.version) {
                     Logger.info('ShellCrash', 'Clash 内核仍在运行，跳过冷重启（热重载可能因超时或不兼容而静默失败，但配置已被 rulesEngine 写入）。');
                     return false;
@@ -285,9 +285,14 @@ class SshService {
                     Logger.warn('ShellCrash', 'iptables 规则重建失败（非致命）', iptablesErr);
                 }
 
-                // 更新最后重启时间
+                // 等待 Clash API 就绪（进程存活 ≠ API 可用，268KB 配置加载需额外时间）
+                const apiReady = await ClashService.waitClashReady(15);
+                if (apiReady) {
+                    Logger.info('ShellCrash', 'ShellCrash 分步重启完成，API 已就绪。');
+                } else {
+                    Logger.warn('ShellCrash', 'Clash API 在 15 秒内未就绪，但进程已启动。');
+                }
                 lastRestartTime = Date.now();
-                Logger.info('ShellCrash', 'ShellCrash 已成功完成分步重启。');
             } catch (err) {
                 const stderrMsg = err.stderr || '';
                 const errMsg = (err.error && err.error.message) || '';

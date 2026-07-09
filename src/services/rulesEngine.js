@@ -653,6 +653,13 @@ class RulesEngine {
                 throw new Error('全局规则完整性检查失败');
             }
 
+            // 提前对比：如果在内存中修改后的配置与路由器当前的配置完全一致，则直接返回成功
+            // 避免后续的 SCP 上传、文件覆盖以及 8~10 秒的无意义热重载等待
+            if (currentConfig === finalConfig) {
+                Logger.info('RulesEngine', '⚡️ 零延迟拦截：配置内容未发生实质变化，跳过上传、校验与热重载流程。');
+                return true;
+            }
+
             try {
                 // 将配置写到容器本地临时文件
                 const localWorkFile = `/tmp/local_config_work_${uniqueId}.yaml`;
@@ -678,30 +685,13 @@ class RulesEngine {
                 }
                 */
 
-                // 5. 检测配置是否真正发生了变化，避免无意义 Clash 重启
-                let configChanged = true;
-                try {
-                    const currentRouterConfig = await SshService.runRemoteCommand('cat /data/ShellCrash/config.yaml');
-                    if (currentRouterConfig === finalConfig) {
-                        Logger.info('RulesEngine', '配置内容未变化，跳过 Clash 重启');
-                        configChanged = false;
-                    }
-                } catch (e) {
-                    Logger.warn('RulesEngine', '无法读取当前配置进行对比，继续应用', e.message);
-                }
+                // 把工作文件安全写回 /data
+                await SshService.runRemoteCommand(`cp -f ${workFile} /data/ShellCrash/config.yaml`);
+                await SshService.runRemoteCommand(`rm -f ${workFile}`);
 
-                if (configChanged) {
-                    // 把工作文件安全写回 /data
-                    await SshService.runRemoteCommand(`cp -f ${workFile} /data/ShellCrash/config.yaml`);
-                    await SshService.runRemoteCommand(`rm -f ${workFile}`);
-
-                    // 执行配置平滑热重载 (Hot Reload)
-                    await SshService.reloadShellCrashSecurely('/data/ShellCrash/config.yaml');
-                    SshService.updateLastRestartTime();
-                } else {
-                    // 清理临时文件，不重启
-                    await SshService.runRemoteCommand(`rm -f ${workFile}`);
-                }
+                // 执行配置平滑热重载 (Hot Reload)
+                await SshService.reloadShellCrashSecurely('/data/ShellCrash/config.yaml');
+                SshService.updateLastRestartTime();
 
                 ConfigVersionManager.createSnapshot('/data/ShellCrash/config.yaml', '.applied');
                 try {

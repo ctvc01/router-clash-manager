@@ -127,7 +127,7 @@ class ClashService {
     static async hotReloadConfig(configPath = '/data/ShellCrash/config.yaml', timeoutMs = 20000) {
         try {
             Logger.info('ClashAPI', `正在请求内核平滑热重载配置: ${configPath}`);
-            const res = await this._request('PUT', '/configs?force=true', { path: configPath }, timeoutMs);
+            const res = await this._request('PUT', '/configs?force=false', { path: configPath }, timeoutMs);
             if (res.status === 204 || res.status === 200 || res.status === 202) {
                 Logger.info('ClashAPI', '✅ 配置热重载成功，当前网络连接未中断！');
                 return true;

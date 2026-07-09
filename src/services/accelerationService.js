@@ -34,16 +34,6 @@ class AccelerationService {
             Logger.info(label, `开启${modeName}：由于设备 ${mac} 原本在${otherModeName}模式，已自动将其从中移除。`);
         }
 
-        const whitelistOutput = await SshService.runRemoteCommand('cat /data/ShellCrash/configs/mac');
-        const whitelistMacs = whitelistOutput
-            .split('\n')
-            .map(line => line.trim().toLowerCase())
-            .filter(line => line.length > 0);
-
-        if (!whitelistMacs.includes(mac)) {
-            await SshService.runRemoteCommand(`echo "${mac}" >> /data/ShellCrash/configs/mac`);
-            Logger.info(label, `已将设备 ${mac} 写入 MAC 白名单`);
-        }
 
         // 内存中添加新设备供 RulesEngine 使用（先不写 file）
         if (!macs.includes(mac)) {
@@ -112,26 +102,20 @@ class AccelerationService {
         const aiMacs = AiBoostService.readAiDevices();
         await RulesEngine.updateClashRules(gameMacs, aiMacs);
 
-        // 原子性从白名单移除（grep -v + mv 替代 read-modify-write，消除竞态）
-        if (!gameMacs.includes(mac) && !aiMacs.includes(mac)) {
-            try {
-                await SshService.runRemoteCommand(
-                    `grep -vi "^${mac}$" /data/ShellCrash/configs/mac > /tmp/mac_clean.tmp && mv /tmp/mac_clean.tmp /data/ShellCrash/configs/mac`
-                );
-                Logger.info(label, `已从路由物理 MAC 白名单清除设备 ${mac}`);
-            } catch (e) {
-                Logger.warn(label, `清除 MAC 白名单失败`, e.message);
-            }
-        }
-
-        // 无论如何，更新路由上的 AI 白名单并重建 iptables
+        // 原子性从白名单移除并重建规则 (批处理)
         try {
+            let cmd = '';
+            if (!gameMacs.includes(mac) && !aiMacs.includes(mac)) {
+                cmd += `grep -vi "^${mac}$" /data/ShellCrash/configs/mac > /tmp/mac_clean.tmp && mv /tmp/mac_clean.tmp /data/ShellCrash/configs/mac; `;
+            }
             const aiMacsStr = aiMacs.join('\\n');
-            await SshService.runRemoteCommand(`printf "${aiMacsStr}\\n" > /data/ShellCrash/configs/ai_devices`);
-            await SshService.runRemoteCommand('sh /data/ShellCrash/setup_iptables.sh && sh /data/ShellCrash/setup_quic_block.sh');
-            Logger.info(label, '已执行 setup_iptables.sh 重建 MAC 劫持规则');
+            cmd += `printf "${aiMacsStr}\\n" > /data/ShellCrash/configs/ai_devices; `;
+            cmd += `sh /data/ShellCrash/setup_iptables.sh && sh /data/ShellCrash/setup_quic_block.sh`;
+            
+            await SshService.runRemoteCommand(cmd);
+            Logger.info(label, '已批量执行 MAC清理 + AI列表推送 + 规则重建');
         } catch (e) {
-            Logger.warn(label, '重建 TCP 劫持规则失败', e.message);
+            Logger.warn(label, '执行 MAC/劫持规则批量重建失败', e.message);
         }
 
         // 停止守护进程

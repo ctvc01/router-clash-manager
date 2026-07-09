@@ -271,16 +271,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     function updateUiForRebuilding() {
-        elStatusText.textContent = '重载中';
-        elStatusText.className = 'card-value text-orange animate-pulse';
-        elStatusMode.innerHTML = '<span style="color: #ffb786;">正在热重载分流策略...</span>';
-        
-        elCurrentNode.textContent = '请稍候';
-        elCurrentNode.classList.remove('long-text');
-        elNodeLatency.textContent = '延迟: --';
-        
-        elFooterVersion.textContent = '内核版本: 重载中 (Mihomo)';
-        elFooterCpu.textContent = 'CPU: --';
+        // 由于后端现在支持真正的零停机热重载，无需在前端人为伪造“重载中”的断网状态
+        // 保持原本的网关运行状态和当前节点显示不变，仅依靠 loading 浮层提示用户即可
+        Logger.info('UI', '已进入热重载过渡态（静默保持原有 UI 状态）');
     }
 
     // 辅助：HTML 特殊字符转义防 XSS (C4)

@@ -5,8 +5,10 @@ const { config } = require('../config');
 
 let proxyHealthMonitorTimer = null;
 let proxyHealthStartTimeout = null; // 心跳启动延时器
-let silentAllNodesTimer = null;     // 2小时静默测速定时器
-let silentAllNodesStartTimeout = null; // 2小时静默测速启动延时器
+let trickleNodes = [];              // 涓流测速当前轮次的节点列表
+let trickleIndex = 0;               // 涓流测速游标
+let trickleTimer = null;            // 涓流测速定时器
+let trickleStartTimeout = null;     // 涓流测速启动延时器
 let consecutiveFailures = 0;
 let consecutiveRestarts = 0; // 连续重启计数器，防止级联雪崩
 
@@ -67,18 +69,18 @@ class ProxyHealthService {
         }, 180000);
         Logger.info('ProxyDaemon', '🛡️ 网页代理心跳监测已排程，将在 180 秒后错峰激活 (周期 5 分钟)');
 
-        // 2. 网页代理全节点定时测速刷新任务：启动后延迟 15 分钟（900000ms）正式激活，每 2 小时（7200000ms）执行一次
-        if (!silentAllNodesTimer && !silentAllNodesStartTimeout) {
-            silentAllNodesStartTimeout = setTimeout(() => {
-                silentAllNodesStartTimeout = null;
-                Logger.info('ProxyDaemon', '🕰️ 网页代理全节点定时测速刷新任务正式启动 (周期 2 小时)');
-                this.runSilentAllNodesCheck();
+        // 2. 网页代理全节点涓流测速任务：启动后延迟 5 分钟正式激活，每 60 秒测 1 个节点
+        if (!trickleTimer && !trickleStartTimeout) {
+            trickleStartTimeout = setTimeout(() => {
+                trickleStartTimeout = null;
+                Logger.info('ProxyDaemon', '🕰️ 网页代理全节点涓流测速任务正式启动 (周期 60 秒/节点)');
+                this.runTrickleNodeCheck();
 
-                silentAllNodesTimer = setInterval(() => {
-                    this.runSilentAllNodesCheck();
-                }, 7200000);
-            }, 900000);
-            Logger.info('ProxyDaemon', '🕰️ 网页代理全节点定时测速刷新已排程，将在 15 分钟后错峰激活 (周期 2 小时)');
+                trickleTimer = setInterval(() => {
+                    this.runTrickleNodeCheck();
+                }, 60000);
+            }, 300000);
+            Logger.info('ProxyDaemon', '🕰️ 网页代理全节点涓流测速已排程，将在 5 分钟后激活 (周期 60 秒/节点)');
         }
     }
 
@@ -229,45 +231,43 @@ class ProxyHealthService {
         }
     }
 
-    // 定时全物理节点串行测速刷新任务 (每 2 小时一次)
-    static async runSilentAllNodesCheck() {
+    // 涓流测速任务 (每 60 秒测 1 个节点)
+    static async runTrickleNodeCheck() {
         try {
-            Logger.info('ProxyDaemon', '🕰️ 开始执行网页代理全物理节点定时测速刷新...');
-            const proxiesData = await ClashService.getProxies();
-            if (!proxiesData || !proxiesData.proxies) return;
+            // 如果列表空了或者游标走到底了，重新拉取最新节点列表
+            if (trickleNodes.length === 0 || trickleIndex >= trickleNodes.length) {
+                const proxiesData = await ClashService.getProxies();
+                if (!proxiesData || !proxiesData.proxies) return;
 
-            // 优先匹配主策略组
-            const testGroupName = '🚀 节点选择';
-            const groupInfo = proxiesData.proxies[testGroupName];
-            if (!groupInfo || !groupInfo.all || groupInfo.all.length === 0) {
-                Logger.warn('ProxyDaemon', `未找到策略组 [${testGroupName}]，跳过定时全节点刷新`);
-                return;
-            }
-
-            // 过滤非物理节点
-            const targetNodes = groupInfo.all.filter(nodeName => {
-                const lowerName = nodeName.toLowerCase();
-                return !['direct', 'global', 'rejection'].includes(lowerName) &&
-                       !lowerName.includes('选择节点') &&
-                       !lowerName.includes('节点选择');
-            });
-
-            Logger.info('ProxyDaemon', `获取到 ${targetNodes.length} 个网页备选物理节点，开始全量串行测速...`);
-            
-            // 串行测试所有节点，指定超时为 2000ms
-            let activeCount = 0;
-            for (const node of targetNodes) {
-                const delay = await ClashService.testNodeDelay(node, 2000, 'http://www.gstatic.com/generate_204');
-                if (delay > 0) {
-                    activeCount++;
+                const testGroupName = '🚀 节点选择';
+                const groupInfo = proxiesData.proxies[testGroupName];
+                if (!groupInfo || !groupInfo.all || groupInfo.all.length === 0) {
+                    Logger.debug('ProxyDaemon', `[TrickleTest] 未找到策略组 [${testGroupName}]`);
+                    return;
                 }
-                // 【极简优化 5】：全量扫盘必定拉高弱鸡路由器 CPU 并挤占文件描述符，每次测完强制睡眠 1000ms 缓冲降压
-                await new Promise(r => setTimeout(r, 1000));
+
+                // 过滤非物理节点
+                trickleNodes = groupInfo.all.filter(nodeName => {
+                    const lowerName = nodeName.toLowerCase();
+                    return !['direct', 'global', 'rejection'].includes(lowerName) &&
+                           !lowerName.includes('选择节点') &&
+                           !lowerName.includes('节点选择');
+                });
+                trickleIndex = 0;
+                
+                if (trickleNodes.length > 0) {
+                    Logger.info('ProxyDaemon', `[TrickleTest] 开启新一轮全节点涓流测速，共计 ${trickleNodes.length} 个节点 (预计耗时 ${trickleNodes.length} 分钟)`);
+                }
             }
 
-            Logger.info('ProxyDaemon', `🎉 网页代理全节点定时测速刷新完成，共 ${activeCount}/${targetNodes.length} 个可用节点延迟已更新历史。`);
+            if (trickleIndex < trickleNodes.length) {
+                const nodeName = trickleNodes[trickleIndex];
+                const delay = await ClashService.testNodeDelay(nodeName, 2000, 'http://www.gstatic.com/generate_204');
+                Logger.debug('ProxyDaemon', `[TrickleTest] 节点测速完成: [${nodeName}] -> ${delay}ms (${trickleIndex + 1}/${trickleNodes.length})`);
+                trickleIndex++;
+            }
         } catch (err) {
-            Logger.error('ProxyDaemon', '网页代理全节点定时测速任务发生异常', err);
+            Logger.error('ProxyDaemon', '涓流测速任务发生异常', err);
         }
     }
 
@@ -282,14 +282,14 @@ class ProxyHealthService {
             proxyHealthMonitorTimer = null;
             Logger.info('ProxyDaemon', '⏹️ 网页代理健康度监测守护进程已关闭。');
         }
-        if (silentAllNodesStartTimeout) {
-            clearTimeout(silentAllNodesStartTimeout);
-            silentAllNodesStartTimeout = null;
+        if (trickleStartTimeout) {
+            clearTimeout(trickleStartTimeout);
+            trickleStartTimeout = null;
         }
-        if (silentAllNodesTimer) {
-            clearInterval(silentAllNodesTimer);
-            silentAllNodesTimer = null;
-            Logger.info('ProxyDaemon', '⏹️ 网页代理全节点定时测速刷新任务已注销。');
+        if (trickleTimer) {
+            clearInterval(trickleTimer);
+            trickleTimer = null;
+            Logger.info('ProxyDaemon', '⏹️ 网页代理全节点涓流测速任务已注销。');
         }
     }
 }
