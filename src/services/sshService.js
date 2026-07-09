@@ -167,6 +167,8 @@ class SshService {
                 const versionCheck = await ClashService.getVersion(5000);
                 if (versionCheck && versionCheck.version) {
                     Logger.info('ShellCrash', 'Clash 内核仍在运行，跳过冷重启（热重载可能因超时或不兼容而静默失败，但配置已被 rulesEngine 写入）。');
+                    // 热重载成功场景下也要更新 restarTimes，让 ProxyDaemon 冷却期生效
+                    SshService.updateLastRestartTime && SshService.updateLastRestartTime();
                     return false;
                 }
             } catch (e) { /* 确实挂了，继续降级冷重启 */ }

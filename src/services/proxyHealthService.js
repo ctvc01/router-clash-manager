@@ -11,6 +11,7 @@ let trickleTimer = null;            // 涓流测速定时器
 let trickleStartTimeout = null;     // 涓流测速启动延时器
 let consecutiveFailures = 0;
 let consecutiveRestarts = 0; // 连续重启计数器，防止级联雪崩
+let lastProxyRestartTime = 0; // 本地追踪最近重启时间（不依赖 SshService）
 
 class ProxyHealthService {
     // 检测路由器本地指定 TCP 端口是否在监听
@@ -100,8 +101,7 @@ class ProxyHealthService {
     static async _runHealthCheck() {
         try {
             // 重启冷却期：重启后 90s 内不执行检测（给进程充足的初始化时间）
-            const lastRestartTime = SshService.getLastRestartTime?.() || 0;
-            const timeSinceLastRestart = Date.now() - lastRestartTime;
+            const timeSinceLastRestart = Date.now() - lastProxyRestartTime;
             if (timeSinceLastRestart < 90000) {
                 Logger.debug('ProxyDaemon', `处于重启冷却期 (${Math.floor((90000 - timeSinceLastRestart) / 1000)}s 剩余)`);
                 return;
@@ -113,7 +113,7 @@ class ProxyHealthService {
 
             if (!isProcessRunning) {
                 consecutiveFailures++;
-                Logger.warn('ProxyDaemon', `⚠️ [${consecutiveFailures}/2] 检测到 Clash Core 进程已异常退出`);
+                Logger.warn('ProxyDaemon', `⚠️ [${consecutiveFailures}/3] 检测到 Clash Core 进程已异常退出`);
                 
                 // 【极简优化 4】：获取路由器系统运行时间 (Uptime)，若刚开机不到 5 分钟，说明是整机重启导致服务未拉起，
                 // 直接短路跳过 [2/2] 容错等待机制，一击必杀强制复活，将断网恢复期从 6 分钟压缩至数秒！
@@ -127,13 +127,14 @@ class ProxyHealthService {
                     }
                 } catch (e) {}
 
-                if (consecutiveFailures >= 2 || isJustBooted) {
+                if ((consecutiveFailures >= 3 || isJustBooted) && Date.now() - lastProxyRestartTime > 300000) {
                     if (consecutiveRestarts >= 3) {
                         Logger.error('ProxyDaemon', '❌ 已经连续安全重启服务 3 次仍未恢复！疑似外网物理断开或订阅失效。为保护路由器 CPU，挂起自动重启自愈机制。');
                     } else {
                         Logger.warn('ProxyDaemon', '触发强制自愈拉起...');
                         consecutiveRestarts++;
                         await SshService.restartShellCrashSecurely();
+                        lastProxyRestartTime = Date.now();
                     }
                     consecutiveFailures = 0;
                 }
@@ -144,14 +145,15 @@ class ProxyHealthService {
             const isPortListening = await this.checkPortListeningLocal(config.ports.proxy);
             if (!isPortListening) {
                 consecutiveFailures++;
-                Logger.warn('ProxyDaemon', `⚠️ [${consecutiveFailures}/2] 检测到核心代理端口 ${config.ports.proxy} 假死/未开启`);
-                if (consecutiveFailures >= 2) {
+                Logger.warn('ProxyDaemon', `⚠️ [${consecutiveFailures}/3] 检测到核心代理端口 ${config.ports.proxy} 假死/未开启`);
+                if (consecutiveFailures >= 3 && Date.now() - lastProxyRestartTime > 300000) {
                     if (consecutiveRestarts >= 3) {
                         Logger.error('ProxyDaemon', '❌ 已经连续安全重启服务 3 次仍未恢复！挂起重启自愈以防止拖死 CPU。');
                     } else {
                         Logger.warn('ProxyDaemon', '触发强制修复...');
                         consecutiveRestarts++;
                         await SshService.restartShellCrashSecurely();
+                        lastProxyRestartTime = Date.now();
                     }
                     consecutiveFailures = 0;
                 }
@@ -221,6 +223,8 @@ class ProxyHealthService {
                 }
                 await this.triggerProviderHealthCheck(providerName);
                 consecutiveFailures = 0;
+                consecutiveRestarts = 0;
+                lastProxyRestartTime = Date.now();
             } else {
                 consecutiveFailures = 0;
                 consecutiveRestarts = 0; // 成功连通时，重置连续重启计数器
