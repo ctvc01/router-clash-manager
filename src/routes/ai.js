@@ -16,9 +16,10 @@ router.get('/list', (req, res) => {
 
 // 2. 开启设备 AI 强化模式
 router.post('/enable', async (req, res) => {
-    try {
-        const mac = Validators.validateMAC(req.body.mac);
-        const key = `enable:${mac}`;
+  let mac = '';
+  try {
+      mac = Validators.validateMAC(req.body.mac);
+      const key = `enable:${mac}`;
         const existing = inFlight.get(key);
         if (existing) {
             Logger.info('AiBoost', `设备 ${mac} 的 AI 强化请求正在进行中，复用已有执行`);
@@ -35,7 +36,7 @@ router.post('/enable', async (req, res) => {
             message: err.message
         });
     } finally {
-        inFlight.delete(`enable:${mac}`);
+        if (mac) inFlight.delete(`enable:${mac}`);
     }
 });
 

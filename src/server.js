@@ -2,6 +2,15 @@ const app = require('./app');
 const { config, validateEnvironment } = require('./config');
 const Logger = require('./utils/logger');
 const PersistenceService = require('./services/persistenceService');
+
+// 进程级异常兜底：防止未捕获的 Promise rejection 或同步异常导致 Node.js 进程崩溃退出
+process.on('unhandledRejection', (reason) => {
+    Logger.error('Process', 'Unhandled Promise Rejection (已拦截，进程不退出):', reason);
+});
+process.on('uncaughtException', (err) => {
+    Logger.error('Process', 'Uncaught Exception (已拦截，进程不退出):', err);
+});
+
 const ClashService = require('./services/clashService');
 const ClashApiProxy = require('./utils/clashApiProxy');
 const ProxyHealthService = require('./services/proxyHealthService');

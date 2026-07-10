@@ -58,13 +58,13 @@ class AccelerationService {
             Logger.warn(label, '推送 AI 设备白名单失败', e.message);
         }
 
-        // 批处理：MAC写入 + AI设备 + iptables + QUIC阻断 合并为一次 SSH
+       // 批处理：MAC写入 + AI设备 + iptables + QUIC阻断 合并为一次 SSH
         try {
             const macWriteCmd = `grep -q "^${mac}$" /data/ShellCrash/configs/mac || echo "${mac}" >> /data/ShellCrash/configs/mac; `;
             await SshService.runRemoteCommand(
-                `${macWriteCmd}${aiMacsWriteCmd}sh /data/ShellCrash/setup_iptables.sh && sh /data/ShellCrash/setup_quic_block.sh`
+                `${macWriteCmd}${aiMacsWriteCmd}sh /data/ShellCrash/setup_iptables.sh`
             );
-            Logger.info(label, '已执行 iptables + QUIC 阻断重建 (批处理)');
+            Logger.info(label, '已执行 iptables 规则重建 (批处理)');
         } catch (e) {
             Logger.warn(label, 'TCP 劫持规则重建失败', e.message);
         }
@@ -110,7 +110,7 @@ class AccelerationService {
             }
             const aiMacsStr = aiMacs.join('\\n');
             cmd += `printf "${aiMacsStr}\\n" > /data/ShellCrash/configs/ai_devices; `;
-            cmd += `sh /data/ShellCrash/setup_iptables.sh && sh /data/ShellCrash/setup_quic_block.sh`;
+            cmd += `sh /data/ShellCrash/setup_iptables.sh`;
             
             await SshService.runRemoteCommand(cmd);
             Logger.info(label, '已批量执行 MAC清理 + AI列表推送 + 规则重建');
