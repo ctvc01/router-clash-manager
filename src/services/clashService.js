@@ -7,8 +7,19 @@ let lastProxiesFetchTime = 0;
 let pendingProxiesPromise = null;
 const PROXIES_CACHE_TTL = 10000; // 10秒缓存
 let delayTestQueue = Promise.resolve(); // 全局测速串行 Promise 队列
+let fullSpeedtestInProgress = false; // 全量测速进行中标记，定时任务据此跳过执行
 
 class ClashService {
+    // 查询当前是否有全量测速正在进行
+    static isFullSpeedtestInProgress() {
+        return fullSpeedtestInProgress;
+    }
+
+    // 标记全量测速开始/结束
+    static setFullSpeedtestFlag(active) {
+        fullSpeedtestInProgress = active;
+    }
+
     // 获取 Clash (Mihomo) HTTP 客户端实例
     static _getClient(timeoutMs = 5000) {
         const baseURL = `http://${config.router.ip}:${config.ports.clash}`;

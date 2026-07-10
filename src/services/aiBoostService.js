@@ -30,8 +30,9 @@ class AiBoostService {
 
     // 寻找当前最快的 AI 节点 (针对 Google API)
     // 返回 { name, delay } 对象，方便延迟差比较
-    static async findFastestAiNode() {
+   static async findFastestAiNode() {
         try {
+            ClashService.setFullSpeedtestFlag(true);
             Logger.info('AiBoost', '🔍 开始并发测试 AI 节点延迟，寻找最快节点...');
             const proxiesData = await ClashService.getProxies(6000);
             
@@ -79,11 +80,13 @@ class AiBoostService {
             Logger.info('AiBoost', `✅ 测速最优 AI 节点: ${best.name} (${best.delay} ms)`);
             SpeedtestState.updateResult('ai', best);
             return best;
-         } catch (err) {
-             Logger.error('AiBoost', '寻找最快 AI 节点时发生异常', err);
-             return null;
-         }
-     }
+        } catch (err) {
+            Logger.error('AiBoost', '寻找最快 AI 节点时发生异常', err);
+            return null;
+        } finally {
+            ClashService.setFullSpeedtestFlag(false);
+        }
+    }
 
     // 锁定 🤖 AI强化 策略组到特定节点
     static async lockAiNode(nodeName) {
@@ -117,28 +120,32 @@ class AiBoostService {
             const aiMacs = this.readAiDevices();
             if (aiMacs.length === 0) return;
 
-            Logger.info('AiBoost', '🛡️ AI 强化故障心跳检测正式启动 (周期 5 分钟)');
+           Logger.info('AiBoost', '🛡️ AI 强化故障心跳检测正式启动 (周期 5 分钟)');
             this._checkAiNodeHealth();
 
             aiBoostCheckTimer = setInterval(async () => {
+                if (ClashService.isFullSpeedtestInProgress()) {
+                    Logger.debug('AiBoost', '全量测速进行中，跳过本轮心跳');
+                    return;
+                }
                 await this._checkAiNodeHealth();
-            }, 300000); // 每 5 分钟轮询
+            }, 600000); // 每 10 分钟轮询
         }, 60000); // 60秒错峰偏置
-        Logger.info('AiBoost', '🛡️ AI 强化故障心跳已排程，将在 60 秒后错峰激活 (周期 5 分钟)');
+        Logger.info('AiBoost', '🛡️ AI 强化故障心跳已排程，将在 60 秒后错峰激活 (周期 10 分钟)');
 
-        // 2. 启动后台定期静默测速优化检测定时器：延迟 5 分钟 (300000ms) 启动，每 30 分钟一次 (1800000ms)
+        // 2. 启动后台定期静默测速优化检测定时器：延迟 5 分钟 (300000ms) 启动，每 60 分钟一次 (3600000ms)
         if (!silentPeriodicalTimer && !silentStartTimeout) {
             silentStartTimeout = setTimeout(() => {
                 silentStartTimeout = null;
                 const aiMacs = this.readAiDevices();
                 if (aiMacs.length === 0) return;
 
-                Logger.info('AiBoost', '🕰️ AI 节点后台静默测速优化任务正式启动 (周期 30 分钟)');
+                Logger.info('AiBoost', '🕰️ AI 节点后台静默测速优化任务正式启动 (周期 60 分钟)');
                 this.runSilentPeriodicalCheck();
 
-                silentPeriodicalTimer = setInterval(() => this.runSilentPeriodicalCheck(), 1800000);
+                silentPeriodicalTimer = setInterval(() => this.runSilentPeriodicalCheck(), 3600000);
             }, 300000); // 5分钟错峰偏置
-            Logger.info('AiBoost', '🕰️ AI 后台静默测速优化已排程，将在 5 分钟后错峰激活 (周期 30 分钟)');
+            Logger.info('AiBoost', '🕰️ AI 后台静默测速优化已排程，将在 5 分钟后错峰激活 (周期 60 分钟)');
         }
     }
 
@@ -279,13 +286,13 @@ class AiBoostService {
         dailyCheckTimer = setInterval(async () => {
             const { hour, minute } = getBeijingTimeParts();
             
-            if (hour === 4 && minute === 0) {
+            if (hour === 4 && minute >= 30 && minute < 35) {
                 if (!dailyCheckDone) {
                     dailyCheckDone = true;
                         const aiMacs = this.readAiDevices();
                         if (aiMacs.length > 0) {
                             const isLocked = SpeedtestState.isLocked('ai');
-                            Logger.info('AiBoost', `🕰️ 检测到当前是北京时间 04:00 且有设备开启 AI 强化，自动触发重测... (${isLocked ? 'LOCKED:仅更新' : 'UNLOCK:切换'})`);
+                            Logger.info('AiBoost', `🕰️ 检测到当前是北京时间 04:30 且有设备开启 AI 强化，自动触发重测... (${isLocked ? 'LOCKED:仅更新' : 'UNLOCK:切换'})`);
                             try {
                                 const fastestNode = await this.findFastestAiNode();
                                 if (fastestNode && !isLocked) {
@@ -299,7 +306,7 @@ class AiBoostService {
             } else {
                 dailyCheckDone = false;
             }
-        }, 60000); // 每分钟轮询
+        }, 300000); // 5 分钟轮询，降低路由器负载
     }
 }
 

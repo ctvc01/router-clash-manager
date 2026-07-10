@@ -62,26 +62,26 @@ class ProxyHealthService {
         Logger.info('ProxyDaemon', '🛡️ 网页代理全局健康度自愈监测守护进程排程中...');
         consecutiveFailures = 0;
 
-        // 1. 心跳检测：启动后延迟 180 秒（3分钟）正式激活，每 5 分钟轮询一次
+        // 1. 心跳检测：启动后延迟 180 秒（3分钟）正式激活，每 10 分钟轮询一次
         proxyHealthStartTimeout = setTimeout(() => {
             proxyHealthStartTimeout = null;
-            Logger.info('ProxyDaemon', '🛡️ 网页代理心跳监测正式启动 (周期 5 分钟)');
+            Logger.info('ProxyDaemon', '🛡️ 网页代理心跳监测正式启动 (周期 10 分钟)');
             this._runHealthCheckScheduler();
         }, 180000);
-        Logger.info('ProxyDaemon', '🛡️ 网页代理心跳监测已排程，将在 180 秒后错峰激活 (周期 5 分钟)');
+        Logger.info('ProxyDaemon', '🛡️ 网页代理心跳监测已排程，将在 180 秒后错峰激活 (周期 10 分钟)');
 
-        // 2. 网页代理全节点涓流测速任务：启动后延迟 5 分钟正式激活，每 60 秒测 1 个节点
+        // 2. 网页代理全节点涓流测速任务：启动后延迟 5 分钟正式激活，每 5 分钟测 1 个节点
         if (!trickleTimer && !trickleStartTimeout) {
             trickleStartTimeout = setTimeout(() => {
                 trickleStartTimeout = null;
-                Logger.info('ProxyDaemon', '🕰️ 网页代理全节点涓流测速任务正式启动 (周期 60 秒/节点)');
+                Logger.info('ProxyDaemon', '🕰️ 网页代理全节点涓流测速任务正式启动 (周期 5 分钟/节点)');
                 this.runTrickleNodeCheck();
 
                 trickleTimer = setInterval(() => {
                     this.runTrickleNodeCheck();
-                }, 60000);
-            }, 300000);
-            Logger.info('ProxyDaemon', '🕰️ 网页代理全节点涓流测速已排程，将在 5 分钟后激活 (周期 60 秒/节点)');
+                }, 300000);
+            }, 600000);
+            Logger.info('ProxyDaemon', '🕰️ 网页代理全节点涓流测速已排程，将在 10 分钟后激活 (周期 5 分钟/节点)');
         }
     }
 
@@ -92,8 +92,8 @@ class ProxyHealthService {
         } catch (e) {
             Logger.error('ProxyDaemon', '调度器捕获到未处理心跳异常', e);
         } finally {
-            // 每次完全结束后，安排 5 分钟（300000 ms）后的下一次检测
-            proxyHealthMonitorTimer = setTimeout(() => this._runHealthCheckScheduler(), 300000);
+           // 每次完全结束后，安排 10 分钟（600000 ms）后的下一次检测
+           proxyHealthMonitorTimer = setTimeout(() => this._runHealthCheckScheduler(), 600000);
         }
     }
 
@@ -175,6 +175,12 @@ class ProxyHealthService {
                 Logger.error('ProxyDaemon', '检测/重构防火墙引流规则失败', ruleErr);
             }
 
+            // 全量测速进行中时跳过 CPU 密集的代理连通性测试（进程/端口检测仍已执行）
+            if (ClashService.isFullSpeedtestInProgress()) {
+                Logger.debug('ProxyDaemon', '全量测速进行中，跳过代理连通性测试');
+                return;
+            }
+
             // 3. 检查海外代理链路可用性
             const isProxyWorking = await this.testProxyConnectivity(config.ports.proxy, 'http://cp.cloudflare.com/generate_204', 4000);
             if (!isProxyWorking) {
@@ -235,9 +241,14 @@ class ProxyHealthService {
         }
     }
 
-    // 涓流测速任务 (每 60 秒测 1 个节点)
+    // 涓流测速任务 (每 5 分钟测 1 个节点)
     static async runTrickleNodeCheck() {
         try {
+            // 全量测速进行中时跳过涓流测速，避免并发测速压垮路由器
+            if (ClashService.isFullSpeedtestInProgress()) {
+                Logger.debug('ProxyDaemon', '[TrickleTest] 全量测速进行中，跳过本轮涓流测速');
+                return;
+            }
             // 如果列表空了或者游标走到底了，重新拉取最新节点列表
             if (trickleNodes.length === 0 || trickleIndex >= trickleNodes.length) {
                 const proxiesData = await ClashService.getProxies();
