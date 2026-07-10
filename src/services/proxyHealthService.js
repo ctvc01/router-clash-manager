@@ -24,18 +24,42 @@ class ProxyHealthService {
         }
     }
 
-    // 通过路由器本地的指定代理端口进行测试连接
-    static async testProxyConnectivity(port, url, timeoutMs) {
-        try {
-            const timeoutSec = Math.ceil(timeoutMs / 1000);
-            // 使用 -s 避免进度条干扰，-k 忽略 CA 校验
-            const cmd = `curl -I -s -k --connect-timeout ${timeoutSec} --max-time ${timeoutSec + 1} -x http://127.0.0.1:${port} ${url} | head -n 1`;
-            const res = await SshService.runRemoteCommand(cmd);
-            return res.includes('HTTP/');
-        } catch (e) {
-            return false;
-        }
-    }
+   // 通过路由器本地的指定代理端口进行测试连接
+   static async testProxyConnectivity(port, url, timeoutMs) {
+       // 主方案：NAS 本地 Axios 代理测试（零 SSH 开销）
+       try {
+           const axios = require('axios');
+           const startTime = Date.now();
+           const response = await axios({
+               method: 'HEAD',
+               url: url,
+               timeout: timeoutMs,
+               proxy: {
+                   host: config.router.ip,
+                   port: port
+               },
+               maxRedirects: 0,
+               validateStatus: () => true
+           });
+           const elapsed = Date.now() - startTime;
+           Logger.debug('ProxyDaemon', `本地 Axios 代理测试完成: status=${response.status} (${elapsed}ms)`);
+           // 任何 HTTP 状态响应（含 4xx/5xx）都说明代理通道存活
+           return true;
+       } catch (e) {
+           Logger.debug('ProxyDaemon', `本地 Axios 代理测试失败: ${e.message}，降级 SSH 远程测试`);
+       }
+
+       // 降级方案：SSH 远程 curl（网络桥接等边缘场景）
+       try {
+           const timeoutSec = Math.ceil(timeoutMs / 1000);
+           // 使用 -s 避免进度条干扰，-k 忽略 CA 校验
+           const cmd = `curl -I -s -k --connect-timeout ${timeoutSec} --max-time ${timeoutSec + 1} -x http://127.0.0.1:${port} ${url} | head -n 1`;
+           const res = await SshService.runRemoteCommand(cmd);
+           return res.includes('HTTP/');
+       } catch (e) {
+           return false;
+       }
+   }
 
     // 向 Clash 核心下发触发指定 provider 测速的请求，以驱动节点自动漂移
     static async triggerProviderHealthCheck(providerName) {
@@ -85,38 +109,72 @@ class ProxyHealthService {
         }
     }
 
-    // 自适应调度器，保证单并发运行，防堆叠
-    static async _runHealthCheckScheduler() {
+   // 自适应调度器：健康时 10min 周期，异常时 30s 快速重检
+   static async _runHealthCheckScheduler() {
+        const startTime = Date.now();
         try {
-            await this._runHealthCheck();
+            const isHealthy = await this._runHealthCheck();
+            const elapsed = Date.now() - startTime;
+            // 健康 -> 10min 周期；异常 -> 30s 快速重检
+            const nextInterval = isHealthy ? 600000 : 30000;
+            Logger.debug('ProxyDaemon', `心跳检测完成 (${elapsed}ms) ${isHealthy ? '✅ 健康' : '⚠️ 异常，30s后快速重检'}`);
+            proxyHealthMonitorTimer = setTimeout(() => this._runHealthCheckScheduler(), nextInterval);
         } catch (e) {
             Logger.error('ProxyDaemon', '调度器捕获到未处理心跳异常', e);
-        } finally {
-           // 每次完全结束后，安排 10 分钟（600000 ms）后的下一次检测
-           proxyHealthMonitorTimer = setTimeout(() => this._runHealthCheckScheduler(), 600000);
+            // 异常也 30s 快速重试
+            proxyHealthMonitorTimer = setTimeout(() => this._runHealthCheckScheduler(), 30000);
         }
     }
 
-    // 内部实现：单次心跳检测
+    // 内部实现：单次心跳检测，返回 true=健康 false=有异常
     static async _runHealthCheck() {
         try {
-            // 重启冷却期：重启后 90s 内不执行检测（给进程充足的初始化时间）
+            // 重启冷却期：重启后 90s 内不执行检测
             const timeSinceLastRestart = Date.now() - lastProxyRestartTime;
             if (timeSinceLastRestart < 90000) {
                 Logger.debug('ProxyDaemon', `处于重启冷却期 (${Math.floor((90000 - timeSinceLastRestart) / 1000)}s 剩余)`);
-                return;
+                return true; // 冷却期认为健康
             }
 
-            // 1. 检查 Clash Core 进程（支持多种进程名）
-            const pidOutput = await SshService.runRemoteCommand('pidof mihomo || pidof Clash || pidof CrashCore || pgrep -x mihomo || pgrep -x Clash || pgrep -x CrashCore');
-            const isProcessRunning = pidOutput.trim().length > 0 && !pidOutput.includes('Error');
+            let hasIssue = false; // 跟踪是否有任何异常
 
+            // === [BATCH QUERY] 一次 SSH 查询获取 4 项状态 ===
+            const batchCmd = [
+                `echo "BATCH_START"`,
+                `echo "PID:$(pidof mihomo 2>/dev/null || pidof Clash 2>/dev/null || pidof CrashCore 2>/dev/null || pgrep -x mihomo 2>/dev/null || pgrep -x Clash 2>/dev/null || pgrep -x CrashCore 2>/dev/null || echo 'no_pid')"`,
+                `echo "PORT:$(netstat -nlt 2>/dev/null | grep -q ':${config.ports.proxy}' && echo ok || echo down)"`,
+                `echo "MAC:$([ -s /data/ShellCrash/configs/mac ] && echo yes || echo no)"`,
+                `echo "IPT:$(iptables -t nat -L PREROUTING -n 2>/dev/null | grep -c REDIRECT || echo 0)"`,
+                `echo "BATCH_END"`
+            ].join('; ');
+
+            const batchOutput = await SshService.runRemoteCommand(batchCmd);
+            const batchLines = batchOutput.split('\n').map(l => l.trim()).filter(l => l);
+            const batchStart = batchLines.findIndex(l => l.includes('BATCH_START'));
+            const batchEnd = batchLines.findIndex(l => l.includes('BATCH_END'));
+
+            let pid = '', portStatus = '', macStatus = '', redirectCount = 0;
+
+            if (batchStart >= 0 && batchEnd > batchStart) {
+                const dataLines = batchLines.slice(batchStart + 1, batchEnd);
+                for (const dl of dataLines) {
+                    if (dl.startsWith('PID:')) pid = dl.slice(4).trim();
+                    else if (dl.startsWith('PORT:')) portStatus = dl.slice(5).trim();
+                    else if (dl.startsWith('MAC:')) macStatus = dl.slice(4).trim();
+                    else if (dl.startsWith('IPT:')) redirectCount = parseInt(dl.slice(4).trim(), 10) || 0;
+                }
+            }
+
+            const isProcessRunning = pid && pid.length > 0 && pid !== 'no_pid' && !pid.includes('Error');
+            const isPortListening = portStatus === 'ok';
+            const hasProxyOrGame = macStatus === 'yes';
+
+            // 1. 检查 Clash Core 进程
             if (!isProcessRunning) {
+                hasIssue = true;
                 consecutiveFailures++;
                 Logger.warn('ProxyDaemon', `⚠️ [${consecutiveFailures}/3] 检测到 Clash Core 进程已异常退出`);
-                
-                // 【极简优化 4】：获取路由器系统运行时间 (Uptime)，若刚开机不到 5 分钟，说明是整机重启导致服务未拉起，
-                // 直接短路跳过 [2/2] 容错等待机制，一击必杀强制复活，将断网恢复期从 6 分钟压缩至数秒！
+
                 let isJustBooted = false;
                 try {
                     const uptimeStr = await SshService.runRemoteCommand("cat /proc/uptime | awk '{print $1}'");
@@ -138,17 +196,17 @@ class ProxyHealthService {
                     }
                     consecutiveFailures = 0;
                 }
-                return;
+                return false;
             }
 
-            // 2. 检查代理端口是否健康监听（关键）
-            const isPortListening = await this.checkPortListeningLocal(config.ports.proxy);
+            // 2. 检查代理端口是否健康监听
             if (!isPortListening) {
+                hasIssue = true;
                 consecutiveFailures++;
                 Logger.warn('ProxyDaemon', `⚠️ [${consecutiveFailures}/3] 检测到核心代理端口 ${config.ports.proxy} 假死/未开启`);
                 if (consecutiveFailures >= 3 && Date.now() - lastProxyRestartTime > 300000) {
                     if (consecutiveRestarts >= 3) {
-                        Logger.error('ProxyDaemon', '❌ 已经连续安全重启服务 3 次仍未恢复！挂起重启自愈以防止拖死 CPU。');
+                        Logger.error('ProxyDaemon', '❌ 已经连续安全重启服务 3 次仍未恢复！挂起重启自愈以防止托死 CPU。');
                     } else {
                         Logger.warn('ProxyDaemon', '触发强制修复...');
                         consecutiveRestarts++;
@@ -157,47 +215,42 @@ class ProxyHealthService {
                     }
                     consecutiveFailures = 0;
                 }
-                return;
+                return false;
             }
 
-            // 2.5 检查重定向引流规则完整性（防御防火墙重置冲刷规则漏洞）
-            try {
-                const hasProxyOrGame = (await SshService.runRemoteCommand('[ -s /data/ShellCrash/configs/mac ] && echo 1 || echo 0')).trim() === '1';
-                if (hasProxyOrGame) {
-                    const redirectCount = parseInt(await SshService.runRemoteCommand('iptables -t nat -L PREROUTING -n 2>/dev/null | grep -c REDIRECT || echo 0'), 10);
-                    if (redirectCount === 0) {
-                        Logger.warn('ProxyDaemon', '⚠️ 警告: 检测到 Clash 进程存活但 iptables 劫持规则被意外清空！正在自动执行引流重构修复...');
-                        await SshService.runRemoteCommand('sh /data/ShellCrash/setup_iptables.sh');
-                        Logger.info('ProxyDaemon', '✅ 官方引流规则已自愈重建');
-                    }
+            // 2.5 检查重定向引流规则完整性
+            if (hasProxyOrGame && redirectCount === 0) {
+                hasIssue = true;
+                Logger.warn('ProxyDaemon', '⚠️ 警告: 检测到 Clash 进程存活但 iptables 劫持规则被意外清空！正在自动执行引流重构修复...');
+                try {
+                    await SshService.runRemoteCommand('sh /data/ShellCrash/setup_iptables.sh');
+                    Logger.info('ProxyDaemon', '✅ 官方引流规则已自愈重建');
+                } catch (ruleErr) {
+                    Logger.error('ProxyDaemon', '检测/重构防火墙引流规则失败', ruleErr);
                 }
-            } catch (ruleErr) {
-                Logger.error('ProxyDaemon', '检测/重构防火墙引流规则失败', ruleErr);
             }
 
-            // 全量测速进行中时跳过 CPU 密集的代理连通性测试（进程/端口检测仍已执行）
+            // 全量测速进行中时跳过代理连通性测试
             if (ClashService.isFullSpeedtestInProgress()) {
                 Logger.debug('ProxyDaemon', '全量测速进行中，跳过代理连通性测试');
-                return;
+                return !hasIssue;
             }
 
-            // 3. 检查海外代理链路可用性
+            // 3. 检查海外代理链路可用性（NAS 本地 Axios，零 SSH 开销）
             const isProxyWorking = await this.testProxyConnectivity(config.ports.proxy, 'http://cp.cloudflare.com/generate_204', 4000);
             if (!isProxyWorking) {
+                hasIssue = true;
                 Logger.warn('ProxyDaemon', '⚠️ 检测到网页代理链路超时阻断！启动高并发自愈测速...');
-                
-                // 1) 优先方案：串行测速 ⚡ 最快线路 的前 5 个物理核心节点，驱动自动漂移自愈
+
                 try {
                     const testGroupName = '⚡ 最快线路';
                     const proxiesData = await ClashService.getProxies();
                     const groupInfo = proxiesData && proxiesData.proxies ? proxiesData.proxies[testGroupName] : null;
-                    
+
                     if (groupInfo && groupInfo.all && groupInfo.all.length > 0) {
-                        // 仅挑选前 5 个主要物理高质节点进行测速刷新，减免路由器 CPU 负担
                         const targetNodes = groupInfo.all.slice(0, 5);
                         Logger.info('ProxyDaemon', `已自动识别到 [${testGroupName}] 下的 ${targetNodes.length} 个核心节点，开始串行测速自愈...`);
-                        
-                        // 在后台以串行排队方式执行（不阻塞主心跳检测线程）
+
                         (async () => {
                             const results = [];
                             for (const node of targetNodes) {
@@ -217,27 +270,28 @@ class ProxyHealthService {
                     Logger.error('ProxyDaemon', '并发最快线路自愈测速失败，转向后备方案', gErr);
                 }
 
-                // 2) 后备方案：触发原有的 provider 重测自愈（如 caomei1 等）
                 let providerName = 'caomei1';
                 try {
                     const providerOutput = await SshService.runRemoteCommand("grep -A 1 'proxy-providers:' /data/ShellCrash/config.yaml | tail -n 1 | cut -d: -f1 | tr -d ' '");
                     if (providerOutput && providerOutput.trim().length > 0 && !providerOutput.includes('Error')) {
                         providerName = providerOutput.trim();
                     }
-                } catch (pErr) {
-                    // 忽略
-                }
+                } catch (pErr) {}
+
                 await this.triggerProviderHealthCheck(providerName);
                 consecutiveFailures = 0;
                 consecutiveRestarts = 0;
                 lastProxyRestartTime = Date.now();
             } else {
                 consecutiveFailures = 0;
-                consecutiveRestarts = 0; // 成功连通时，重置连续重启计数器
+                consecutiveRestarts = 0;
                 Logger.debug('ProxyDaemon', '✅ 全部检测通过');
             }
+
+            return !hasIssue;
         } catch (err) {
             Logger.error('ProxyDaemon', '自愈守护进程心跳检测发生异常（不计入进程故障次数，避免网络瞬间闪断引发误重启）', err);
+            return false;
         }
     }
 
