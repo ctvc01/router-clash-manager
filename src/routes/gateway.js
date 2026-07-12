@@ -10,6 +10,7 @@ const ProxyGroupDetector = require('../utils/proxyGroupDetector');
 const ConfigVersionManager = require('../services/configVersionManager');
 const ChangelogManager = require('../services/changelogManager');
 const { ROUTER_PATHS } = require('../constants');
+const cache = require('../utils/cache');
 
 const router = express.Router();
 
@@ -76,9 +77,15 @@ async function getCurrentNodeInfo() {
     }
 }
 
-// 1. 获取网关/代理运行状态
+// 1. 获取网关/代理运行状态 (带 20 秒缓存优化以减轻 SSH Dropbear 压力)
 router.get('/status', async (req, res) => {
     try {
+        const cachedStatus = cache.get('gatewayStatus');
+        if (cachedStatus) {
+            Logger.debug('Gateway', '命中网关状态缓存，跳过远程 SSH 状态查询。');
+            return res.json(cachedStatus);
+        }
+
         // 1. 并行：SSH 系统统计 + 代理节点信息（减少总延迟）
         const statsCmd = `pid=\$(pidof mihomo || pidof Clash || pidof CrashCore || pgrep -x mihomo || pgrep -x Clash || pgrep -x CrashCore); echo "PID:\$pid"; if [ -n "\$pid" ]; then echo "CLASH_RAW:\$(awk '{print int(\$1)}' /proc/uptime 2>/dev/null):\$(awk '{print \$22}' /proc/\$pid/stat 2>/dev/null)"; cat /proc/\$pid/status | grep VmRSS; timeout 1 top -b -n 1 2>/dev/null | grep -v grep | grep -E "mihomo|Clash|CrashCore" | head -n 1; fi; cat /proc/meminfo | grep -E "MemTotal|MemFree"; df -m /data | tail -n 1`;
         const nodeInfoPromise = getCurrentNodeInfo();
@@ -173,7 +180,7 @@ router.get('/status', async (req, res) => {
         }
 
         if (!isRunning) {
-            return res.json({
+            const statusData = {
                 status: 'success',
                 running: false,
                 currentNode: '已关闭',
@@ -188,7 +195,9 @@ router.get('/status', async (req, res) => {
                 uptime: 0,
                 localIp: getLocalIP(),
                 port: config.port
-            });
+            };
+            cache.set('gatewayStatus', statusData, 20); // 缓存 20 秒
+            return res.json(statusData);
         }
 
         // 2. 异步获取 Clash API 版本与模式信息（使用SSH隧道，带缓存优化）
@@ -241,7 +250,7 @@ router.get('/status', async (req, res) => {
             Logger.debug('Gateway', '获取当前节点失败', e);
         }
 
-        res.json({
+        const statusData = {
             status: 'success',
             running: true,
             currentNode,
@@ -256,7 +265,9 @@ router.get('/status', async (req, res) => {
             uptime,
             localIp: getLocalIP(),
             port: config.port
-        });
+        };
+        cache.set('gatewayStatus', statusData, 20); // 缓存 20 秒
+        res.json(statusData);
     } catch (err) {
         Logger.error('Gateway', '获取系统与代理状态失败', err);
         res.status(500).json({
@@ -560,6 +571,7 @@ router.post('/select', async (req, res) => {
                 })();
             }
 
+            cache.clear('gatewayStatus');
             res.json({ status: 'success' });
         } else {
             res.status(500).json({ status: 'error', message: 'Clash API 切换节点失败' });

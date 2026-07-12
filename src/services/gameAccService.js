@@ -46,7 +46,7 @@ class GameAccService {
                 Logger.warn('GameAcc', '🎮 游戏加速 组中无可用物理节点，跳过测速');
                 return null;
             }
-            const NODE_SAMPLES = 3;
+            const NODE_SAMPLES = 2;
             const TIMEOUT_MS = 3000;
             const TEST_URL = 'http://ctest.cdn.nintendo.net/';
            
@@ -89,6 +89,9 @@ class GameAccService {
                    isGRPC,
                    timestamp: Date.now()
                 });
+                
+                // 【硬件防波段】：每次节点测速后强制防抖间隔，防止路由器 CPU 瞬间冲高
+                await new Promise(r => setTimeout(r, 300));
             }
             if (results.length === 0) { Logger.warn('GameAcc', '无可用游戏节点'); return null; }
             results.sort((a, b) => { if (a.loss !== b.loss) return a.loss - b.loss; return a.delay - b.delay; });

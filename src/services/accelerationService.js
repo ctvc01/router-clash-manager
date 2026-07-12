@@ -81,6 +81,7 @@ class AccelerationService {
         }
 
         cache.clear('deviceList');
+        cache.clear('gatewayStatus');
     }
 
     // 禁用加速
@@ -125,6 +126,7 @@ class AccelerationService {
         }
 
         cache.clear('deviceList');
+        cache.clear('gatewayStatus');
     }
 
     // 异步启动测速和守护

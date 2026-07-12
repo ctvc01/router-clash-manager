@@ -2,7 +2,7 @@ const SshService = require('./sshService');
 const Logger = require('../utils/logger');
 
 let storageCleanupTimer = null;
-let lastCleanupTime = 0;
+let lastCheckTime = 0;
 
 class StorageCleanupService {
     // 启动定时清理任务 + 实时监控
@@ -45,10 +45,11 @@ class StorageCleanupService {
     // 实时检查 - 在关键 API 调用前检查并清理（防止出错）
     static async checkAndCleanupIfNeeded() {
         const now = Date.now();
-        // 防止频繁清理，最多 5 分钟执行一次
-        if (now - lastCleanupTime < 5 * 60 * 1000) {
+        // 防止频繁检查，最多 5 分钟执行一次
+        if (now - lastCheckTime < 5 * 60 * 1000) {
             return;
         }
+        lastCheckTime = now;
 
         try {
             const usage = await this.getDiskUsage();
@@ -58,15 +59,12 @@ class StorageCleanupService {
             if (usage >= 95) {
                 Logger.warn('StorageCleanup', `🚨 临界：磁盘使用率 ${usage}%，执行紧急清理（Level 3）`);
                 await this.emergencyCleanup();
-                lastCleanupTime = now;
             } else if (usage >= 90) {
                 Logger.warn('StorageCleanup', `⚠️ 高：磁盘使用率 ${usage}%，执行主动清理（Level 2）`);
                 await this.aggressiveCleanup();
-                lastCleanupTime = now;
             } else if (usage >= 85) {
                 Logger.warn('StorageCleanup', `⚡ 注意：磁盘使用率 ${usage}%，执行基础清理（Level 1）`);
                 await this.basicCleanup();
-                lastCleanupTime = now;
             }
         } catch (err) {
             Logger.warn('StorageCleanup', '实时检查执行失败', err);

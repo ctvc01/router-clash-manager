@@ -12,6 +12,7 @@ let trickleStartTimeout = null;     // 涓流测速启动延时器
 let consecutiveFailures = 0;
 let consecutiveRestarts = 0; // 连续重启计数器，防止级联雪崩
 let lastProxyRestartTime = 0; // 本地追踪最近重启时间（不依赖 SshService）
+let lastDeepCheckTime = 0;   // 最近一次深度 SSH 诊断时间
 
 class ProxyHealthService {
     // 检测路由器本地指定 TCP 端口是否在监听
@@ -86,13 +87,13 @@ class ProxyHealthService {
         Logger.info('ProxyDaemon', '🛡️ 网页代理全局健康度自愈监测守护进程排程中...');
         consecutiveFailures = 0;
 
-        // 1. 心跳检测：启动后延迟 180 秒（3分钟）正式激活，每 10 分钟轮询一次
+        // 1. 心跳检测：启动后延迟 180 秒（3分钟）正式激活，每 30 秒轮询一次 (HTTP Ping 零负载)
         proxyHealthStartTimeout = setTimeout(() => {
             proxyHealthStartTimeout = null;
-            Logger.info('ProxyDaemon', '🛡️ 网页代理心跳监测正式启动 (周期 10 分钟)');
+            Logger.info('ProxyDaemon', '🛡️ 网页代理心跳监测正式启动 (周期 30 秒)');
             this._runHealthCheckScheduler();
         }, 180000);
-        Logger.info('ProxyDaemon', '🛡️ 网页代理心跳监测已排程，将在 180 秒后错峰激活 (周期 10 分钟)');
+        Logger.info('ProxyDaemon', '🛡️ 网页代理心跳监测已排程，将在 180 秒后错峰激活 (周期 30 秒)');
 
         // 2. 网页代理全节点涓流测速任务：启动后延迟 5 分钟正式激活，每 5 分钟测 1 个节点
         if (!trickleTimer && !trickleStartTimeout) {
@@ -109,15 +110,19 @@ class ProxyHealthService {
         }
     }
 
-   // 自适应调度器：健康时 10min 周期，异常时 30s 快速重检
+   // 自适应心跳调度器：默认 30s HTTP 快速检测，连续故障挂起后转为 10 分钟检测防爆 CPU
    static async _runHealthCheckScheduler() {
         const startTime = Date.now();
         try {
             const isHealthy = await this._runHealthCheck();
             const elapsed = Date.now() - startTime;
-            // 健康 -> 10min 周期；异常 -> 30s 快速重检
-            const nextInterval = isHealthy ? 600000 : 30000;
-            Logger.debug('ProxyDaemon', `心跳检测完成 (${elapsed}ms) ${isHealthy ? '✅ 健康' : '⚠️ 异常，30s后快速重检'}`);
+            
+            let nextInterval = 30000; // 默认 30s 快速 HTTP 心跳
+            if (consecutiveRestarts >= 3) {
+                nextInterval = 600000; // 挂起时降低频率为 10 分钟，防爆 CPU
+            }
+
+            Logger.debug('ProxyDaemon', `心跳检测完成 (${elapsed}ms) ${isHealthy ? '✅ 健康' : '⚠️ 异常'}，下一次检测在 ${nextInterval / 1000}s 后`);
             proxyHealthMonitorTimer = setTimeout(() => this._runHealthCheckScheduler(), nextInterval);
         } catch (e) {
             Logger.error('ProxyDaemon', '调度器捕获到未处理心跳异常', e);
@@ -136,15 +141,33 @@ class ProxyHealthService {
                 return true; // 冷却期认为健康
             }
 
+            // ⚡ Tier 1: 快速 HTTP 接口存活度测试 (仅在距上次 Deep 诊断小于 10 分钟且目前无连续故障时激活)
+            const timeSinceLastDeepCheck = Date.now() - lastDeepCheckTime;
+            if (consecutiveFailures === 0 && timeSinceLastDeepCheck < 600000) {
+                try {
+                    const version = await ClashService.getVersion(2000);
+                    if (version && version.version) {
+                        return true; // HTTP 校验成功，Clash 核心存活且响应正常（0 SSH 进程消耗）
+                    }
+                } catch (httpErr) {
+                    Logger.warn('ProxyDaemon', `Tier 1 HTTP 检测失败 (${httpErr.message})，立即转入 Tier 2 深度 SSH 诊断`);
+                }
+            }
+
+            // ⚡ Tier 2: 深度 SSH 诊断
+            lastDeepCheckTime = Date.now();
             let hasIssue = false; // 跟踪是否有任何异常
 
-            // === [BATCH QUERY] 一次 SSH 查询获取 4 项状态 ===
+            // === [BATCH QUERY] 一次 SSH 查询获取 6 项关键状态并进行内存释放自愈（防 dropbear 风暴及 OOM） ===
             const batchCmd = [
                 `echo "BATCH_START"`,
                 `echo "PID:$(pidof mihomo 2>/dev/null || pidof Clash 2>/dev/null || pidof CrashCore 2>/dev/null || pgrep -x mihomo 2>/dev/null || pgrep -x Clash 2>/dev/null || pgrep -x CrashCore 2>/dev/null || echo 'no_pid')"`,
                 `echo "PORT:$(netstat -nlt 2>/dev/null | grep -q ':${config.ports.proxy}' && echo ok || echo down)"`,
                 `echo "MAC:$([ -s /data/ShellCrash/configs/mac ] && echo yes || echo no)"`,
                 `echo "IPT:$(iptables -t nat -L PREROUTING -n 2>/dev/null | grep -c REDIRECT || echo 0)"`,
+                `echo "UPTIME:$(cat /proc/uptime 2>/dev/null | awk '{print \$1}' || echo 0)"`,
+                `FREE_MEM=\$(awk '/MemFree:/ {print \$2}' /proc/meminfo 2>/dev/null || echo 0)`,
+                `[ \$FREE_MEM -gt 0 ] && [ \$FREE_MEM -lt 30000 ] && (sync; echo 3 > /proc/sys/vm/drop_caches; echo "MEM_CLEAN:done") || echo "MEM_CLEAN:skip"`,
                 `echo "BATCH_END"`
             ].join('; ');
 
@@ -153,7 +176,7 @@ class ProxyHealthService {
             const batchStart = batchLines.findIndex(l => l.includes('BATCH_START'));
             const batchEnd = batchLines.findIndex(l => l.includes('BATCH_END'));
 
-            let pid = '', portStatus = '', macStatus = '', redirectCount = 0;
+            let pid = '', portStatus = '', macStatus = '', redirectCount = 0, uptimeVal = 0, memCleanStatus = '';
 
             if (batchStart >= 0 && batchEnd > batchStart) {
                 const dataLines = batchLines.slice(batchStart + 1, batchEnd);
@@ -162,7 +185,13 @@ class ProxyHealthService {
                     else if (dl.startsWith('PORT:')) portStatus = dl.slice(5).trim();
                     else if (dl.startsWith('MAC:')) macStatus = dl.slice(4).trim();
                     else if (dl.startsWith('IPT:')) redirectCount = parseInt(dl.slice(4).trim(), 10) || 0;
+                    else if (dl.startsWith('UPTIME:')) uptimeVal = parseFloat(dl.slice(7).trim()) || 0;
+                    else if (dl.startsWith('MEM_CLEAN:')) memCleanStatus = dl.slice(10).trim();
                 }
+            }
+
+            if (memCleanStatus === 'done') {
+                Logger.info('ProxyDaemon', '🧹 监测到路由器可用内存低于 30MB 临界值，已成功执行 sync 与内存缓存自动释放自愈！');
             }
 
             const isProcessRunning = pid && pid.length > 0 && pid !== 'no_pid' && !pid.includes('Error');
@@ -176,14 +205,10 @@ class ProxyHealthService {
                 Logger.warn('ProxyDaemon', `⚠️ [${consecutiveFailures}/3] 检测到 Clash Core 进程已异常退出`);
 
                 let isJustBooted = false;
-                try {
-                    const uptimeStr = await SshService.runRemoteCommand("cat /proc/uptime | awk '{print $1}'");
-                    const uptimeSec = parseFloat(uptimeStr);
-                    if (!isNaN(uptimeSec) && uptimeSec < 300) {
-                        isJustBooted = true;
-                        Logger.warn('ProxyDaemon', `🚀 检测到路由器刚开机仅 ${Math.floor(uptimeSec)}s，跳过防抖等待，立即执行闪电自愈！`);
-                    }
-                } catch (e) {}
+                if (uptimeVal > 0 && uptimeVal < 600) {
+                    isJustBooted = true;
+                    Logger.warn('ProxyDaemon', `🚀 检测到路由器刚开机仅 ${Math.floor(uptimeVal)}s，跳过防抖等待，立即执行闪电自愈！`);
+                }
 
                 if ((consecutiveFailures >= 3 || isJustBooted) && Date.now() - lastProxyRestartTime > 300000) {
                     if (consecutiveRestarts >= 3) {

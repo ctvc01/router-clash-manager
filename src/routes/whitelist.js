@@ -89,6 +89,7 @@ router.post('/add', async (req, res) => {
 
         // 操作成功，强制清除缓存让前端刷新最新的设备状态
         cache.clear('deviceList');
+        cache.clear('gatewayStatus');
         res.json({ status: 'success' });
     } catch (err) {
         Logger.error('Whitelist', '添加白名单发生异常', err);
@@ -160,6 +161,7 @@ router.post('/remove', async (req, res) => {
 
         // 操作成功，强制清除缓存让前端刷新最新状态
         cache.clear('deviceList');
+        cache.clear('gatewayStatus');
         res.json({ status: 'success' });
     } catch (err) {
         Logger.error('Whitelist', '移出白名单失败', err);
