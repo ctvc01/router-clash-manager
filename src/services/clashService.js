@@ -9,6 +9,16 @@ const PROXIES_CACHE_TTL = 10000; // 10秒缓存
 let delayTestQueue = Promise.resolve(); // 全局测速串行 Promise 队列
 let fullSpeedtestInProgress = false; // 全量测速进行中标记，定时任务据此跳过执行
 
+// 通用 hard-timeout 包装：给测速队列每一环强加 wall-clock 上限，
+// 避免 axios 底层异常导致某环永不 settle 而堵死后续所有测速
+function withHardTimeout(promise, ms, tag) {
+    let timer;
+    const timeoutPromise = new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${tag} 超过 ${ms}ms 硬超时`)), ms);
+    });
+    return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timer));
+}
+
 class ClashService {
     // 查询当前是否有全量测速正在进行
     static isFullSpeedtestInProgress() {
@@ -98,7 +108,9 @@ class ClashService {
     static testNodeDelay(nodeName, timeoutMs = 3000, testUrl = 'http://www.gstatic.com/generate_204') {
         return new Promise((resolve) => {
             // 串行队列
-            delayTestQueue = delayTestQueue.then(async () => {
+            // 单节点测速本身 timeoutMs 有上限，队列环再套一层 wall-clock 兜底（+2s 富裕）
+            const queueSlotTimeoutMs = Math.max(5000, timeoutMs + 2000);
+            const chained = delayTestQueue.then(async () => {
                 try {
                     const encodedName = encodeURIComponent(nodeName);
                     const apiTimeout = Math.max(1000, timeoutMs - 1000);
@@ -113,9 +125,13 @@ class ClashService {
                     Logger.debug('ClashAPI', `节点 [${nodeName}] 测速请求失败: ${err.message}`);
                     resolve(0);
                 }
-            }).catch(err => {
+            });
+
+            // 用 hard-timeout 保护整个队列环；即便调用者已经 resolve(0)，也确保链路不 hang
+            delayTestQueue = withHardTimeout(chained, queueSlotTimeoutMs, `testNodeDelay[${nodeName}]`).catch(err => {
                 Logger.error('ClashAPI', `测速队列未捕获异常: ${err.message}`);
                 resolve(0);
+                // 不 rethrow：让 delayTestQueue 复位到 resolved，防止一次超时堵死后续所有测速
             });
         });
     }

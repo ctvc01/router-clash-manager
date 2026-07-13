@@ -11,6 +11,16 @@ const fs = require('fs');
 
 let updatePromise = Promise.resolve(); // 串行注入锁
 
+// 通用 hard-timeout 包装：给规则注入串行队列强加 wall-clock 上限，
+// 避免任何一次 SSH/文件 IO hang 导致后续所有规则更新永久排队
+function withHardTimeout(promise, ms, tag) {
+    let timer;
+    const timeoutPromise = new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${tag} 超过 ${ms}ms 硬超时`)), ms);
+    });
+    return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timer));
+}
+
 class RulesEngine {
     // 内存改写配置的纯函数，解耦 SSH 和文件 IO，方便单元测试
     static modifyConfigText(currentConfig, gameMacs = [], aiMacs = [], gameIps = []) {
@@ -584,7 +594,9 @@ class RulesEngine {
 
     // 核心逻辑：设备分流由全局 GEOIP 规则处理，RulesEngine 仅负责代理组管理
     static async updateClashRules(gameMacs, aiMacs, proxyMacs = []) {
-        updatePromise = updatePromise.then(async () => {
+        // 单次规则注入含多次 SSH + 热重载，5 分钟硬上限足够；到点熔断以避免链路死锁
+        const RULES_HARD_TIMEOUT_MS = 300000;
+        const chained = updatePromise.then(async () => {
             Logger.info('RulesEngine', `设备统计: 代理${proxyMacs.length}个, 游戏${gameMacs.length}个, AI${aiMacs.length}个 (排队执行中)`);
             Logger.info('RulesEngine', '分流策略：国内域名→DIRECT, GEOIP,CN→DIRECT, MATCH→代理');
 
@@ -715,11 +727,15 @@ class RulesEngine {
                 await SshService.runRemoteCommand('cp -f /tmp/config.yaml.bak /data/ShellCrash/config.yaml 2>/dev/null || true');
                 throw err;
             }
-        }).catch(err => {
-            Logger.error('RulesEngine', '串行规则注入执行失败', err);
-            throw err;
         });
-        return updatePromise;
+
+        // updatePromise 存储 hard-timeout 包装后的 promise，且必须最终 resolve（自复位），
+        // 避免一次失败/超时让后续所有 updateClashRules 永久排队
+        updatePromise = withHardTimeout(chained, RULES_HARD_TIMEOUT_MS, 'updateClashRules').catch(err => {
+            Logger.error('RulesEngine', `规则注入链路熔断：${err.message}，自复位以便下次可继续排队`);
+            // 不 rethrow：链路复位为 resolved
+        });
+        return chained; // 调用方拿到原始 promise（保留真实错误传播）
     }
 }
 

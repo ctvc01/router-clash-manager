@@ -9,6 +9,16 @@ const path = require('path');
 let restartPromise = Promise.resolve();
 let lastRestartTime = 0;
 
+// 通用超时包装：给串行队列上的 promise 强加 wall-clock 上限，
+// 避免任何一次 hang 永久堵死后续排队请求（保护自愈机制不被自身阻塞）
+function withHardTimeout(promise, ms, tag) {
+    let timer;
+    const timeoutPromise = new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${tag} 超过 ${ms}ms 硬超时`)), ms);
+    });
+    return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timer));
+}
+
 class SshService {
     // 清洗 SSH/expect 命令流的多余系统数据干扰
     static _cleanOutput(stdout) {
@@ -30,12 +40,12 @@ class SshService {
     }
 
     // 执行远程命令（带自动重试）
-    static runRemoteCommand(command, maxRetries = 3) {
+    static runRemoteCommand(command, maxRetries = 2) {
         return this._executeWithRetry(command, 0, maxRetries);
     }
 
     // 内部实现：带指数退避的命令执行
-    static _executeWithRetry(command, attempt = 0, maxRetries = 3) {
+    static _executeWithRetry(command, attempt = 0, maxRetries = 2) {
         return new Promise((resolve, reject) => {
             try {
                 // 安全审计：命令校验
@@ -47,37 +57,55 @@ class SshService {
 
             const sshExecPath = config.paths.sshExec;
 
-            // 使用 execFile 避免本地 shell 注入
-            execFile(sshExecPath, [command], (error, stdout, stderr) => {
+            // 使用 execFile 避免本地 shell 注入；15s 硬 wall-clock 超时兜底，
+            // 防止路由器过载导致 SSH 命令永久挂起并锁死上游串行队列
+            const SSH_HARD_TIMEOUT_MS = 15000;
+            execFile(sshExecPath, [command], { timeout: SSH_HARD_TIMEOUT_MS, killSignal: 'SIGKILL' }, (error, stdout, stderr) => {
                 if (error) {
                     // 特例：如果是 pgrep 命令返回 1（说明进程不存在），这在 Shell 语法中代表未匹配，应正常处理
                     if (command.includes('pgrep') && error.code === 1) {
                         return resolve('');
                     }
 
-                    // 网络相关错误可重试（包含 Dropbear 并发超载被重置/断开的错误）
-                    const isRetryable = error.code === 'ETIMEDOUT' ||
+                    // 关键区分：
+                    // 1) "Operation timed out" / ETIMEDOUT —— 路由器已过载或不可达，重试只会雪上加霜，最多 1 次快速重试
+                    // 2) 短暂的连接重置/kex 失败 —— Dropbear 并发压力，可温和重试 2 次
+                    const stderrStr = stderr || '';
+                    const stdoutStr = stdout || '';
+                    const combined = stderrStr + stdoutStr;
+
+                    // Node execFile 命中 timeout 会 kill 子进程并设置 error.killed=true, signal=SIGKILL
+                    const isHardTimeout = error.killed === true && (error.signal === 'SIGKILL' || error.signal === 'SIGTERM');
+                    const isTimeout = isHardTimeout ||
+                                     error.code === 'ETIMEDOUT' ||
+                                     combined.includes('Operation timed out') ||
+                                     combined.includes('Connection timed out') ||
+                                     combined.includes('Connection timeout');
+                    const isTransient = combined.includes('Connection refused') ||
+                                       combined.includes('Connection reset') ||
+                                       combined.includes('Connection closed') ||
+                                       combined.includes('kex_exchange_identification');
+                    const isRetryable = isTimeout || isTransient ||
                                        error.code === 'ECONNREFUSED' ||
                                        error.code === 'EHOSTUNREACH' ||
-                                       error.code === 255 ||
-                                       stderr?.includes('Connection timeout') ||
-                                       stderr?.includes('Connection refused') ||
-                                       stderr?.includes('Connection reset') ||
-                                       stderr?.includes('Connection closed') ||
-                                       stderr?.includes('kex_exchange_identification') ||
-                                       stdout?.includes('Connection reset') ||
-                                       stdout?.includes('Connection closed') ||
-                                       stdout?.includes('kex_exchange_identification');
+                                       error.code === 255;
 
-                    if (isRetryable && attempt < maxRetries) {
-                        // 指数退避：100ms, 300ms, 900ms
-                        const delay = Math.min(100 * Math.pow(3, attempt), 5000);
-                        Logger.debug('SSH', `命令执行失败，${delay}ms后进行重试 (${attempt + 1}/${maxRetries})`);
+                    // 超时类：最多 1 次快速重试（200ms）
+                    // 瞬态类：最多 maxRetries 次退避重试（200/800ms）
+                    const effectiveMax = isTimeout ? Math.min(1, maxRetries) : maxRetries;
+
+                    if (isRetryable && attempt < effectiveMax) {
+                        const delay = isTimeout ? 200 : (attempt === 0 ? 200 : 800);
+                        Logger.debug('SSH', `命令执行失败(${isHardTimeout ? 'hard-timeout' : (isTimeout ? 'timeout' : 'transient')})，${delay}ms后重试 (${attempt + 1}/${effectiveMax})`);
                         setTimeout(() => {
                             this._executeWithRetry(command, attempt + 1, maxRetries).then(resolve).catch(reject);
                         }, delay);
                     } else {
-                        Logger.error('SSH', `远程命令执行失败 (已重试${attempt}次): "${command}"`, { error, stderr, stdout });
+                        if (isHardTimeout) {
+                            Logger.error('SSH', `命令被 15s 硬超时终止 (attempt=${attempt + 1}): "${command.slice(0, 120)}"`);
+                        } else {
+                            Logger.error('SSH', `远程命令执行失败 (已重试${attempt}次): "${command}"`, { error, stderr, stdout });
+                        }
                         reject({ error, stdout, stderr, attempts: attempt + 1 });
                     }
                 } else {
@@ -180,7 +208,10 @@ class SshService {
 
     // 安全重启 ShellCrash，带串行排队锁和正确的启动等待逻辑
     static async restartShellCrashSecurely() {
-        restartPromise = restartPromise.then(async () => {
+        // 用 hard-timeout 包装本次重启任务（含队列等待），失败/超时后自复位 restartPromise
+        // 防止某次重启 hang 住导致后续所有自愈请求排队至死
+        const RESTART_HARD_TIMEOUT_MS = 300000; // 5 分钟
+        const chained = restartPromise.then(async () => {
             try {
                 Logger.info('ShellCrash', '正在请求重启 ShellCrash 服务 (排队中)...');
 
@@ -313,7 +344,14 @@ class SshService {
                 throw new Error('重启 ShellCrash 失败: ' + (stderrMsg || errMsg));
             }
         });
-        return restartPromise;
+
+        // 关键：restartPromise 存储 hard-timeout 包装后的 promise，
+        // 且 catch 后必须重置为 resolved，否则一次失败会让整条链永久 rejected
+        restartPromise = withHardTimeout(chained, RESTART_HARD_TIMEOUT_MS, 'restartShellCrash').catch(err => {
+            Logger.error('ShellCrash', `重启链路熔断：${err.message}，自复位以便后续自愈请求可继续排队`);
+            // 不 rethrow：让链路复位为 resolved
+        });
+        return chained; // 调用方拿到原始 promise（含真实错误），链路状态由 restartPromise 独立管理
     }
 }
 
