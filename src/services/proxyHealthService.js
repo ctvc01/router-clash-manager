@@ -13,6 +13,8 @@ let consecutiveFailures = 0;
 let consecutiveRestarts = 0; // 连续重启计数器，防止级联雪崩
 let lastProxyRestartTime = 0; // 本地追踪最近重启时间（不依赖 SshService）
 let lastDeepCheckTime = 0;   // 最近一次深度 SSH 诊断时间
+let lastTier1FailAt = 0;     // 最近一次 Tier1 HTTP 失败时间戳（用于温柔重试）
+let tier1Pending = false;    // 上一轮 Tier1 首次失败进入宽限期，调度器需强制 30s 复测
 
 class ProxyHealthService {
     // 检测路由器本地指定 TCP 端口是否在监听
@@ -87,13 +89,13 @@ class ProxyHealthService {
         Logger.info('ProxyDaemon', '🛡️ 网页代理全局健康度自愈监测守护进程排程中...');
         consecutiveFailures = 0;
 
-        // 1. 心跳检测：启动后延迟 180 秒（3分钟）正式激活，每 30 秒轮询一次 (HTTP Ping 零负载)
+        // 1. 心跳检测：启动后延迟 180 秒（3分钟）正式激活，健康时每 10 分钟做一次 HTTP Ping，异常时 30s 快速重检
         proxyHealthStartTimeout = setTimeout(() => {
             proxyHealthStartTimeout = null;
-            Logger.info('ProxyDaemon', '🛡️ 网页代理心跳监测正式启动 (周期 30 秒)');
+            Logger.info('ProxyDaemon', '🛡️ 网页代理心跳监测正式启动 (健康 10min / 异常 30s)');
             this._runHealthCheckScheduler();
         }, 180000);
-        Logger.info('ProxyDaemon', '🛡️ 网页代理心跳监测已排程，将在 180 秒后错峰激活 (周期 30 秒)');
+        Logger.info('ProxyDaemon', '🛡️ 网页代理心跳监测已排程，将在 180 秒后错峰激活 (健康 10min / 异常 30s)');
 
         // 2. 网页代理全节点涓流测速任务：启动后延迟 5 分钟正式激活，每 5 分钟测 1 个节点
         if (!trickleTimer && !trickleStartTimeout) {
@@ -110,23 +112,29 @@ class ProxyHealthService {
         }
     }
 
-   // 自适应心跳调度器：默认 30s HTTP 快速检测，连续故障挂起后转为 10 分钟检测防爆 CPU
+   // 自适应心跳调度器：健康时 10min HTTP 探活，异常/连续故障时 30s 快速重检；连续重启挂起时也拉长到 10min 保护路由器
    static async _runHealthCheckScheduler() {
         const startTime = Date.now();
         try {
             const isHealthy = await this._runHealthCheck();
             const elapsed = Date.now() - startTime;
-            
-            let nextInterval = 30000; // 默认 30s 快速 HTTP 心跳
+
+            // 健康：10 分钟一次 HTTP Ping
+            // 异常（consecutiveFailures>0）：30 秒快速重检
+            // 挂起（consecutiveRestarts>=3）：强制拉长 10 分钟，避免继续压
+            let nextInterval;
             if (consecutiveRestarts >= 3) {
-                nextInterval = 600000; // 挂起时降低频率为 10 分钟，防爆 CPU
+                nextInterval = 600000;
+            } else if (!isHealthy || consecutiveFailures > 0 || tier1Pending) {
+                nextInterval = 30000;
+            } else {
+                nextInterval = 600000;
             }
 
             Logger.debug('ProxyDaemon', `心跳检测完成 (${elapsed}ms) ${isHealthy ? '✅ 健康' : '⚠️ 异常'}，下一次检测在 ${nextInterval / 1000}s 后`);
             proxyHealthMonitorTimer = setTimeout(() => this._runHealthCheckScheduler(), nextInterval);
         } catch (e) {
             Logger.error('ProxyDaemon', '调度器捕获到未处理心跳异常', e);
-            // 异常也 30s 快速重试
             proxyHealthMonitorTimer = setTimeout(() => this._runHealthCheckScheduler(), 30000);
         }
     }
@@ -141,17 +149,47 @@ class ProxyHealthService {
                 return true; // 冷却期认为健康
             }
 
-            // ⚡ Tier 1: 快速 HTTP 接口存活度测试 (仅在距上次 Deep 诊断小于 10 分钟且目前无连续故障时激活)
-            const timeSinceLastDeepCheck = Date.now() - lastDeepCheckTime;
-            if (consecutiveFailures === 0 && timeSinceLastDeepCheck < 600000) {
-                try {
-                    const version = await ClashService.getVersion(2000);
-                    if (version && version.version) {
-                        return true; // HTTP 校验成功，Clash 核心存活且响应正常（0 SSH 进程消耗）
-                    }
-                } catch (httpErr) {
-                    Logger.warn('ProxyDaemon', `Tier 1 HTTP 检测失败 (${httpErr.message})，立即转入 Tier 2 深度 SSH 诊断`);
+            // ⚡ Tier 1: 快速 HTTP 接口存活度测试（Clash /version），零 SSH 开销
+            //   - 超时（timeout）：视为瞬闪，首次仅记录时间戳并要求 30s 复测；连续两次（≤90s）才升级 Tier 2 SSH
+            //   - ECONNREFUSED：确定性故障（进程/端口已死），立即升级 Tier 2，不给宽限
+            let tier1Ok = false;
+            try {
+                const version = await ClashService.getVersion(3000);
+                if (version && version.version) {
+                    tier1Ok = true;
+                    lastTier1FailAt = 0; // 探活成功，清理失败标记
+                    tier1Pending = false;
                 }
+            } catch (httpErr) {
+                const msg = httpErr && httpErr.message ? httpErr.message : String(httpErr);
+                const isRefused = /ECONNREFUSED/i.test(msg) || httpErr.code === 'ECONNREFUSED';
+                if (isRefused) {
+                    Logger.warn('ProxyDaemon', `Tier 1 HTTP ECONNREFUSED — 代理端口已死，立即升级 Tier 2 SSH`);
+                    lastTier1FailAt = 0;
+                    tier1Pending = false;
+                    // fall through 到 Tier 2 深度诊断
+                } else {
+                    const now = Date.now();
+                    const gap = now - lastTier1FailAt;
+                    if (lastTier1FailAt === 0 || gap > 90000) {
+                        // 首次或距上次失败已超 90s：视为瞬闪，仅记录时间，强制 30s 复测
+                        lastTier1FailAt = now;
+                        tier1Pending = true;
+                        Logger.warn('ProxyDaemon', `Tier 1 HTTP 超时首次失败 (${msg})，30s 后复测，暂不升级 SSH`);
+                        return true; // 视作健康，等下轮（调度器会读 tier1Pending 强制 30s）
+                    }
+                    Logger.warn('ProxyDaemon', `Tier 1 HTTP 连续超时 (${msg}, 距上次 ${Math.floor(gap/1000)}s)，升级 Tier 2 SSH`);
+                    lastTier1FailAt = 0;
+                    tier1Pending = false;
+                }
+            }
+            if (tier1Ok) {
+                // 长期健康：允许 consecutiveRestarts 计数器自然清零，避免历史故障永久压制自愈
+                if (consecutiveRestarts > 0 && Date.now() - lastProxyRestartTime > 30 * 60 * 1000) {
+                    Logger.info('ProxyDaemon', '连续 30 分钟健康，重启计数器自动清零');
+                    consecutiveRestarts = 0;
+                }
+                return true;
             }
 
             // ⚡ Tier 2: 深度 SSH 诊断
@@ -326,6 +364,11 @@ class ProxyHealthService {
             // 全量测速进行中时跳过涓流测速，避免并发测速压垮路由器
             if (ClashService.isFullSpeedtestInProgress()) {
                 Logger.debug('ProxyDaemon', '[TrickleTest] 全量测速进行中，跳过本轮涓流测速');
+                return;
+            }
+            // Tier1 处于失败/宽限期：mihomo 大概率不健康，跳过涓流测速避免刷屏与无效 SSH
+            if (lastTier1FailAt !== 0 || tier1Pending) {
+                Logger.debug('ProxyDaemon', '[TrickleTest] Tier1 未恢复健康，跳过本轮涓流测速');
                 return;
             }
             // 如果列表空了或者游标走到底了，重新拉取最新节点列表

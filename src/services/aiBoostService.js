@@ -11,6 +11,7 @@ let aiBoostCheckTimer = null;
 let dailyCheckTimer = null;
 let dailyCheckDone = false;
 let silentPeriodicalTimer = null; // 后台定期静默测速定时器
+let silentRunning = false; // 静默测速重入锁
 let aiBoostStartTimeout = null;   // 心跳启动延时器
 let silentStartTimeout = null;     // 静默测速启动延时器
 
@@ -203,6 +204,12 @@ class AiBoostService {
 
     // 后台定期静默测速与克制切换
     static async runSilentPeriodicalCheck() {
+        if (silentRunning) {
+            Logger.debug('AiBoost', '静默测速仍在进行中，跳过本轮触发');
+            return;
+        }
+        silentRunning = true;
+        ClashService.setFullSpeedtestFlag(true);
         try {
             const aiMacs = this.readAiDevices();
             if (aiMacs.length === 0) return;
@@ -253,6 +260,9 @@ class AiBoostService {
             }
         } catch (err) {
             Logger.error('AiBoost', '定期静默测速优化任务异常', err);
+        } finally {
+            ClashService.setFullSpeedtestFlag(false);
+            silentRunning = false;
         }
     }
 

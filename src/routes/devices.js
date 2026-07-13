@@ -141,7 +141,7 @@ router.get('/', async (req, res) => {
         };
 
         // 将获取的数据缓存 15 秒
-        cache.set('deviceList', responseData, 15);
+        cache.set('deviceList', responseData, 60);
         Logger.debug('Devices', `成功获取 ${lan_devices.length} 个局域网设备`);
         res.json(responseData);
     } catch (err) {

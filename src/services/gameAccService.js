@@ -12,6 +12,7 @@ let dailyCheckTimer = null;
 let dailyCheckDone = false;
 let gameAccStartTimeout = null;
 let silentPeriodicalTimer = null;
+let silentRunning = false; // 静默测速重入锁
 let silentStartTimeout = null;
 
 class GameAccService {
@@ -142,8 +143,8 @@ class GameAccService {
                 Logger.info('GameAcc', '🕰️ 游戏节点后台静默测速优化任务正式启动 (周期 60 分钟)');
                 this.runSilentPeriodicalCheck();
                 silentPeriodicalTimer = setInterval(() => this.runSilentPeriodicalCheck(), 3600000);
-            }, 480000);
-            Logger.info('GameAcc', '🕰️ 游戏后台静默测速优化已排程，将在 8 分钟后错峰激活 (周期 60 分钟)');
+            }, 2100000);
+            Logger.info('GameAcc', '🕰️ 游戏后台静默测速优化已排程，将在 35 分钟后错峰激活 (周期 60 分钟，与 AI 错开 30min)');
         }
     }
 
@@ -227,6 +228,12 @@ class GameAccService {
     }
 
     static async runSilentPeriodicalCheck() {
+        if (silentRunning) {
+            Logger.debug('GameAcc', '静默测速仍在进行中，跳过本轮触发');
+            return;
+        }
+        silentRunning = true;
+        ClashService.setFullSpeedtestFlag(true);
         try {
             const gameMacs = this.readGameDevices();
             if (gameMacs.length === 0) return;
@@ -245,7 +252,12 @@ class GameAccService {
             const diff = currentDelay - fastestNode.delay;
             if (diff > 200) { Logger.info('GameAcc', `🎉 发现更优: [${fastestNode.name}] (${fastestNode.delay}ms)，切换。`); await this.lockGameNode(fastestNode.name); }
             else { Logger.info('GameAcc', `虽有更快节点但差值 ${diff}ms <= 200ms，保持稳定不切换。`); }
-        } catch (err) { Logger.error('GameAcc', '定期静默测速优化任务异常', err); }
+        } catch (err) {
+            Logger.error('GameAcc', '定期静默测速优化任务异常', err);
+        } finally {
+            ClashService.setFullSpeedtestFlag(false);
+            silentRunning = false;
+        }
     }
 
     static stopGameAccMonitor() {

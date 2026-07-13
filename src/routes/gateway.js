@@ -196,7 +196,7 @@ router.get('/status', async (req, res) => {
                 localIp: getLocalIP(),
                 port: config.port
             };
-            cache.set('gatewayStatus', statusData, 20); // 缓存 20 秒
+            cache.set('gatewayStatus', statusData, 60); // 缓存 60 秒
             return res.json(statusData);
         }
 
@@ -266,7 +266,7 @@ router.get('/status', async (req, res) => {
             localIp: getLocalIP(),
             port: config.port
         };
-        cache.set('gatewayStatus', statusData, 20); // 缓存 20 秒
+        cache.set('gatewayStatus', statusData, 60); // 缓存 60 秒
         res.json(statusData);
     } catch (err) {
         Logger.error('Gateway', '获取系统与代理状态失败', err);
