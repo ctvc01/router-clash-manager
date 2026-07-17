@@ -63,12 +63,21 @@ class AiBoostService {
             }
             
             const results = [];
-            for (const nodeName of filteredNodes) {
-                const delay = await ClashService.testNodeDelay(nodeName, 2000, 'https://generativelanguage.googleapis.com/');
+            // 【硬件防波段】：每节点 2s 间隔，每 5 节点后额外冷却 2s，防止弱机能路由器 CPU 峰值累积
+            const NODE_COOLDOWN_MS = 2000;
+            const BATCH_SIZE = 5;
+            const BATCH_COOLDOWN_MS = 2000;
+            for (let i = 0; i < filteredNodes.length; i++) {
+                const nodeName = filteredNodes[i];
+                const delay = await ClashService.testNodeDelay(nodeName, 2000, 'http://www.google.com/generate_204');
                 results.push({ name: nodeName, delay: delay > 0 ? delay : 99999 });
-                
-                // 【硬件防波段】：强制测速间隔，避免连续高并发请求拉跨弱机能路由器
-                await new Promise(r => setTimeout(r, 1000));
+                if (i < filteredNodes.length - 1) {
+                    await new Promise(r => setTimeout(r, NODE_COOLDOWN_MS));
+                    if ((i + 1) % BATCH_SIZE === 0) {
+                        Logger.debug('AiBoost', `批次冷却: 已完成 ${i + 1}/${filteredNodes.length} 节点，额外 sleep ${BATCH_COOLDOWN_MS}ms 让路由器 CPU 散热`);
+                        await new Promise(r => setTimeout(r, BATCH_COOLDOWN_MS));
+                    }
+                }
             }
             const validResults = results.filter(r => r.delay < 99999);
             if (validResults.length === 0) {
@@ -186,7 +195,7 @@ class AiBoostService {
                 return;
             }
             
-            const delay = await ClashService.testNodeDelay(currentNode, 4000, 'https://generativelanguage.googleapis.com/');
+            const delay = await ClashService.testNodeDelay(currentNode, 4000, 'http://www.google.com/generate_204');
             if (delay === 0) {
                 Logger.warn('AiBoost', `⚠️ 当前锁定的 AI 节点 [${currentNode}] 已完全断联！触发自动故障转移测速...`);
                 const fastestNode = await this.findFastestAiNode();
@@ -208,6 +217,22 @@ class AiBoostService {
             Logger.debug('AiBoost', '静默测速仍在进行中，跳过本轮触发');
             return;
         }
+        // 【路由器保护】：启动前预检 uptime + loadavg，路由器刚开机或负载已高时跳过本轮
+        try {
+            const snap = await SshService.getRouterHealthSnapshot();
+            if (snap.ok) {
+                if (snap.uptime > 0 && snap.uptime < 600) {
+                    Logger.warn('AiBoost', `路由器刚开机仅 ${Math.floor(snap.uptime)}s（<600s），跳过本轮静默测速，60min 后再来`);
+                    return;
+                }
+                if (snap.load1 >= 2.0) {
+                    Logger.warn('AiBoost', `路由器 1min 负载 ${snap.load1.toFixed(2)} >= 2.0，已在高负载区间，跳过本轮静默测速`);
+                    return;
+                }
+            }
+        } catch (e) {
+            Logger.debug('AiBoost', `uptime 预检异常，放行本轮: ${e.message || e}`);
+        }
         silentRunning = true;
         ClashService.setFullSpeedtestFlag(true);
         try {
@@ -223,7 +248,7 @@ class AiBoostService {
             const currentNode = group.now;
             
             // 1. 快速测速当前节点
-            let currentDelay = await ClashService.testNodeDelay(currentNode, 4000, 'https://generativelanguage.googleapis.com/');
+            let currentDelay = await ClashService.testNodeDelay(currentNode, 4000, 'http://www.google.com/generate_204');
             if (currentDelay === 0) currentDelay = 99999;
 
             // 【极简优化 3】：如果当前节点延迟表现极佳 (<= 500ms)，直接判定为可用，免去无意义的全局扫盘测速

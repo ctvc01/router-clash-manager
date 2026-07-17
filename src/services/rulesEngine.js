@@ -66,7 +66,27 @@ class RulesEngine {
             }
         }
 
-        // 3. 强制将 external-controller 的端口设置为 config.ports.clash (默认 9999)
+        // 2c. 注入 max-connections 限制（防止路由器 OOM 断流）
+        const hasMaxConn = configLines.findIndex(line => line.trim().startsWith('max-connections:')) !== -1;
+        if (!hasMaxConn) {
+            let insertAfter = configLines.findIndex(line => line.trim().startsWith('tproxy-port:'));
+            if (insertAfter === -1) insertAfter = configLines.findIndex(line => line.trim().startsWith('allow-lan:'));
+            if (insertAfter !== -1) {
+                configLines.splice(insertAfter + 1, 0, 'max-connections: 1500');
+            }
+        }
+
+        // 2d. 注入 memory-limit 与 gc-interval（从根源控制 mihomo 内存增长，防止 OOM）
+        const hasMemLimit = configLines.findIndex(line => line.trim().startsWith('memory-limit:')) !== -1;
+        if (!hasMemLimit) {
+            let insertAfter = configLines.findIndex(line => line.trim().startsWith('max-connections:'));
+            if (insertAfter !== -1) {
+                configLines.splice(insertAfter + 1, 0, 'memory-limit: 160MB');
+                configLines.splice(insertAfter + 2, 0, 'gc-interval: 30s');
+            }
+        }
+ 
+       // 3. 强制将 external-controller 的端口设置为 config.ports.clash (默认 9999)
         let controllerIdx = configLines.findIndex(line => line.trim().startsWith('external-controller:'));
         if (controllerIdx !== -1) {
             configLines[controllerIdx] = `external-controller: '0.0.0.0:${config.ports.clash}'`;
@@ -118,7 +138,7 @@ class RulesEngine {
                     '    - +.wechatpay.com',
                     '    - +.tenpay.com',
                     '    - +.wechatos.net',
-                    '  cache-size: 8192'
+                    '  cache-size: 4096'
                 );
             }
         }
@@ -155,7 +175,7 @@ class RulesEngine {
                 '    - +.wechatpay.com',
                 '    - +.tenpay.com',
                 '    - +.wechatos.net',
-                    '  cache-size: 8192'
+                    '  cache-size: 4096'
         ];
                 configLines.splice(insertIdx + 1, 0, ...dnsLines);
                 insertIdx += dnsLines.length;
@@ -606,7 +626,7 @@ class RulesEngine {
             try {
                 const [configResult, leasesResult] = await Promise.all([
                     SshService.runRemoteCommand('cat /data/ShellCrash/config.yaml'),
-                    SshService.runRemoteCommand('cat /tmp/dhcp.leases')
+                    SshService.runRemoteCommand('cat /tmp/dhcp.leases 2>/dev/null || cat /var/lib/misc/dnsmasq.leases 2>/dev/null || cat /data/dhcp.leases 2>/dev/null || /tmp/generate_dhcp_leases.sh 2>/dev/null || cat /proc/net/arp 2>/dev/null || echo ""').catch(() => '')
                 ]);
                 currentConfig = configResult;
                 leasesOutput = leasesResult;

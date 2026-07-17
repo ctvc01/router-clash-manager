@@ -68,7 +68,8 @@ describe('Validators 单元测试', () => {
                 'pidof CrashCore',
                 'ubus call trafficd hw',
                 '/etc/init.d/shellcrash status',
-                'pid=$(pidof mihomo || pidof Clash); echo "PID:$pid"'
+                'pid=$(pidof mihomo || pidof Clash); echo "PID:$pid"',
+                'echo "aa:bb:cc:dd:ee:ff" >> /data/ShellCrash/configs/mac'
             ];
             safeCommands.forEach(cmd => {
                 expect(Validators.validateSSHCommand(cmd)).toBe(cmd);

@@ -59,7 +59,7 @@ const Validators = {
             /\brm\s+-rf\s+\//,        // rm -rf / 等根目录危险操作
             /\brm\s+(-[a-z]*\s+)*(\/data\s|\/data$|\/etc\s|\/etc$|\/root\s|\/root$|\/sys\s|\/sys$|\/usr\s|\/usr$|\/lib\s|\/lib$|\/bin\s|\/bin$|\/sbin\s|\/sbin$|\/boot\s|\/boot$)/,  // 只拦截删除整个关键目录本身
             /\bchown\b/,              // 所有权修改
-            /\bdd\b/,                 // 磁盘操作
+            /(?:^|[\s;])dd\s+/,       // 磁盘操作 dd 命令（要求命令前面为分号或空格，且后接空格参数）
             /\bmkfs\b/,               // 格式化
             /\breboot\b/,             // 重启
             /\bshutdown\b/,           // 关闭

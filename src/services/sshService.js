@@ -9,6 +9,7 @@ const path = require('path');
 let restartPromise = Promise.resolve();
 let lastRestartTime = 0;
 
+let routerHealthCache = null; // { at, data:{ uptime, load1, ok } }
 // 通用超时包装：给串行队列上的 promise 强加 wall-clock 上限，
 // 避免任何一次 hang 永久堵死后续排队请求（保护自愈机制不被自身阻塞）
 function withHardTimeout(promise, ms, tag) {
@@ -116,7 +117,7 @@ class SshService {
         });
     }
 
-    // 上传容器本地文件到路由器（通过 scp_to_remote.exp 脚本）
+    // 上传容器本地文件到路由器（通过 scp_to_remote.exp 脚本，30秒超时保护）
     static uploadFileLocal(localPath, remotePath) {
         return new Promise((resolve, reject) => {
             const scpScript = config.paths.sshExec.replace('ssh_wrapper.sh', 'scp_to_remote.exp');
@@ -126,7 +127,7 @@ class SshService {
                 ROUTER_USER: config.router.user,
                 ROUTER_PASSWORD: config.router.password
             };
-            execFile(scpScript, [localPath, remotePath], { env }, (error, stdout, stderr) => {
+            execFile(scpScript, [localPath, remotePath], { env, timeout: 30000, killSignal: 'SIGKILL' }, (error, stdout, stderr) => {
                 if (error) {
                     Logger.error('SSH', `文件上传失败: ${localPath} -> ${remotePath}`, { error, stderr });
                     reject(error);
@@ -142,6 +143,7 @@ class SshService {
     static async pushIptablesScript() {
         try {
             const localIptablesScript = path.join(__dirname, '..', '..', 'scripts', 'setup_iptables.sh');
+            const localGuardScript = path.join(__dirname, '..', '..', 'scripts', 'guard_iptables.sh');
             
             if (fs.existsSync(localIptablesScript)) {
                 Logger.info('ShellCrash', '正在上传最新安全引流脚本 setup_iptables.sh 至路由器...');
@@ -152,6 +154,17 @@ class SshService {
                 const aiDevicesPath = require('../config').config.paths.aiDevices;
                 if (fs.existsSync(aiDevicesPath)) {
                     await this.uploadFileLocal(aiDevicesPath, '/data/ShellCrash/configs/ai_devices');
+                }
+                
+                // [新增] 同步推送防火墙联动降级守护脚本并后台启动
+                if (fs.existsSync(localGuardScript)) {
+                    Logger.info('ShellCrash', '正在上传最新防火墙守护脚本 guard_iptables.sh 至路由器...');
+                    await this.uploadFileLocal(localGuardScript, '/data/ShellCrash/guard_iptables.sh');
+                    await this.runRemoteCommand('chmod +x /data/ShellCrash/guard_iptables.sh');
+                    
+                    // 启动后台巡检死循环，如果已经在运行则跳过，防止重复启动
+                    await this.runRemoteCommand('pgrep -f "guard_iptables.sh" >/dev/null || ( /data/ShellCrash/guard_iptables.sh </dev/null >/dev/null 2>&1 & )');
+                    Logger.info('ShellCrash', '防火墙守护脚本已成功推送并确保后台挂起运行');
                 }
                 
                 Logger.info('ShellCrash', '安全引流脚本及依赖配置推送成功');
@@ -206,7 +219,80 @@ class SshService {
         }
     }
 
+    // 轻量冷重启：仅 killall -> start -> waitPort，无 iptables/备份/内核检查
+    // 用于内存不足等场景的快速自愈，3-5s 断网时间，代替完整冷重启的 15-20s
+    static async quickRestartShellCrash() {
+        const LIGHT_RESTART_HARD_TIMEOUT_MS = 120000;
+        const chained = restartPromise.then(async () => {
+            try {
+                Logger.info('ShellCrash', '正在执行轻量冷重启 (killall -> start -> waitPort)...');
+                await this.runRemoteCommand('killall mihomo Clash 2>/dev/null; true');
+                for (let i = 0; i < 5; i++) {
+                    const pidOut = await this.runRemoteCommand('pidof mihomo || pidof Clash 2>/dev/null || echo ""');
+                    if (!pidOut.trim()) break;
+                    await new Promise(r => setTimeout(r, 1000));
+                }
+                await this.runRemoteCommand('( /tmp/ShellCrash/mihomo -d /data/ShellCrash -f /data/ShellCrash/config.yaml </dev/null >/dev/null 2>/dev/null & )');
+                const apiReady = await ClashService.waitClashReady(15);
+                if (apiReady) {
+                    Logger.info('ShellCrash', '轻量冷重启完成，API 已就绪。');
+                } else {
+                    Logger.warn('ShellCrash', '轻量冷重启后 Clash API 在 15s 内未就绪，但进程已启动。');
+                }
+                lastRestartTime = Date.now();
+            } catch (err) {
+                const stderrMsg = err.stderr || '';
+                const errMsg = (err.error && err.error.message) || '';
+                const isClosedByRemote = stderrMsg.includes('closed by remote') ||
+                                         errMsg.includes('closed by remote') ||
+                                         stderrMsg.includes('Connection') ||
+                                         errMsg.includes('Connection') ||
+                                         stderrMsg.includes('kex_exchange_identification') ||
+                                         errMsg.includes('kex_exchange_identification') ||
+                                         (err.error && err.error.code === 255);
+                if (isClosedByRemote) {
+                    Logger.info('ShellCrash', '轻量冷重启中 SSH 断开（网络重构正常现象），已安全忽略。');
+                    return;
+                }
+                Logger.error('ShellCrash', '轻量冷重启异常', err);
+                throw new Error('轻量冷重启失败: ' + (stderrMsg || errMsg));
+            }
+        });
+        restartPromise = withHardTimeout(chained, LIGHT_RESTART_HARD_TIMEOUT_MS, 'quickRestartShellCrash').catch(err => {
+            Logger.error('ShellCrash', '轻量冷重启链路熔断：' + err.message + '，自复位以便后续可继续排队');
+        });
+        return chained;
+    }
+
     // 安全重启 ShellCrash，带串行排队锁和正确的启动等待逻辑
+    // 读取路由器健康快照（uptime + loadavg-1min），单次 SSH 完成，30s TTL 缓存
+    // 供静默测速等长任务在启动前预检，避免在路由器刚开机或高负载窗口继续压
+    static async getRouterHealthSnapshot(maxAgeMs = 30000) {
+        const now = Date.now();
+        if (routerHealthCache && (now - routerHealthCache.at) < maxAgeMs) {
+            return routerHealthCache.data;
+        }
+        try {
+            const raw = await this.runRemoteCommand(
+                `echo "UPTIME:$(awk '{print $1}' /proc/uptime 2>/dev/null || echo 0)"; echo "LOAD1:$(awk '{print $1}' /proc/loadavg 2>/dev/null || echo 0)"`
+            );
+            let uptime = 0, load1 = 0;
+            String(raw || '').split(/\r?\n/).forEach(line => {
+                const l = line.trim();
+                if (l.startsWith('UPTIME:')) uptime = parseFloat(l.slice(7)) || 0;
+                else if (l.startsWith('LOAD1:')) load1 = parseFloat(l.slice(6)) || 0;
+            });
+            const data = { uptime, load1, ok: uptime > 0 };
+            routerHealthCache = { at: now, data };
+            return data;
+        } catch (err) {
+            Logger.debug('SSH', `getRouterHealthSnapshot 失败: ${err.message || err}`);
+            const data = { uptime: 0, load1: 0, ok: false };
+            routerHealthCache = { at: now, data };
+            return data;
+        }
+    }
+
     static async restartShellCrashSecurely() {
         // 用 hard-timeout 包装本次重启任务（含队列等待），失败/超时后自复位 restartPromise
         // 防止某次重启 hang 住导致后续所有自愈请求排队至死
@@ -318,6 +404,57 @@ class SshService {
                     Logger.warn('ShellCrash', 'iptables 规则重建失败（非致命）', iptablesErr);
                 }
 
+                // 5b. [新增] 写入路由器开机脚本 rc.local 注册自愈 WebHook 回调与 guard_iptables.sh 自启动守护进程
+                try {
+                    const os = require('os');
+                    let localIp = '192.168.31.66'; // fallback
+                    const interfaces = os.networkInterfaces();
+                    for (const devName in interfaces) {
+                        const iface = interfaces[devName];
+                        for (let i = 0; i < iface.length; i++) {
+                            const alias = iface[i];
+                            if (alias.family === 'IPv4' && !alias.internal) {
+                                // 优先匹配 192.168. 和 10. 网段，避开 Docker Bridge 虚拟网关 (172.)
+                                if (alias.address.startsWith('192.168.') || alias.address.startsWith('10.')) {
+                                    localIp = alias.address;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    
+                    const port = config.port || 3000;
+                    
+                    // 确保 /etc/rc.local 存在且非空，若空则重置为标准模板
+                    await this.runRemoteCommand('[ -s /etc/rc.local ] || (echo -e "#!/bin/sh\\n\\nexit 0" > /etc/rc.local && chmod +x /etc/rc.local)');
+                    
+                    // 检查是否含有 exit 0
+                    const hasExitZero = (await this.runRemoteCommand('grep -q "exit 0" /etc/rc.local && echo 1 || echo 0')).trim() === '1';
+                    
+                    // 守护进程注入命令与 WebHook 注入命令
+                    const guardCmd = '( sleep 15 && /data/ShellCrash/guard_iptables.sh ) </dev/null >/dev/null 2>&1 &';
+                    const webhookUrl = `http://${localIp}:${port}/api/router-boot-hook`;
+                    const webhookCmd = `( sleep 5 && curl -X POST ${webhookUrl} ) </dev/null >/dev/null 2>&1 &`;
+                    
+                    // 先强行清除已有的旧配置行，防止因 IP 变更或配置变更导致旧配置不刷新
+                    await this.runRemoteCommand("sed -i '/guard_iptables.sh/d' /etc/rc.local 2>/dev/null || true");
+                    await this.runRemoteCommand("sed -i '/router-boot-hook/d' /etc/rc.local 2>/dev/null || true");
+                    
+                    if (hasExitZero) {
+                        // 插入在 exit 0 之前
+                        await this.runRemoteCommand(`sed -i '/exit 0/i ${guardCmd}' /etc/rc.local`);
+                        await this.runRemoteCommand(`sed -i '/exit 0/i ${webhookCmd}' /etc/rc.local`);
+                    } else {
+                        // 直接追加在文件末尾
+                        await this.runRemoteCommand(`echo "${guardCmd}" >> /etc/rc.local`);
+                        await this.runRemoteCommand(`echo "${webhookCmd}" >> /etc/rc.local`);
+                    }
+                    
+                    Logger.info('ShellCrash', '路由器开机自启脚本 rc.local 注入自愈与守护守护成功');
+                } catch (rcErr) {
+                    Logger.error('ShellCrash', '注入 rc.local 路由器开机自启发生异常', rcErr);
+                }
+
                 // 等待 Clash API 就绪（进程存活 ≠ API 可用，268KB 配置加载需额外时间）
                 const apiReady = await ClashService.waitClashReady(15);
                 if (apiReady) {
@@ -358,3 +495,4 @@ class SshService {
 module.exports = SshService;
 module.exports.getLastRestartTime = () => lastRestartTime;
 module.exports.updateLastRestartTime = () => { lastRestartTime = Date.now(); };
+module.exports.quickRestartShellCrash = SshService.quickRestartShellCrash;

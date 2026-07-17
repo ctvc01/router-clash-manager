@@ -518,7 +518,7 @@ router.post('/select', async (req, res) => {
             const isAi = group.includes('AI');
             
             const testUrl = isGame ? 'http://ctest.cdn.nintendo.net/' 
-                                   : (isAi ? 'https://generativelanguage.googleapis.com/' : 'http://www.gstatic.com/generate_204');
+                                   : (isAi ? 'http://www.google.com/generate_204' : 'http://www.gstatic.com/generate_204');
 
             // 自动将模式锁定到用户手动选定的物理节点，避免被后台轮询自动覆盖
             const mode = isGame ? 'game' : (isAi ? 'ai' : 'proxy');

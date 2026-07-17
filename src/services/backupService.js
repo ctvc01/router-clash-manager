@@ -38,6 +38,23 @@ class BackupService {
             const nasFiles = PersistenceService.FILES;
             for (const [name, sourcePath] of Object.entries(nasFiles)) {
                 if (fs.existsSync(sourcePath)) {
+                    // [加固] 安全熔断：如果正在备份的是 device_custom.json，且文件条目太少（比如 < 3），
+                    // 怀疑发生数据损坏或测试覆盖，拒绝覆写宿主机的物理备份，以防历史数据被污染。
+                    if (path.basename(sourcePath) === 'device_custom.json') {
+                        try {
+                            const rawData = fs.readFileSync(sourcePath, 'utf8');
+                            const parsed = JSON.parse(rawData);
+                            const itemCount = Object.keys(parsed).length;
+                            if (itemCount < 3) {
+                                Logger.warn('Backup', `⚠️ [熔断器拦截] 检测到当前 device_custom.json 仅有 ${itemCount} 条记录，为保护历史备份数据安全，拒绝执行本次备份覆写！`);
+                                continue;
+                            }
+                        } catch (parseErr) {
+                            Logger.error('Backup', '⚠️ [熔断器拦截] 读取或解析 device_custom.json 失败，拒绝执行该文件备份', parseErr);
+                            continue;
+                        }
+                    }
+
                     const destPath = path.join(this.NAS_BACKUP_DIR, path.basename(sourcePath));
                     fs.copyFileSync(sourcePath, destPath);
                 }

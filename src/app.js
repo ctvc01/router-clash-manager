@@ -27,9 +27,17 @@ app.use(express.json());
 // 3. 静态网页托管 (指向根目录下的 public 文件夹)
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
-// 4. 健康检查端点
+// 4. 健康检查与自愈 WebHook 端点
 app.get('/health', (req, res) => {
     res.json({ status: 'healthy', timestamp: new Date().toISOString() });
+});
+app.post('/api/router-boot-hook', async (req, res) => {
+    Logger.warn('Server', '收到路由器主动开机通知，触发紧急内核自愈流程！');
+    const ProxyHealthService = require('./services/proxyHealthService');
+    ProxyHealthService.triggerEmergencyHealing().catch(e => {
+        Logger.error('Server', 'WebHook 触发紧急自愈失败', e);
+    });
+    res.json({ status: 'success', message: '自愈指令已成功触发下发' });
 });
 
 // 5. 路由分发挂载 (完美匹配原前端请求路径，无需改动前端)

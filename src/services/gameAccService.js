@@ -92,7 +92,7 @@ class GameAccService {
                 });
                 
                 // 【硬件防波段】：每次节点测速后强制防抖间隔，防止路由器 CPU 瞬间冲高
-                await new Promise(r => setTimeout(r, 300));
+                await new Promise(r => setTimeout(r, 500));
             }
             if (results.length === 0) { Logger.warn('GameAcc', '无可用游戏节点'); return null; }
             results.sort((a, b) => { if (a.loss !== b.loss) return a.loss - b.loss; return a.delay - b.delay; });
@@ -231,6 +231,22 @@ class GameAccService {
         if (silentRunning) {
             Logger.debug('GameAcc', '静默测速仍在进行中，跳过本轮触发');
             return;
+        }
+        // 【路由器保护】：启动前预检 uptime + loadavg，路由器刚开机或负载已高时跳过本轮
+        try {
+            const snap = await SshService.getRouterHealthSnapshot();
+            if (snap.ok) {
+                if (snap.uptime > 0 && snap.uptime < 600) {
+                    Logger.warn('GameAcc', `路由器刚开机仅 ${Math.floor(snap.uptime)}s（<600s），跳过本轮静默测速，60min 后再来`);
+                    return;
+                }
+                if (snap.load1 >= 2.0) {
+                    Logger.warn('GameAcc', `路由器 1min 负载 ${snap.load1.toFixed(2)} >= 2.0，已在高负载区间，跳过本轮静默测速`);
+                    return;
+                }
+            }
+        } catch (e) {
+            Logger.debug('GameAcc', `uptime 预检异常，放行本轮: ${e.message || e}`);
         }
         silentRunning = true;
         ClashService.setFullSpeedtestFlag(true);

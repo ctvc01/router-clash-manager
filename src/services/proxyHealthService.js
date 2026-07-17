@@ -9,6 +9,9 @@ let trickleNodes = [];              // 涓流测速当前轮次的节点列表
 let trickleIndex = 0;               // 涓流测速游标
 let trickleTimer = null;            // 涓流测速定时器
 let trickleStartTimeout = null;     // 涓流测速启动延时器
+let _lastHeartbeatTime = 0; // 心跳看门狗最近一次成功时间戳
+let _heartbeatWatchdogTimer = null; // 心跳看门狗定时器
+let _lastMaintenanceDay = 0; // 3AM 维护重启标记（按日期）
 let consecutiveFailures = 0;
 let consecutiveRestarts = 0; // 连续重启计数器，防止级联雪崩
 let lastProxyRestartTime = 0; // 本地追踪最近重启时间（不依赖 SshService）
@@ -82,6 +85,15 @@ class ProxyHealthService {
         }
     }
 
+    // [新增] WebHook 紧急触发自愈拉起接口
+    static async triggerEmergencyHealing() {
+        Logger.warn('ProxyDaemon', '⚡ WebHook 触发紧急自愈流程，重置计数器并调用 restartShellCrashSecurely...');
+        consecutiveFailures = 0;
+        consecutiveRestarts = 0; // 重置防抖计数器，确保这次自愈肯定能执行
+        await SshService.restartShellCrashSecurely();
+        lastProxyRestartTime = Date.now();
+    }
+
     // 启动代理模式全局健康自愈监测器 (错峰调度与定时全节点检测)
     static startProxyHealthMonitor() {
         if (proxyHealthMonitorTimer || proxyHealthStartTimeout) return;
@@ -104,6 +116,24 @@ class ProxyHealthService {
                 Logger.info('ProxyDaemon', '🕰️ 网页代理全节点涓流测速任务正式启动 (周期 5 分钟/节点)');
                 this.runTrickleNodeCheck();
 
+
+            // 4. 心跳链看门狗：每 5 分钟检查一次心跳是否停滞（超过 15 分钟无更新），
+            // 如果心跳链断裂，自动重启调度器
+            if (_heartbeatWatchdogTimer === null) {
+                _heartbeatWatchdogTimer = setInterval(() => {
+                    const elapsed = Date.now() - _lastHeartbeatTime;
+                    if (_lastHeartbeatTime > 0 && elapsed > 900000) {
+                        Logger.warn('ProxyDaemon', '心跳链看门狗探测到心跳停滞超过 15 分钟，正在重启调度器...');
+                        if (proxyHealthMonitorTimer) {
+                            clearTimeout(proxyHealthMonitorTimer);
+                            proxyHealthMonitorTimer = null;
+                        }
+                        this._runHealthCheckScheduler();
+                        _lastHeartbeatTime = Date.now();
+                    }
+                }, 300000);
+            }
+
                 trickleTimer = setInterval(() => {
                     this.runTrickleNodeCheck();
                 }, 300000);
@@ -123,6 +153,22 @@ class ProxyHealthService {
             // 异常（consecutiveFailures>0）：30 秒快速重检
             // 挂起（consecutiveRestarts>=3）：强制拉长 10 分钟，避免继续压
             let nextInterval;
+
+            // 3AM 维护重启：北京时间凌晨 3:00-3:05 执行一次主动冷重启（non-轻量，完整重启）
+            const { hour } = require('../constants').getBeijingTimeParts();
+            const today = new Date().getDate();
+            if (hour === 3 && today !== _lastMaintenanceDay) {
+                _lastMaintenanceDay = today;
+                Logger.info('ProxyDaemon', '北京时间 3:00，执行例行主动冷重启维护...');
+                await SshService.restartShellCrashSecurely();
+                lastProxyRestartTime = Date.now();
+                consecutiveFailures = 0;
+                consecutiveRestarts = 0;
+                nextInterval = 600000;
+                proxyHealthMonitorTimer = setTimeout(() => this._runHealthCheckScheduler(), nextInterval);
+                return;
+            }
+
             if (consecutiveRestarts >= 3) {
                 nextInterval = 600000;
             } else if (!isHealthy || consecutiveFailures > 0 || tier1Pending) {
@@ -131,6 +177,7 @@ class ProxyHealthService {
                 nextInterval = 600000;
             }
 
+            _lastHeartbeatTime = Date.now();
             Logger.debug('ProxyDaemon', `心跳检测完成 (${elapsed}ms) ${isHealthy ? '✅ 健康' : '⚠️ 异常'}，下一次检测在 ${nextInterval / 1000}s 后`);
             proxyHealthMonitorTimer = setTimeout(() => this._runHealthCheckScheduler(), nextInterval);
         } catch (e) {
@@ -206,6 +253,8 @@ class ProxyHealthService {
                 `echo "UPTIME:$(cat /proc/uptime 2>/dev/null | awk '{print \$1}' || echo 0)"`,
                 `FREE_MEM=\$(awk '/MemFree:/ {print \$2}' /proc/meminfo 2>/dev/null || echo 0)`,
                 `[ \$FREE_MEM -gt 0 ] && [ \$FREE_MEM -lt 30000 ] && (sync; echo 3 > /proc/sys/vm/drop_caches; echo "MEM_CLEAN:done") || echo "MEM_CLEAN:skip"`,
+                `echo "VMRSS:$(awk '/VmRSS:/ {print $2}' /proc/$(pidof mihomo 2>/dev/null || pidof Clash 2>/dev/null)/status 2>/dev/null || echo 0)"`
+                `echo "MEMAVAIL:$(awk '/MemAvailable:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)"`
                 `echo "BATCH_END"`
             ].join('; ');
 
@@ -214,7 +263,7 @@ class ProxyHealthService {
             const batchStart = batchLines.findIndex(l => l.includes('BATCH_START'));
             const batchEnd = batchLines.findIndex(l => l.includes('BATCH_END'));
 
-            let pid = '', portStatus = '', macStatus = '', redirectCount = 0, uptimeVal = 0, memCleanStatus = '';
+let pid = '', portStatus = '', macStatus = '', redirectCount = 0, uptimeVal = 0, memCleanStatus = '', memAvailable = 0, vmRss = 0;
 
             if (batchStart >= 0 && batchEnd > batchStart) {
                 const dataLines = batchLines.slice(batchStart + 1, batchEnd);
@@ -225,11 +274,30 @@ class ProxyHealthService {
                     else if (dl.startsWith('IPT:')) redirectCount = parseInt(dl.slice(4).trim(), 10) || 0;
                     else if (dl.startsWith('UPTIME:')) uptimeVal = parseFloat(dl.slice(7).trim()) || 0;
                     else if (dl.startsWith('MEM_CLEAN:')) memCleanStatus = dl.slice(10).trim();
+                else if (dl.startsWith('MEMAVAIL:')) memAvailable = parseInt(dl.slice(9).trim(), 10) || 0;
+                else if (dl.startsWith('VMRSS:')) vmRss = parseInt(dl.slice(6).trim(), 10) || 0;
                 }
             }
 
             if (memCleanStatus === 'done') {
                 Logger.info('ProxyDaemon', '🧹 监测到路由器可用内存低于 30MB 临界值，已成功执行 sync 与内存缓存自动释放自愈！');
+            }
+
+
+            // 内存守卫：检查 MemAvailable 和 mihomo VmRSS，超过阈值则触发轻量冷重启
+            if (memAvailable > 0 && memAvailable < 80000) {
+                Logger.warn('ProxyDaemon', '路由器可用内存 (MemAvailable) 低于 80MB（当前 ' + memAvailable + 'KB），触发轻量冷重启释放内存...');
+                await SshService.quickRestartShellCrash();
+                lastProxyRestartTime = Date.now();
+                consecutiveFailures = 0;
+                return false;
+            }
+            if (vmRss > 0 && vmRss > 200000) {
+                Logger.warn('ProxyDaemon', 'mihomo VmRSS 超过 200MB（当前 ' + (vmRss / 1000).toFixed(1) + 'MB），触发轻量冷重启释放内存...');
+                await SshService.quickRestartShellCrash();
+                lastProxyRestartTime = Date.now();
+                consecutiveFailures = 0;
+                return false;
             }
 
             const isProcessRunning = pid && pid.length > 0 && pid !== 'no_pid' && !pid.includes('Error');
@@ -426,6 +494,7 @@ class ProxyHealthService {
         if (trickleTimer) {
             clearInterval(trickleTimer);
             trickleTimer = null;
+        if (_heartbeatWatchdogTimer) { clearInterval(_heartbeatWatchdogTimer); _heartbeatWatchdogTimer = null; }
             Logger.info('ProxyDaemon', '⏹️ 网页代理全节点涓流测速任务已注销。');
         }
     }

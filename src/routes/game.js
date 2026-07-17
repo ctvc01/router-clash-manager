@@ -16,8 +16,9 @@ router.get('/list', (req, res) => {
 
 // 2. 开启设备游戏加速模式
 router.post('/enable', async (req, res) => {
+    let mac = '';
     try {
-        const mac = Validators.validateMAC(req.body.mac);
+        mac = Validators.validateMAC(req.body.mac);
         const key = `enable:${mac}`;
         const existing = inFlight.get(key);
         if (existing) {
@@ -35,7 +36,7 @@ router.post('/enable', async (req, res) => {
             message: err.message
         });
     } finally {
-        inFlight.delete(`enable:${mac}`);
+        if (mac) inFlight.delete(`enable:${mac}`);
     }
 });
 

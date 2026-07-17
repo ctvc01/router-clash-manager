@@ -28,17 +28,21 @@ while iptables -t filter -C FORWARD -p udp --dport 443 -j REJECT --reject-with i
 done
 
 # 4. 读取总白名单，为每个 MAC 创建 TCP REDIRECT 规则 (所有代理设备)
+#    对每个设备，先添加一条跳过内网（192.168.31.0/24）的规则，避免代理设备无法访问 NAS 等内网服务
 if [ -f "$WHITELIST" ]; then
     while read mac; do
         [ -z "$mac" ] && continue
         echo "$mac" | grep -q '^#' && continue
         mac=$(echo "$mac" | tr 'a-z' 'A-Z')
-        # 检查规则是否已存在，不存在则添加
+        # 跳过内网网段（设备访问 NAS 等内网服务不被劫持）
+        LAN_SUBNET="192.168.31.0/24"
+        iptables -t nat -C PREROUTING -m mac --mac-source "$mac" -d "$LAN_SUBNET" -p tcp -j RETURN 2>/dev/null \
+            || iptables -t nat -A PREROUTING -m mac --mac-source "$mac" -d "$LAN_SUBNET" -p tcp -j RETURN
+        # 检查 REDIRECT 规则是否已存在，不存在则添加
         iptables -t nat -C PREROUTING -m mac --mac-source "$mac" -p tcp -j REDIRECT --to-ports "$REDIR_PORT" 2>/dev/null \
             || iptables -t nat -A PREROUTING -m mac --mac-source "$mac" -p tcp -j REDIRECT --to-ports "$REDIR_PORT"
     done < "$WHITELIST"
 fi
-
 # 5. 读取 AI 设备白名单，针对 AI 设备阻断 QUIC (UDP 443) 以强制降级 TCP
 AI_WHITELIST="/data/ShellCrash/configs/ai_devices"
 if [ -f "$AI_WHITELIST" ]; then

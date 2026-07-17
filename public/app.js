@@ -273,7 +273,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function updateUiForRebuilding() {
         // 由于后端现在支持真正的零停机热重载，无需在前端人为伪造“重载中”的断网状态
         // 保持原本的网关运行状态和当前节点显示不变，仅依靠 loading 浮层提示用户即可
-        Logger.info('UI', '已进入热重载过渡态（静默保持原有 UI 状态）');
+        console.log('UI: 已进入热重载过渡态（静默保持原有 UI 状态）');
     }
 
     // 辅助：HTML 特殊字符转义防 XSS (C4)
@@ -1009,6 +1009,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             // 切换完成后，重新获取设备状态，确保数据跟后端完全一致！
             await fetchDevices();
+            stopRebuildState();
         } catch (err) {
             console.error('切换网络模式失败:', err);
             showToast('模式切换失败，网关配置已安全回滚！\n原因: ' + err.message);
@@ -1592,16 +1593,29 @@ document.addEventListener('DOMContentLoaded', () => {
             function renderProxyDropdownList(proxyData) {
                 elProxyDropdownListContainer.innerHTML = '';
                 const proxyCandidates = [];
+                // 置顶选项：♻️ 自动选择（Clash 内置自动测速策略组）
+                const topOptions = ['♻️ 自动选择'];
                 const groupKeywords = ['选择', '自动', 'DIRECT', 'GLOBAL', '测速'];
                 const proxyPhysicalNodes = proxyData.all || [];
                 proxyPhysicalNodes.forEach(node => {
                     if (node && node.name) {
+                        // 排除 topOptions 中已手动添加的项
+                        if (topOptions.includes(node.name)) return;
                         const lower = node.name.toLowerCase();
                         const isGroup = groupKeywords.some(k => lower.includes(k.toLowerCase()));
                         if (!isGroup) {
                             proxyCandidates.push({ name: node.name, delay: node.delay || 0, displayName: node.name });
                         }
                     }
+                });
+                // 将置顶选项插入到列表最前面
+                topOptions.forEach(optName => {
+                    proxyCandidates.unshift({
+                        name: optName,
+                        delay: 0,
+                        displayName: optName,
+                        isAutoSelect: true
+                    });
                 });
 
                 // 如果当前 now 节点不在备选里，为防空白添加临时选项
@@ -1614,7 +1628,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     });
                 }
 
+                // 置顶项不参与延迟排序，保持在前
                 proxyCandidates.sort((a, b) => {
+                    if (a.isAutoSelect) return -1;
+                    if (b.isAutoSelect) return 1;
                     if (a.delay <= 0 && b.delay <= 0) return 0;
                     if (a.delay <= 0) return 1;
                     if (b.delay <= 0) return -1;
