@@ -27,6 +27,15 @@ const { ROUTER_PATHS } = require('./constants');
 // 1. 启动前强校验环境变量与核心凭证
 validateEnvironment();
 
+// 1.2 [新增方案三] 本地 Clash 内核极致压缩冷备自检
+(async () => {
+    try {
+        await SshService.prepareUpxKernel();
+    } catch (err) {
+        Logger.error('Server', '启动前准备 UPX 压缩内核发生异常', err);
+    }
+})();
+
 // 1.5 初始化数据持久化框架
 PersistenceService.initializeAll();
 PersistenceService.logIntegrityReport();

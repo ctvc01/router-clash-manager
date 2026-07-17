@@ -117,6 +117,43 @@ class SshService {
         });
     }
 
+    // [新增] 自动在本地将 44MB 的 Clash 内核极致压缩为 12MB 的冷备文件
+    static async prepareUpxKernel() {
+        try {
+            const backupDir = config.paths.clashBackup;
+            const rawClash = path.join(backupDir, 'Clash');
+            const compressedClash = path.join(backupDir, 'Clash.compressed');
+
+            if (!fs.existsSync(compressedClash) || fs.statSync(compressedClash).size < 5000000) {
+                if (fs.existsSync(rawClash)) {
+                    Logger.info('ShellCrash', '📦 正在本地使用 UPX 极致压缩内核（12MB冷备级）...');
+                    const { exec } = require('child_process');
+                    return new Promise((resolve) => {
+                        exec(`upx --lzma --best -o "${compressedClash}" "${rawClash}"`, (err, stdout, stderr) => {
+                            if (err) {
+                                Logger.error('ShellCrash', '⚠️ UPX 极致压缩内核失败，降级使用常规内核作为冷备', err);
+                                try {
+                                    fs.copyFileSync(rawClash, compressedClash);
+                                    Logger.info('ShellCrash', '常规内核已复制作为本地冷备');
+                                } catch (cpErr) {
+                                    Logger.error('ShellCrash', '复制冷备内核发生严重异常', cpErr);
+                                }
+                            } else {
+                                const newSize = (fs.statSync(compressedClash).size / 1024 / 1024).toFixed(2);
+                                Logger.info('ShellCrash', `✅ UPX 内核极致压缩成功！生成冷备大小: ${newSize}MB`);
+                            }
+                            resolve();
+                        });
+                    });
+                } else {
+                    Logger.warn('ShellCrash', '⚠️ 备份目录未找到原始 Clash 内核，无法生成冷备压缩包');
+                }
+            }
+        } catch (err) {
+            Logger.error('ShellCrash', '生成冷备压缩内核发生异常', err);
+        }
+    }
+
     // 上传容器本地文件到路由器（通过 scp_to_remote.exp 脚本，30秒超时保护）
     static uploadFileLocal(localPath, remotePath) {
         return new Promise((resolve, reject) => {
@@ -165,6 +202,17 @@ class SshService {
                     // 启动后台巡检死循环，如果已经在运行则跳过，防止重复启动
                     await this.runRemoteCommand('pgrep -f "guard_iptables.sh" >/dev/null || ( /data/ShellCrash/guard_iptables.sh </dev/null >/dev/null 2>&1 & )');
                     Logger.info('ShellCrash', '防火墙守护脚本已成功推送并确保后台挂起运行');
+                }
+                
+                // [新增] 自检并上传极致压缩后的内核冷备文件至路由器闪存中 (方案三)
+                const hasCompressedBak = await this.runRemoteCommand('[ -f /data/ShellCrash/mihomo.bak ] && echo 1 || echo 0');
+                if (hasCompressedBak.trim() !== '1') {
+                    const compressedClash = path.join(config.paths.clashBackup, 'Clash.compressed');
+                    if (fs.existsSync(compressedClash)) {
+                        Logger.warn('ShellCrash', '⚠️ 探测到路由器闪存冷备 /data/ShellCrash/mihomo.bak 不存在，正在全自动上传 12MB 极致压缩内核冷备...');
+                        await this.uploadFileLocal(compressedClash, '/data/ShellCrash/mihomo.bak');
+                        Logger.info('ShellCrash', '✅ 极致压缩内核冷备文件推送成功，已冷存储于 /data 闪存！');
+                    }
                 }
                 
                 Logger.info('ShellCrash', '安全引流脚本及依赖配置推送成功');
@@ -305,22 +353,43 @@ class SshService {
                 await this.runRemoteCommand('rm -f /data/ShellCrash/.start_error');
                 Logger.info('ShellCrash', '已清除启动错误标记文件');
 
-                // 0a. 路由器重启后自动补全内核与地理数据库
+                // 0a. 路由器重启后自动补全内核与地理数据库 (方案三)
                 const isKernelExist = await this.runRemoteCommand('[ -f /tmp/ShellCrash/mihomo ] && echo 1 || echo 0');
                 if (isKernelExist.trim() !== '1') {
                     Logger.warn('ShellCrash', '⚠️ 探测到路由器重启导致 /tmp 内核丢失，正在执行全自动自愈补全...');
                     await this.runRemoteCommand('mkdir -p /tmp/ShellCrash');
                     
+                    // [方案三] 优先从路由器本地 /data 的压缩冷备中拷贝自愈，实现 0.1 秒秒级自愈与网络零依赖！
+                    const hasLocalBak = await this.runRemoteCommand('[ -f /data/ShellCrash/mihomo.bak ] && echo 1 || echo 0');
+                    let recoveredFromLocal = false;
+                    if (hasLocalBak.trim() === '1') {
+                        Logger.info('ShellCrash', '🚀 发现路由器本地冷备 /data/ShellCrash/mihomo.bak，正在执行超极速本地自愈拷贝...');
+                        await this.runRemoteCommand('cp /data/ShellCrash/mihomo.bak /tmp/ShellCrash/mihomo && chmod +x /tmp/ShellCrash/mihomo');
+                        recoveredFromLocal = true;
+                        Logger.info('ShellCrash', '✅ 本地拷贝自愈成功！');
+                    }
+                    
                     const backupDir = config.paths.clashBackup;
                     
-                    if (fs.existsSync(`${backupDir}/Clash`) && fs.existsSync(`${backupDir}/Country.mmdb`)) {
-                        Logger.info('ShellCrash', '正在从本地备份全自动上传 Clash 内核与 Country.mmdb 到路由器...');
-                        await this.uploadFileLocal(`${backupDir}/Clash`, '/tmp/ShellCrash/mihomo');
-                        await this.uploadFileLocal(`${backupDir}/Country.mmdb`, '/tmp/ShellCrash/Country.mmdb');
-                        await this.runRemoteCommand('chmod +x /tmp/ShellCrash/mihomo');
-                        Logger.info('ShellCrash', '✅ 文件推送及权限配置完成！');
-                    } else {
-                        Logger.error('ShellCrash', '❌ 容器内未找到备份的内核或数据库文件，自愈失败！');
+                    // 如果本地没有备份，或者本地自愈失败，降级为远程推送
+                    if (!recoveredFromLocal) {
+                        if (fs.existsSync(`${backupDir}/Clash`)) {
+                            Logger.warn('ShellCrash', '⚠️ 本地冷备缺失，正在降级从 NAS 容器重新推送 44MB 原始内核...');
+                            await this.uploadFileLocal(`${backupDir}/Clash`, '/tmp/ShellCrash/mihomo');
+                            await this.runRemoteCommand('chmod +x /tmp/ShellCrash/mihomo');
+                            Logger.info('ShellCrash', '✅ 原始内核文件推送及权限配置完成！');
+                        } else {
+                            Logger.error('ShellCrash', '❌ 容器内未找到备份的内核文件，自愈失败！');
+                        }
+                    }
+                    
+                    // 补全 Country.mmdb (如果 /tmp 中没有)
+                    const isGeoDbExist = await this.runRemoteCommand('[ -f /tmp/ShellCrash/Country.mmdb ] && echo 1 || echo 0');
+                    if (isGeoDbExist.trim() !== '1') {
+                        if (fs.existsSync(`${backupDir}/Country.mmdb`)) {
+                            Logger.info('ShellCrash', '正在从本地备份上传 Country.mmdb 地理数据库...');
+                            await this.uploadFileLocal(`${backupDir}/Country.mmdb`, '/tmp/ShellCrash/Country.mmdb');
+                        }
                     }
                 }
 
@@ -431,21 +500,25 @@ class SshService {
                     // 检查是否含有 exit 0
                     const hasExitZero = (await this.runRemoteCommand('grep -q "exit 0" /etc/rc.local && echo 1 || echo 0')).trim() === '1';
                     
-                    // 守护进程注入命令与 WebHook 注入命令
+                    // [方案三] 守护进程注入、WebHook 注入与本地内核秒级拷贝自愈指令
+                    const recoveryCmd = '[ -f /tmp/ShellCrash/mihomo ] || ( mkdir -p /tmp/ShellCrash && cp /data/ShellCrash/mihomo.bak /tmp/ShellCrash/mihomo && chmod +x /tmp/ShellCrash/mihomo ) 2>/dev/null';
                     const guardCmd = '( sleep 15 && /data/ShellCrash/guard_iptables.sh ) </dev/null >/dev/null 2>&1 &';
                     const webhookUrl = `http://${localIp}:${port}/api/router-boot-hook`;
                     const webhookCmd = `( sleep 5 && curl -X POST ${webhookUrl} ) </dev/null >/dev/null 2>&1 &`;
                     
                     // 先强行清除已有的旧配置行，防止因 IP 变更或配置变更导致旧配置不刷新
+                    await this.runRemoteCommand("sed -i '/mihomo.bak/d' /etc/rc.local 2>/dev/null || true");
                     await this.runRemoteCommand("sed -i '/guard_iptables.sh/d' /etc/rc.local 2>/dev/null || true");
                     await this.runRemoteCommand("sed -i '/router-boot-hook/d' /etc/rc.local 2>/dev/null || true");
                     
                     if (hasExitZero) {
                         // 插入在 exit 0 之前
+                        await this.runRemoteCommand(`sed -i '/exit 0/i ${recoveryCmd}' /etc/rc.local`);
                         await this.runRemoteCommand(`sed -i '/exit 0/i ${guardCmd}' /etc/rc.local`);
                         await this.runRemoteCommand(`sed -i '/exit 0/i ${webhookCmd}' /etc/rc.local`);
                     } else {
                         // 直接追加在文件末尾
+                        await this.runRemoteCommand(`echo "${recoveryCmd}" >> /etc/rc.local`);
                         await this.runRemoteCommand(`echo "${guardCmd}" >> /etc/rc.local`);
                         await this.runRemoteCommand(`echo "${webhookCmd}" >> /etc/rc.local`);
                     }

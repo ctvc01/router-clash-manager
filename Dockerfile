@@ -1,7 +1,7 @@
 FROM node:18-alpine
 
 RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories && \
-    apk add --no-cache expect openssh-client curl sshpass
+    apk add --no-cache expect openssh-client curl sshpass upx
 
 # 配置 SSH 客户端支持 RSA host keys（老旧路由器兼容性）
 RUN mkdir -p /root/.ssh
