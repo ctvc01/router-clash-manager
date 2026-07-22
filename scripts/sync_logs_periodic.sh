@@ -1,13 +1,18 @@
-#!/bin/bash
+#!/bin/sh
 # 日志转移定时任务（在本地机器运行）
 # 从路由器拉取日志，转移到 NAS
 
-ROUTER_IP="192.168.31.1"
-ROUTER_USER="root"
-ROUTER_PASSWORD="90c747a2"
-NAS_IP="192.168.31.66"
-NAS_USER="ctpdrqm"
-NAS_PASSWORD="cx@4343506"
+# 连接配置（优先从环境变量读取，否则使用默认值）
+ROUTER_IP="${ROUTER_IP:-192.168.31.1}"
+ROUTER_USER="${ROUTER_USER:-root}"
+ROUTER_PASSWORD="${ROUTER_PASSWORD}"
+NAS_IP="${NAS_IP:-192.168.31.66}"
+NAS_USER="${NAS_USER:-ctpdrqm}"
+NAS_PASSWORD="${NAS_PASSWORD}"
+
+# 检查必需变量
+[ -z "$ROUTER_PASSWORD" ] && echo "❌ 错误: 需要设置 ROUTER_PASSWORD 环境变量" && exit 1
+[ -z "$NAS_PASSWORD" ] && echo "❌ 错误: 需要设置 NAS_PASSWORD 环境变量" && exit 1
 
 # SSH 连接选项
 SSH_OPTS="-o StrictHostKeyChecking=no -o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedKeyTypes=+ssh-rsa"

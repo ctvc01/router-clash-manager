@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 # 故障根原因分析脚本
 # 在路由器上执行：bash this_script.sh
 # 或从 NAS 容器执行：docker exec clash-meta bash this_script.sh
@@ -37,12 +37,12 @@ echo ""
 # ===== 3. Clash 进程状态 =====
 echo "⚙️  [3/8] Clash 进程状态"
 echo "---"
-if pgrep -f Clash >/dev/null 2>&1; then
+if ps -ef | grep -v grep | grep -q 'Clash' 2>/dev/null; then
     echo "  ✅ Clash 进程运行中"
     ps aux | grep -i clash | grep -v grep | awk '{print "    PID=" $2 ", CPU=" $3"%, MEM=" $4"%"}'
 
     # 获取进程启动时间
-    CLASH_PID=$(pgrep -f Clash | head -1)
+    CLASH_PID=$(ps -ef | grep -v grep | grep 'Clash' | awk 'NR==1{print \$1}')
     START_TIME=$(ps -p $CLASH_PID -o lstart= 2>/dev/null || echo "unknown")
     echo "    启动时间: $START_TIME"
 else
@@ -85,7 +85,7 @@ echo "---"
 if [ -f /data/ShellCrash/.start_error ]; then
     echo "  🔴 存在 .start_error 文件（启动失败标记）"
     ls -la /data/ShellCrash/.start_error
-    echo "  创建时间: $(stat -f %Sm -t '%Y-%m-%d %H:%M:%S' /data/ShellCrash/.start_error 2>/dev/null || echo 'unknown')"
+    echo "  创建时间: $(stat -c '%y' /data/ShellCrash/.start_error 2>/dev/null || echo 'unknown')"
 else
     echo "  ✅ 无启动错误标记"
 fi
@@ -181,14 +181,14 @@ if [ -f /data/ShellCrash/.start_error ]; then
     VERDICT="${VERDICT}3. 🟡 启动失败标记存在 - 需要检查启动条件\n"
 fi
 
-if ! pgrep -f Clash >/dev/null 2>&1; then
+if ! ps -ef | grep -v grep | grep -q 'Clash' 2>/dev/null; then
     VERDICT="${VERDICT}4. 🔴 Clash 目前不运行 - 需要立即重启\n"
 fi
 
 if [ -z "$VERDICT" ]; then
     echo "✅ 所有检查点正常，故障可能已经自愈或需要进一步调查"
 else
-    echo -e "$VERDICT"
+    printf "%s\n" "$VERDICT"
 fi
 
 echo ""

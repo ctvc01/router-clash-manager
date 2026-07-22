@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 # NAS Clash Meta 容器重启和部署脚本
 # 用法：在 NAS 上执行此脚本以应用最新的代码修复
 

@@ -8,13 +8,13 @@ services:
     environment:
       - ROUTER_IP=192.168.31.1
       - ROUTER_USER=root
-      - ROUTER_PASSWORD=90c747a2
       - CLASH_PORT=9999
       - PROXY_PORT=7890
       - DNS_PORT=1053
       - PORT=3000
       - NODE_ENV=production
-      - SUBSCRIPTION_URL=https://www.cmsub.com/subscribe/WUK1BZDNN7ICBIIB?clash=ssr&trojan
+    env_file:
+      - .env
     volumes:
       # 持久化自定义设备名和分类以及游戏与AI加速列表，防止容器重启丢失数据
       - ./device_custom.json:/data/device_custom.json

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 # Clash Gateway 故障诊断脚本
 # 用法: ./diagnose.sh  (需要先通过 .env 配置路由器信息)
 
@@ -10,7 +10,7 @@ if [ ! -f .env ]; then
     exit 1
 fi
 
-source .env
+. .env
 
 ROUTER_IP=${ROUTER_IP:-192.168.31.1}
 ROUTER_USER=${ROUTER_USER:-root}

@@ -87,8 +87,8 @@ class Logger {
                     .filter(f => f.startsWith('app.log.'))
                     .sort()
                     .reverse();
-                if (files.length > 10) {
-                    files.slice(10).forEach(f => {
+                if (files.length > 5) {
+                    files.slice(5).forEach(f => {
                         try {
                             fs.unlinkSync(path.join(Logger.LOG_DIR, f));
                         } catch (e) {

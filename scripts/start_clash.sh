@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 # 启动 Clash Meta 脚本
 # 用法：sh /data/ShellCrash/start_clash.sh
 
@@ -25,9 +25,9 @@ fi
 rm -f "$CRASHDIR/.start_error" 2>/dev/null
 
 # 停止旧进程
-if pidof Clash >/dev/null 2>&1; then
+if ps -ef | grep -v grep | grep -q 'Clash' >/dev/null 2>&1; then
     echo "🛑 停止旧 Clash 进程..."
-    kill $(pidof Clash) 2>/dev/null || true
+    kill $(ps -ef | grep -v grep | grep 'Clash' | awk '{print $1}') 2>/dev/null || true
     sleep 2
 fi
 
@@ -39,8 +39,8 @@ $CLASH_BIN -d "$CRASHDIR" -f "$CONFIG" </dev/null >/dev/null 2>&1 &
 sleep 3
 
 # 验证
-if pidof Clash >/dev/null 2>&1; then
-    echo "✅ Clash Meta 已启动 (PID: $(pidof Clash))"
+if ps -ef | grep -v grep | grep -q 'Clash' >/dev/null 2>&1; then
+    echo "✅ Clash Meta 已启动 (PID: $(ps -ef | grep -v grep | grep 'Clash' | awk '{print $1}'))"
     echo "🌐 代理端口: 127.0.0.1:7890"
     echo "🔌 API 端口: 127.0.0.1:9999"
     echo "📡 DNS 端口: 127.0.0.1:1053"
