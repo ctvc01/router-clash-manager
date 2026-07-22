@@ -37,14 +37,12 @@ echo ""
 # ===== 3. Clash 进程状态 =====
 echo "⚙️  [3/8] Clash 进程状态"
 echo "---"
-if ps -ef | grep -v grep | grep -q 'Clash' 2>/dev/null; then
-    echo "  ✅ Clash 进程运行中"
-    ps aux | grep -i clash | grep -v grep | awk '{print "    PID=" $2 ", CPU=" $3"%, MEM=" $4"%"}'
-
-    # 获取进程启动时间
-    CLASH_PID=$(ps -ef | grep -v grep | grep 'Clash' | awk 'NR==1{print \$1}')
-    START_TIME=$(ps -p $CLASH_PID -o lstart= 2>/dev/null || echo "unknown")
-    echo "    启动时间: $START_TIME"
+CLASH_PID=$(pidof mihomo 2>/dev/null || pidof Clash 2>/dev/null || echo "")
+if [ -n "$CLASH_PID" ]; then
+    echo "  ✅ Clash 进程运行中 (PID: $CLASH_PID)"
+    if command -v top >/dev/null 2>&1; then
+        top -b -n 1 | grep -E "mihomo|Clash" | head -n 2 | awk '{print "    PID=" $1 ", CPU=" $7 ", MEM=" $8}'
+    fi
 else
     echo "  ❌ Clash 进程未运行"
     if [ -f /data/ShellCrash/.start_error ]; then
@@ -181,7 +179,7 @@ if [ -f /data/ShellCrash/.start_error ]; then
     VERDICT="${VERDICT}3. 🟡 启动失败标记存在 - 需要检查启动条件\n"
 fi
 
-if ! ps -ef | grep -v grep | grep -q 'Clash' 2>/dev/null; then
+if [ -z "$(pidof mihomo 2>/dev/null || pidof Clash 2>/dev/null)" ]; then
     VERDICT="${VERDICT}4. 🔴 Clash 目前不运行 - 需要立即重启\n"
 fi
 

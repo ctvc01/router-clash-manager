@@ -25,9 +25,10 @@ fi
 rm -f "$CRASHDIR/.start_error" 2>/dev/null
 
 # 停止旧进程
-if ps -ef | grep -v grep | grep -q 'Clash' >/dev/null 2>&1; then
-    echo "🛑 停止旧 Clash 进程..."
-    kill $(ps -ef | grep -v grep | grep 'Clash' | awk '{print $1}') 2>/dev/null || true
+PID=$(pidof mihomo 2>/dev/null || pidof Clash 2>/dev/null || echo "")
+if [ -n "$PID" ]; then
+    echo "🛑 停止旧 Clash 进程 (PID: $PID)..."
+    kill $PID 2>/dev/null || kill -9 $PID 2>/dev/null || true
     sleep 2
 fi
 
@@ -39,8 +40,9 @@ $CLASH_BIN -d "$CRASHDIR" -f "$CONFIG" </dev/null >/dev/null 2>&1 &
 sleep 3
 
 # 验证
-if ps -ef | grep -v grep | grep -q 'Clash' >/dev/null 2>&1; then
-    echo "✅ Clash Meta 已启动 (PID: $(ps -ef | grep -v grep | grep 'Clash' | awk '{print $1}'))"
+NEW_PID=$(pidof mihomo 2>/dev/null || pidof Clash 2>/dev/null || echo "")
+if [ -n "$NEW_PID" ]; then
+    echo "✅ Clash Meta 已启动 (PID: $NEW_PID)"
     echo "🌐 代理端口: 127.0.0.1:7890"
     echo "🔌 API 端口: 127.0.0.1:9999"
     echo "📡 DNS 端口: 127.0.0.1:1053"
