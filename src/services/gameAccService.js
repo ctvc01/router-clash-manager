@@ -51,45 +51,39 @@ class GameAccService {
             const TIMEOUT_MS = 3000;
             const TEST_URL = 'http://ctest.cdn.nintendo.net/';
            
-            const results = [];
-            for (const nodeName of physicalNodes) {
-                let successCount = 0, totalDelay = 0;
-                let isDead = false;
-                for (let i = 0; i < NODE_SAMPLES; i++) {
-                   const delay = await ClashService.testNodeDelay(nodeName, TIMEOUT_MS, TEST_URL);
-                   if (delay > 0) { 
-                       successCount++; 
-                       totalDelay += delay; 
-                   } else {
-                       if (i === 0) {
-                           isDead = true;
-                           break;
-                       }
-                   }
-                   if (i < NODE_SAMPLES - 1) await new Promise(r => setTimeout(r, 200));
-                }
-                const lossRate = isDead ? 1.0 : (NODE_SAMPLES - successCount) / NODE_SAMPLES;
-                const avgDelay = (!isDead && successCount > 0) ? Math.round(totalDelay / successCount) : 99999;
-                const lowerName = nodeName.toLowerCase();
-                const isJapan = lowerName.includes('japan') || lowerName.includes('日本') || lowerName.includes('jp');
-                const isTaiwan = lowerName.includes('taiwan') || lowerName.includes('台灣') || lowerName.includes('台湾') || lowerName.includes('tw');
-                const isKorea = lowerName.includes('korea') || lowerName.includes('韩国') || lowerName.includes('kr');
-                const isSingapore = lowerName.includes('singapore') || lowerName.includes('新加坡') || lowerName.includes('sg');
-                const isGRPC = lowerName.includes('grpc');
-                let weight = 1.0;
-                if (isJapan) weight = 0.75; else if (isTaiwan) weight = 0.85; else if (isSingapore) weight = 0.88; else if (isKorea) weight = 0.90;
-                if (isGRPC && !isJapan) weight *= 1.15;
-                const weightedDelay = (!isDead && successCount > 0) ? Math.round(avgDelay * weight) : 99999;
-                results.push({ 
-                   name: nodeName, 
-                   delay: weightedDelay, 
-                   rawDelay: isDead ? -1 : avgDelay, 
-                   loss: lossRate, 
-                   samples: isDead ? 0 : successCount, 
-                   region: isJapan ? 'JP' : (isTaiwan ? 'TW' : (isSingapore ? 'SG' : (isKorea ? 'KR' : 'OTHER'))), 
-                   isGRPC,
-                   timestamp: Date.now()
+           const results = [];
+           for (const nodeName of physicalNodes) {
+               let successCount = 0, totalDelay = 0;
+               for (let i = 0; i < NODE_SAMPLES; i++) {
+                  const delay = await ClashService.testNodeDelay(nodeName, TIMEOUT_MS, TEST_URL);
+                   if (delay > 0) { successCount++; totalDelay += delay; }
+                  if (i < NODE_SAMPLES - 1) await new Promise(r => setTimeout(r, 200));
+               }
+                const lossRate = (NODE_SAMPLES - successCount) / NODE_SAMPLES;
+                const avgDelay = successCount > 0 ? Math.round(totalDelay / successCount) : 99999;
+               const lowerName = nodeName.toLowerCase();
+               const isJapan = lowerName.includes('japan') || lowerName.includes('日本') || lowerName.includes('jp');
+               const isTaiwan = lowerName.includes('taiwan') || lowerName.includes('台灣') || lowerName.includes('台湾') || lowerName.includes('tw');
+               const isKorea = lowerName.includes('korea') || lowerName.includes('韩国') || lowerName.includes('kr');
+               const isSingapore = lowerName.includes('singapore') || lowerName.includes('新加坡') || lowerName.includes('sg');
+               const isGRPC = lowerName.includes('grpc');
+               let weight = 1.0;
+               if (isJapan) weight = 0.75; else if (isTaiwan) weight = 0.85; else if (isSingapore) weight = 0.88; else if (isKorea) weight = 0.90;
+               if (isGRPC && !isJapan) weight *= 1.15;
+                const weightedDelay = successCount > 0 ? Math.round(avgDelay * weight) : 99999;
+               results.push({ 
+                  name: nodeName, 
+                  delay: weightedDelay, 
+                   rawDelay: avgDelay, 
+                  loss: lossRate, 
+                   samples: successCount, 
+                  region: isJapan ? 'JP' : (isTaiwan ? 'TW' : (isSingapore ? 'SG' : (isKorea ? 'KR' : 'OTHER'))), 
+                  isGRPC,
+                  timestamp: Date.now()
                 });
+                
+                // 增量更新 per-node 结果，供前端实时展示丢包率
+                SpeedtestState.updateGamePerNodeResults([...results]);
                 
                 // 【硬件防波段】：每次节点测速后强制防抖间隔，防止路由器 CPU 瞬间冲高
                 await new Promise(r => setTimeout(r, 500));
@@ -135,17 +129,6 @@ class GameAccService {
             }, 600000);
         }, 120000);
         Logger.info('GameAcc', '🛡️ 游戏加速故障心跳已排程，将在 120 秒后错峰激活 (周期 10 分钟)');
-        if (!silentPeriodicalTimer && !silentStartTimeout) {
-            silentStartTimeout = setTimeout(() => {
-                silentStartTimeout = null;
-                const gameMacs = this.readGameDevices();
-                if (gameMacs.length === 0) return;
-                Logger.info('GameAcc', '🕰️ 游戏节点后台静默测速优化任务正式启动 (周期 60 分钟)');
-                this.runSilentPeriodicalCheck();
-                silentPeriodicalTimer = setInterval(() => this.runSilentPeriodicalCheck(), 3600000);
-            }, 2100000);
-            Logger.info('GameAcc', '🕰️ 游戏后台静默测速优化已排程，将在 35 分钟后错峰激活 (周期 60 分钟，与 AI 错开 30min)');
-        }
     }
 
     static async _checkGameNodeHealth() {
@@ -185,14 +168,7 @@ class GameAccService {
             if (delay === 0) {
                 this._healthFailCounts[currentNode] = (this._healthFailCounts[currentNode] || 0) + 1;
                 if (this._healthFailCounts[currentNode] >= 2) {
-                    Logger.warn('GameAcc', `⚠️ 游戏节点 [${currentNode}] 连续${this._healthFailCounts[currentNode]}次断联！触发故障转移...`);
-                    const fastestNode = await this.findFastestGameNode();
-                    if (fastestNode && fastestNode.name !== currentNode) {
-                        await this.lockGameNode(fastestNode.name);
-                        if (SpeedtestState.isLocked('game')) {
-                            SpeedtestState.setLockedNode('game', fastestNode.name);
-                        }
-                    }
+                    Logger.warn('GameAcc', `⚠️ 当前锁定的游戏节点 [${currentNode}] 连续${this._healthFailCounts[currentNode]}次断联！请在详情弹窗中手动测速/重新锁定新节点。`);
                     this._healthFailCounts[currentNode] = 0;
                 } else {
                     Logger.debug('GameAcc', `游戏节点 [${currentNode}] 单次测速超时 (${this._healthFailCounts[currentNode]}/2)`);
@@ -227,81 +203,10 @@ class GameAccService {
         } catch (err) { Logger.error('GameAcc', '故障转移心跳检测发生异常', err); }
     }
 
-    static async runSilentPeriodicalCheck() {
-        if (silentRunning) {
-            Logger.debug('GameAcc', '静默测速仍在进行中，跳过本轮触发');
-            return;
-        }
-        // 【路由器保护】：启动前预检 uptime + loadavg，路由器刚开机或负载已高时跳过本轮
-        try {
-            const snap = await SshService.getRouterHealthSnapshot();
-            if (snap.ok) {
-                if (snap.uptime > 0 && snap.uptime < 600) {
-                    Logger.warn('GameAcc', `路由器刚开机仅 ${Math.floor(snap.uptime)}s（<600s），跳过本轮静默测速，60min 后再来`);
-                    return;
-                }
-                if (snap.load1 >= 2.0) {
-                    Logger.warn('GameAcc', `路由器 1min 负载 ${snap.load1.toFixed(2)} >= 2.0，已在高负载区间，跳过本轮静默测速`);
-                    return;
-                }
-            }
-        } catch (e) {
-            Logger.debug('GameAcc', `uptime 预检异常，放行本轮: ${e.message || e}`);
-        }
-        silentRunning = true;
-        ClashService.setFullSpeedtestFlag(true);
-        try {
-            const gameMacs = this.readGameDevices();
-            if (gameMacs.length === 0) return;
-            const isLocked = SpeedtestState.isLocked('game');
-            Logger.info('GameAcc', `🕰️ 触发游戏节点定期静默测速优化检测... (${isLocked ? 'LOCKED' : 'UNLOCK'})`);
-            const proxiesData = await ClashService.getProxies();
-            const group = proxiesData.proxies['🎮 游戏加速'];
-            if (!group || !group.now) return;
-            const currentNode = group.now;
-            let currentDelay = await ClashService.testNodeDelay(currentNode, 4000);
-            if (currentDelay === 0) currentDelay = 99999;
-            const fastestNode = await this.findFastestGameNode();
-            if (!fastestNode) return;
-            if (isLocked) { Logger.info('GameAcc', `定期检测(LOCKED)：仅更新测速结果 (${fastestNode.name} ${fastestNode.delay}ms)，不切换节点。`); return; }
-            if (fastestNode.name === currentNode) { Logger.info('GameAcc', `定期检测：当前节点已是最优，保持不变。`); return; }
-            const diff = currentDelay - fastestNode.delay;
-            if (diff > 200) { Logger.info('GameAcc', `🎉 发现更优: [${fastestNode.name}] (${fastestNode.delay}ms)，切换。`); await this.lockGameNode(fastestNode.name); }
-            else { Logger.info('GameAcc', `虽有更快节点但差值 ${diff}ms <= 200ms，保持稳定不切换。`); }
-        } catch (err) {
-            Logger.error('GameAcc', '定期静默测速优化任务异常', err);
-        } finally {
-            ClashService.setFullSpeedtestFlag(false);
-            silentRunning = false;
-        }
-    }
-
     static stopGameAccMonitor() {
         if (gameAccStartTimeout) { clearTimeout(gameAccStartTimeout); gameAccStartTimeout = null; }
         if (gameAccCheckTimer) { clearInterval(gameAccCheckTimer); gameAccCheckTimer = null; Logger.info('GameAcc', '🛑 停止游戏加速节点状态守护监测进程'); }
-        if (silentStartTimeout) { clearTimeout(silentStartTimeout); silentStartTimeout = null; }
-        if (silentPeriodicalTimer) { clearInterval(silentPeriodicalTimer); silentPeriodicalTimer = null; Logger.info('GameAcc', '🛑 已注销游戏后台静默测速定时任务'); }
     }
-
-    static startDailyTaskMonitor() {
-        if (dailyCheckTimer) return;
-        Logger.info('GameAcc', '🕰️ 每日凌晨定时切换任务启动成功');
-        dailyCheckTimer = setInterval(async () => {
-            const { hour, minute } = getBeijingTimeParts();
-            if (hour === 4 && minute < 5) {
-                if (!dailyCheckDone) {
-                    dailyCheckDone = true;
-                    const gameMacs = this.readGameDevices();
-                    if (gameMacs.length > 0) {
-                        const isLocked = SpeedtestState.isLocked('game');
-                        Logger.info('GameAcc', `🕰️ 04:00 重测... (${isLocked ? 'LOCKED:仅更新' : 'UNLOCK:切换'})`);
-                        try { const fastestNode = await this.findFastestGameNode(); if (fastestNode && !isLocked) await this.lockGameNode(fastestNode.name); }
-                        catch (err) { Logger.error('GameAcc', '每日凌晨定时测速切换异常', err); }
-                    }
-                }
-           } else { dailyCheckDone = false; }
-       }, 300000); // 5 分钟轮询，降低路由器负载
-   }
 }
 
 module.exports = GameAccService;

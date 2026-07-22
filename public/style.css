@@ -1766,6 +1766,78 @@ body {
     opacity: 0.8;
 }
 
+/* 详情弹窗测速按钮交互样式 */
+.btn-speedtest-action {
+    border: 1px solid var(--border-color);
+    background: var(--bg-card);
+    color: var(--text-primary);
+    cursor: pointer;
+    font-weight: 500;
+    transition: transform 0.15s cubic-bezier(0.2, 0, 0, 1), background-color 0.15s, border-color 0.15s, color 0.15s;
+}
+.btn-speedtest-action:hover {
+    background: rgba(255, 255, 255, 0.08) !important;
+    border-color: rgba(255, 255, 255, 0.2) !important;
+    color: #00d2ff !important;
+}
+.btn-speedtest-action:active {
+    transform: scale(0.96);
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+.animate-spin {
+    animation: spin 1s linear infinite;
+}
+
+.game-dropdown-item span {
+    font-variant-numeric: tabular-nums;
+}
+
+/* 测速按钮激活态：青色发光 */
+.btn-speedtest-action.btn-speedtest-active {
+    color: #00d2ff !important;
+    border-color: rgba(0, 210, 255, 0.5) !important;
+    background: rgba(0, 210, 255, 0.08) !important;
+    box-shadow: 0 0 8px rgba(0, 210, 255, 0.35);
+}
+
+/* 测速中节点行：微弱脉冲背景 */
+.speedtest-row-pulsing {
+    animation: row-pulse 1.6s ease-in-out infinite;
+}
+@keyframes row-pulse {
+    0%, 100% { background: transparent; }
+    50% { background: rgba(0, 210, 255, 0.06); }
+}
+
+/* 行内延迟 spinner */
+.node-delay-testing {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--text-secondary);
+    font-size: 11px;
+    flex-shrink: 0;
+}
+
+/* 延迟值刷新高亮闪烁 */
+.delay-flash {
+    animation: delay-flash 0.6s ease-out;
+}
+@keyframes delay-flash {
+    0% { background: rgba(0, 210, 255, 0.25); }
+    100% { background: transparent; }
+}
+
+/* skeleton 闪光动画（兼容已有引用） */
+@keyframes skeleton-shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
 .badge-count {
     display: inline-flex;
     align-items: center;
@@ -1938,4 +2010,3 @@ body {
 .animate-pulse {
     animation: textPulse 1.6s infinite ease-in-out;
 }
-

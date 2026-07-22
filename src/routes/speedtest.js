@@ -54,13 +54,18 @@ router.post('/lock', async (req, res) => {
     }
 });
 
-// POST /api/speedtest/trigger { mode: 'ai'|'game' }
-// 立即返回，后台异步执行测速（游戏模式 ~40s，AI 模式 ~10s）
+// POST /api/speedtest/trigger { mode: 'ai'|'game'|'proxy' }
+// 立即返回，后台异步执行测速
 router.post('/trigger', async (req, res) => {
     try {
         const { mode } = req.body;
-        if (!['ai', 'game'].includes(mode)) {
-            return res.status(400).json({ error: 'mode must be ai or game' });
+        if (!['ai', 'game', 'proxy'].includes(mode)) {
+            return res.status(400).json({ error: 'mode must be ai, game or proxy' });
+        }
+
+        // 🛡️ 串行防踩踏互斥锁
+        if (ClashService.isFullSpeedtestInProgress()) {
+            return res.status(409).json({ error: '路由器测速通道被占用，请等待当前测速结束再试' });
         }
 
         // 立即返回，不阻塞
@@ -70,11 +75,16 @@ router.post('/trigger', async (req, res) => {
         (async () => {
             try {
                 if (mode === 'game') {
-                    await GameAccService.findBestAndLock(true);
-                } else {
-                    await AiBoostService.findBestAndLock(true);
+                    const GameAccService = require('../services/gameAccService');
+                    await GameAccService.findFastestGameNode();
+                } else if (mode === 'ai') {
+                    const AiBoostService = require('../services/aiBoostService');
+                    await AiBoostService.findFastestAiNode();
+                } else if (mode === 'proxy') {
+                    const ProxyHealthService = require('../services/proxyHealthService');
+                    await ProxyHealthService.runManualProxySpeedtest();
                 }
-                Logger.info('SpeedtestAPI', `${mode} 手动测速完成`);
+                Logger.info('SpeedtestAPI', `${mode} 手动测速完成（已解耦，未改变当前节点锁定与选择）`);
             } catch (err) {
                 Logger.error('SpeedtestAPI', `${mode} 手动测速失败`, err);
             }

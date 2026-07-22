@@ -109,36 +109,21 @@ class ProxyHealthService {
         }, 180000);
         Logger.info('ProxyDaemon', '🛡️ 网页代理心跳监测已排程，将在 180 秒后错峰激活 (健康 10min / 异常 30s)');
 
-        // 2. 网页代理全节点涓流测速任务：启动后延迟 5 分钟正式激活，每 5 分钟测 1 个节点
-        if (!trickleTimer && !trickleStartTimeout) {
-            trickleStartTimeout = setTimeout(() => {
-                trickleStartTimeout = null;
-                Logger.info('ProxyDaemon', '🕰️ 网页代理全节点涓流测速任务正式启动 (周期 5 分钟/节点)');
-                this.runTrickleNodeCheck();
-
-
-            // 4. 心跳链看门狗：每 5 分钟检查一次心跳是否停滞（超过 15 分钟无更新），
-            // 如果心跳链断裂，自动重启调度器
-            if (_heartbeatWatchdogTimer === null) {
-                _heartbeatWatchdogTimer = setInterval(() => {
-                    const elapsed = Date.now() - _lastHeartbeatTime;
-                    if (_lastHeartbeatTime > 0 && elapsed > 900000) {
-                        Logger.warn('ProxyDaemon', '心跳链看门狗探测到心跳停滞超过 15 分钟，正在重启调度器...');
-                        if (proxyHealthMonitorTimer) {
-                            clearTimeout(proxyHealthMonitorTimer);
-                            proxyHealthMonitorTimer = null;
-                        }
-                        this._runHealthCheckScheduler();
-                        _lastHeartbeatTime = Date.now();
+        // 2. 心跳链看门狗：每 5 分钟检查一次心跳是否停滞（超过 15 分钟无更新），
+        // 如果心跳链断裂，自动重启调度器
+        if (_heartbeatWatchdogTimer === null) {
+            _heartbeatWatchdogTimer = setInterval(() => {
+                const elapsed = Date.now() - _lastHeartbeatTime;
+                if (_lastHeartbeatTime > 0 && elapsed > 900000) {
+                    Logger.warn('ProxyDaemon', '心跳链看门狗探测到心跳停滞超过 15 分钟，正在重启调度器...');
+                    if (proxyHealthMonitorTimer) {
+                        clearTimeout(proxyHealthMonitorTimer);
+                        proxyHealthMonitorTimer = null;
                     }
-                }, 300000);
-            }
-
-                trickleTimer = setInterval(() => {
-                    this.runTrickleNodeCheck();
-                }, 300000);
-            }, 600000);
-            Logger.info('ProxyDaemon', '🕰️ 网页代理全节点涓流测速已排程，将在 10 分钟后激活 (周期 5 分钟/节点)');
+                    this._runHealthCheckScheduler();
+                    _lastHeartbeatTime = Date.now();
+                }
+            }, 300000);
         }
     }
 
@@ -173,6 +158,10 @@ class ProxyHealthService {
                 nextInterval = 600000;
             } else if (!isHealthy || consecutiveFailures > 0 || tier1Pending) {
                 nextInterval = 30000;
+                // 如果是 ECONNREFUSED（路由器确定不可达），延长到60s
+                if (lastTier1FailAt > 0 && Date.now() - lastTier1FailAt > 90000) {
+                    nextInterval = 60000;
+                }
             } else {
                 nextInterval = 600000;
             }
@@ -253,30 +242,34 @@ class ProxyHealthService {
                 `echo "UPTIME:$(cat /proc/uptime 2>/dev/null | awk '{print \$1}' || echo 0)"`,
                 `FREE_MEM=\$(awk '/MemFree:/ {print \$2}' /proc/meminfo 2>/dev/null || echo 0)`,
                 `[ \$FREE_MEM -gt 0 ] && [ \$FREE_MEM -lt 30000 ] && (sync; echo 3 > /proc/sys/vm/drop_caches; echo "MEM_CLEAN:done") || echo "MEM_CLEAN:skip"`,
-                `echo "VMRSS:$(awk '/VmRSS:/ {print $2}' /proc/$(pidof mihomo 2>/dev/null || pidof Clash 2>/dev/null)/status 2>/dev/null || echo 0)"`
-                `echo "MEMAVAIL:$(awk '/MemAvailable:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)"`
+                `echo "VMRSS:$(awk '/VmRSS:/ {print $2}' /proc/$(pidof mihomo 2>/dev/null || pidof Clash 2>/dev/null)/status 2>/dev/null || echo 0)"`,
+                `echo "MEMAVAIL:$(awk '/MemAvailable:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)"`,
                 `echo "BATCH_END"`
             ].join('; ');
 
             const batchOutput = await SshService.runRemoteCommand(batchCmd);
-            const batchLines = batchOutput.split('\n').map(l => l.trim()).filter(l => l);
-            const batchStart = batchLines.findIndex(l => l.includes('BATCH_START'));
-            const batchEnd = batchLines.findIndex(l => l.includes('BATCH_END'));
+            const outputStr = String(batchOutput || '');
+            let pid = '', portStatus = '', macStatus = '', redirectCount = 0, uptimeVal = 0, memCleanStatus = '', memAvailable = 0, vmRss = 0;
+            try {
+                const batchLines = outputStr.split('\n').map(l => l.trim()).filter(l => l);
+                const batchStart = batchLines.findIndex(l => l.includes('BATCH_START'));
+                const batchEnd = batchLines.findIndex(l => l.includes('BATCH_END'));
 
-let pid = '', portStatus = '', macStatus = '', redirectCount = 0, uptimeVal = 0, memCleanStatus = '', memAvailable = 0, vmRss = 0;
-
-            if (batchStart >= 0 && batchEnd > batchStart) {
-                const dataLines = batchLines.slice(batchStart + 1, batchEnd);
-                for (const dl of dataLines) {
-                    if (dl.startsWith('PID:')) pid = dl.slice(4).trim();
-                    else if (dl.startsWith('PORT:')) portStatus = dl.slice(5).trim();
-                    else if (dl.startsWith('MAC:')) macStatus = dl.slice(4).trim();
-                    else if (dl.startsWith('IPT:')) redirectCount = parseInt(dl.slice(4).trim(), 10) || 0;
-                    else if (dl.startsWith('UPTIME:')) uptimeVal = parseFloat(dl.slice(7).trim()) || 0;
-                    else if (dl.startsWith('MEM_CLEAN:')) memCleanStatus = dl.slice(10).trim();
-                else if (dl.startsWith('MEMAVAIL:')) memAvailable = parseInt(dl.slice(9).trim(), 10) || 0;
-                else if (dl.startsWith('VMRSS:')) vmRss = parseInt(dl.slice(6).trim(), 10) || 0;
+                if (batchStart >= 0 && batchEnd > batchStart) {
+                    const dataLines = batchLines.slice(batchStart + 1, batchEnd);
+                    for (const dl of dataLines) {
+                        if (dl.startsWith('PID:')) pid = dl.slice(4).trim();
+                        else if (dl.startsWith('PORT:')) portStatus = dl.slice(5).trim();
+                        else if (dl.startsWith('MAC:')) macStatus = dl.slice(4).trim();
+                        else if (dl.startsWith('IPT:')) redirectCount = parseInt(dl.slice(4).trim(), 10) || 0;
+                        else if (dl.startsWith('UPTIME:')) uptimeVal = parseFloat(dl.slice(7).trim()) || 0;
+                        else if (dl.startsWith('MEM_CLEAN:')) memCleanStatus = dl.slice(10).trim();
+                    else if (dl.startsWith('MEMAVAIL:')) memAvailable = parseInt(dl.slice(9).trim(), 10) || 0;
+                    else if (dl.startsWith('VMRSS:')) vmRss = parseInt(dl.slice(6).trim(), 10) || 0;
+                    }
                 }
+            } catch (parseErr) {
+                Logger.warn('ProxyDaemon', '批量 SSH 输出解析失败，跳过', { error: parseErr.message, output: outputStr.slice(0, 200) });
             }
 
             if (memCleanStatus === 'done') {
@@ -308,7 +301,7 @@ let pid = '', portStatus = '', macStatus = '', redirectCount = 0, uptimeVal = 0,
             if (!isProcessRunning) {
                 hasIssue = true;
                 consecutiveFailures++;
-                Logger.warn('ProxyDaemon', `⚠️ [${consecutiveFailures}/3] 检测到 Clash Core 进程已异常退出`);
+                Logger.warn('ProxyDaemon', `⚠️ [${consecutiveFailures}/2] 检测到 Clash Core 进程已异常退出`);
 
                 let isJustBooted = false;
                 if (uptimeVal > 0 && uptimeVal < 600) {
@@ -316,11 +309,12 @@ let pid = '', portStatus = '', macStatus = '', redirectCount = 0, uptimeVal = 0,
                     Logger.warn('ProxyDaemon', `🚀 检测到路由器刚开机仅 ${Math.floor(uptimeVal)}s，跳过防抖等待，立即执行闪电自愈！`);
                 }
 
-                if ((consecutiveFailures >= 3 || isJustBooted) && Date.now() - lastProxyRestartTime > 300000) {
+                // 核心进程挂掉是特级故障，冷却时间缩短为 30 秒（而非 5 分钟），确保断网后第一时间内快速自愈拉起
+                if ((consecutiveFailures >= 2 || isJustBooted) && Date.now() - lastProxyRestartTime > 30000) {
                     if (consecutiveRestarts >= 3) {
                         Logger.error('ProxyDaemon', '❌ 已经连续安全重启服务 3 次仍未恢复！疑似外网物理断开或订阅失效。为保护路由器 CPU，挂起自动重启自愈机制。');
                     } else {
-                        Logger.warn('ProxyDaemon', '触发强制自愈拉起...');
+                        Logger.warn('ProxyDaemon', '⚡ 核心进程失联，立即触发强制自愈拉起...');
                         consecutiveRestarts++;
                         await SshService.restartShellCrashSecurely();
                         lastProxyRestartTime = Date.now();
@@ -361,58 +355,13 @@ let pid = '', portStatus = '', macStatus = '', redirectCount = 0, uptimeVal = 0,
                 }
             }
 
-            // 全量测速进行中时跳过代理连通性测试
-            if (ClashService.isFullSpeedtestInProgress()) {
-                Logger.debug('ProxyDaemon', '全量测速进行中，跳过代理连通性测试');
-                return !hasIssue;
-            }
-
             // 3. 检查海外代理链路可用性（NAS 本地 Axios，零 SSH 开销）
             const isProxyWorking = await this.testProxyConnectivity(config.ports.proxy, 'http://cp.cloudflare.com/generate_204', 4000);
             if (!isProxyWorking) {
                 hasIssue = true;
-                Logger.warn('ProxyDaemon', '⚠️ 检测到网页代理链路超时阻断！启动高并发自愈测速...');
-
-                try {
-                    const testGroupName = '⚡ 最快线路';
-                    const proxiesData = await ClashService.getProxies();
-                    const groupInfo = proxiesData && proxiesData.proxies ? proxiesData.proxies[testGroupName] : null;
-
-                    if (groupInfo && groupInfo.all && groupInfo.all.length > 0) {
-                        const targetNodes = groupInfo.all.slice(0, 5);
-                        Logger.info('ProxyDaemon', `已自动识别到 [${testGroupName}] 下的 ${targetNodes.length} 个核心节点，开始串行测速自愈...`);
-
-                        (async () => {
-                            const results = [];
-                            for (const node of targetNodes) {
-                                try {
-                                    const delay = await ClashService.testNodeDelay(node, 2000, 'http://www.gstatic.com/generate_204');
-                                    Logger.debug('ProxyDaemon', `  节点 [${node}] 测速就绪: ${delay}ms`);
-                                    results.push({ node, delay });
-                                } catch (e) {
-                                    results.push({ node, delay: 0 });
-                                }
-                            }
-                            const activeCount = results.filter(r => r.delay > 0).length;
-                            Logger.info('ProxyDaemon', `🎉 网页代理核心测速自愈串行完成，已成功激活并更新了 ${activeCount} 个可用节点的延迟历史！`);
-                        })();
-                    }
-                } catch (gErr) {
-                    Logger.error('ProxyDaemon', '并发最快线路自愈测速失败，转向后备方案', gErr);
-                }
-
-                let providerName = 'caomei1';
-                try {
-                    const providerOutput = await SshService.runRemoteCommand("grep -A 1 'proxy-providers:' /data/ShellCrash/config.yaml | tail -n 1 | cut -d: -f1 | tr -d ' '");
-                    if (providerOutput && providerOutput.trim().length > 0 && !providerOutput.includes('Error')) {
-                        providerName = providerOutput.trim();
-                    }
-                } catch (pErr) {}
-
-                await this.triggerProviderHealthCheck(providerName);
+                Logger.warn('ProxyDaemon', '⚠️ 检测到网页代理出海链路超时阻断！已将异常回显，请在详情弹窗中手动测速或手动切换。');
                 consecutiveFailures = 0;
                 consecutiveRestarts = 0;
-                lastProxyRestartTime = Date.now();
             } else {
                 consecutiveFailures = 0;
                 consecutiveRestarts = 0;
@@ -426,53 +375,78 @@ let pid = '', portStatus = '', macStatus = '', redirectCount = 0, uptimeVal = 0,
         }
     }
 
-    // 涓流测速任务 (每 5 分钟测 1 个节点)
-    static async runTrickleNodeCheck() {
+    // 手动触发网页代理全节点串行测速 (防负载高)
+    static async runManualProxySpeedtest() {
+        Logger.info('ProxyDaemon', '⚡ 手动触发网页代理全节点串行测速开始...');
+        const ClashService = require('./clashService');
+        const SpeedtestState = require('./speedtestState');
+        
+        ClashService.setFullSpeedtestFlag(true);
         try {
-            // 全量测速进行中时跳过涓流测速，避免并发测速压垮路由器
-            if (ClashService.isFullSpeedtestInProgress()) {
-                Logger.debug('ProxyDaemon', '[TrickleTest] 全量测速进行中，跳过本轮涓流测速');
+            const proxiesData = await ClashService.getProxies();
+            if (!proxiesData || !proxiesData.proxies) return;
+
+            const testGroupName = '🚀 节点选择';
+            const groupInfo = proxiesData.proxies[testGroupName];
+            if (!groupInfo || !groupInfo.all || groupInfo.all.length === 0) {
+                Logger.warn('ProxyDaemon', `[ManualTest] 未找到策略组 [${testGroupName}]`);
                 return;
             }
-            // Tier1 处于失败/宽限期：mihomo 大概率不健康，跳过涓流测速避免刷屏与无效 SSH
-            if (lastTier1FailAt !== 0 || tier1Pending) {
-                Logger.debug('ProxyDaemon', '[TrickleTest] Tier1 未恢复健康，跳过本轮涓流测速');
+
+            // 过滤非物理节点
+            const targetNodes = groupInfo.all.filter(nodeName => {
+                const lowerName = nodeName.toLowerCase();
+                return !['direct', 'global', 'rejection', 'compatible'].includes(lowerName) &&
+                       !lowerName.includes('选择节点') &&
+                       !lowerName.includes('节点选择') &&
+                       !lowerName.includes('自动测速') &&
+                       !lowerName.includes('最快线路');
+            });
+
+            if (targetNodes.length === 0) {
+                Logger.warn('ProxyDaemon', '[ManualTest] 过滤后网页代理无可用物理子节点');
                 return;
             }
-            // 如果列表空了或者游标走到底了，重新拉取最新节点列表
-            if (trickleNodes.length === 0 || trickleIndex >= trickleNodes.length) {
-                const proxiesData = await ClashService.getProxies();
-                if (!proxiesData || !proxiesData.proxies) return;
 
-                const testGroupName = '🚀 节点选择';
-                const groupInfo = proxiesData.proxies[testGroupName];
-                if (!groupInfo || !groupInfo.all || groupInfo.all.length === 0) {
-                    Logger.debug('ProxyDaemon', `[TrickleTest] 未找到策略组 [${testGroupName}]`);
-                    return;
-                }
+            Logger.info('ProxyDaemon', `[ManualTest] 准备对 ${targetNodes.length} 个网页代理物理节点进行串行测速...`);
 
-                // 过滤非物理节点
-                trickleNodes = groupInfo.all.filter(nodeName => {
-                    const lowerName = nodeName.toLowerCase();
-                    return !['direct', 'global', 'rejection'].includes(lowerName) &&
-                           !lowerName.includes('选择节点') &&
-                           !lowerName.includes('节点选择');
-                });
-                trickleIndex = 0;
-                
-                if (trickleNodes.length > 0) {
-                    Logger.info('ProxyDaemon', `[TrickleTest] 开启新一轮全节点涓流测速，共计 ${trickleNodes.length} 个节点 (预计耗时 ${trickleNodes.length} 分钟)`);
+            let bestNode = null;
+            let minDelay = 99999;
+            const results = [];
+
+            for (let i = 0; i < targetNodes.length; i++) {
+                const nodeName = targetNodes[i];
+                try {
+                    // 使用 http://www.gstatic.com/generate_204 测试
+                    const delay = await ClashService.testNodeDelay(nodeName, 2000, 'http://www.gstatic.com/generate_204');
+                    Logger.debug('ProxyDaemon', `[ManualTest] [${i+1}/${targetNodes.length}] ${nodeName}: ${delay}ms`);
+                    if (delay > 0) {
+                        results.push({ name: nodeName, delay });
+                        if (delay < minDelay) {
+                            minDelay = delay;
+                            bestNode = nodeName;
+                        }
+                    } else {
+                        results.push({ name: nodeName, delay: -1 });
+                    }
+                } catch (e) {
+                    results.push({ name: nodeName, delay: -1 });
                 }
+                // 串行测速中加一个小小的 50ms 避让，防止路由器 CPU 持续跑满
+                await new Promise(r => setTimeout(r, 50));
             }
 
-            if (trickleIndex < trickleNodes.length) {
-                const nodeName = trickleNodes[trickleIndex];
-                const delay = await ClashService.testNodeDelay(nodeName, 2000, 'http://www.gstatic.com/generate_204');
-                Logger.debug('ProxyDaemon', `[TrickleTest] 节点测速完成: [${nodeName}] -> ${delay}ms (${trickleIndex + 1}/${trickleNodes.length})`);
-                trickleIndex++;
+            if (bestNode) {
+                Logger.info('ProxyDaemon', `🎉 [ManualTest] 网页代理串行测速完成！最快节点: [${bestNode}] (${minDelay}ms)`);
+                SpeedtestState.updateResult('proxy', { name: bestNode, delay: minDelay });
+            } else {
+                Logger.warn('ProxyDaemon', '[ManualTest] 网页代理所有物理节点均测速超时！');
+                SpeedtestState.updateResult('proxy', { name: '全部超时', delay: -1 });
             }
         } catch (err) {
-            Logger.error('ProxyDaemon', '涓流测速任务发生异常', err);
+            Logger.error('ProxyDaemon', '手动代理测速过程异常', err);
+        } finally {
+            ClashService.setFullSpeedtestFlag(false);
         }
     }
 
@@ -487,15 +461,9 @@ let pid = '', portStatus = '', macStatus = '', redirectCount = 0, uptimeVal = 0,
             proxyHealthMonitorTimer = null;
             Logger.info('ProxyDaemon', '⏹️ 网页代理健康度监测守护进程已关闭。');
         }
-        if (trickleStartTimeout) {
-            clearTimeout(trickleStartTimeout);
-            trickleStartTimeout = null;
-        }
-        if (trickleTimer) {
-            clearInterval(trickleTimer);
-            trickleTimer = null;
-        if (_heartbeatWatchdogTimer) { clearInterval(_heartbeatWatchdogTimer); _heartbeatWatchdogTimer = null; }
-            Logger.info('ProxyDaemon', '⏹️ 网页代理全节点涓流测速任务已注销。');
+        if (_heartbeatWatchdogTimer) {
+            clearInterval(_heartbeatWatchdogTimer);
+            _heartbeatWatchdogTimer = null;
         }
     }
 }

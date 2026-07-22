@@ -1,3 +1,5 @@
+const fs = require('fs');
+const path = require('path');
 const SshService = require('./sshService');
 const Logger = require('../utils/logger');
 
@@ -74,9 +76,9 @@ class StorageCleanupService {
     // 基础清理（Level 1: 85%+）
     static async basicCleanup() {
         try {
-            Logger.debug('StorageCleanup', 'Level 1: 清理 > 1 天的日志');
-            await SshService.runRemoteCommand("find /data -name '*.log' -type f -mtime +1 -exec rm -f {} \\; 2>/dev/null");
-            await SshService.runRemoteCommand("rm -f /data/ShellCrash/cache.db 2>/dev/null");
+            Logger.debug('StorageCleanup', 'Level 1: 清理 > 1 天的日志及大文件备份');
+            await SshService.runRemoteCommand("find /data -name '*.log' -type f -mtime +1 -exec rm -f {} \\; 2>/dev/null || true");
+            await SshService.runRemoteCommand("rm -f /data/ShellCrash/cache.db /data/ShellCrash/mihomo.bak 2>/dev/null || true");
         } catch (err) {
             Logger.warn('StorageCleanup', 'Level 1 清理失败', err);
         }
@@ -87,7 +89,7 @@ class StorageCleanupService {
         try {
             Logger.debug('StorageCleanup', 'Level 2: 删除可选文件 (GeoSite.dat)');
             await this.basicCleanup();
-            await SshService.runRemoteCommand("rm -f /data/ShellCrash/GeoSite.dat 2>/dev/null");
+            await SshService.runRemoteCommand("rm -f /data/ShellCrash/GeoSite.dat 2>/dev/null || true");
         } catch (err) {
             Logger.warn('StorageCleanup', 'Level 2 清理失败', err);
         }
@@ -98,8 +100,8 @@ class StorageCleanupService {
         try {
             Logger.debug('StorageCleanup', 'Level 3: 删除所有可选文件 + 所有日志');
             await this.aggressiveCleanup();
-            await SshService.runRemoteCommand("find /data -name '*.log' -type f -exec rm -f {} \\; 2>/dev/null");
-            await SshService.runRemoteCommand("rm -f /data/ShellCrash/Country.mmdb 2>/dev/null");
+            await SshService.runRemoteCommand("find /data -name '*.log' -type f -exec rm -f {} \\; 2>/dev/null || true");
+            await SshService.runRemoteCommand("rm -f /data/ShellCrash/Country.mmdb 2>/dev/null || true");
         } catch (err) {
             Logger.warn('StorageCleanup', 'Level 3 清理失败', err);
         }
@@ -122,7 +124,24 @@ class StorageCleanupService {
             await SshService.runRemoteCommand("rm -rf /tmp/*.tmp /data/tmp/* 2>/dev/null");
             Logger.info('StorageCleanup', '✓ 已清理临时文件');
 
-            // 4. 检查存储使用率
+            // 5. 清理容器本地日志目录中超过 10 个的轮转文件
+            const localLogDir = process.env.LOG_DIR || '/data/logs';
+            try {
+                if (fs.existsSync(localLogDir)) {
+                    const files = fs.readdirSync(localLogDir)
+                        .filter(f => f.startsWith('app.log.'))
+                        .sort()
+                        .reverse();
+                    if (files.length > 10) {
+                        files.slice(10).forEach(f => {
+                            try { fs.unlinkSync(path.join(localLogDir, f)); } catch (_) {}
+                        });
+                        Logger.info('StorageCleanup', '✓ 已清理本地冗余轮转日志');
+                    }
+                }
+            } catch (_) {}
+
+            // 6. 检查存储使用率
             const usage = await this.getDiskUsage();
             if (usage !== null) {
                 Logger.info('StorageCleanup', `📊 当前 /data 使用率: ${usage}%`);

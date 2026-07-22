@@ -8,6 +8,8 @@ let pendingProxiesPromise = null;
 const PROXIES_CACHE_TTL = 10000; // 10秒缓存
 let delayTestQueue = Promise.resolve(); // 全局测速串行 Promise 队列
 let fullSpeedtestInProgress = false; // 全量测速进行中标记，定时任务据此跳过执行
+let speedtestLockTime = 0;           // 测速锁上锁时间戳，用于 TTL 超时自愈
+const LOCK_TTL_MS = 180000;          // 测速锁最大生存时间 (180秒)
 
 // 通用 hard-timeout 包装：给测速队列每一环强加 wall-clock 上限，
 // 避免 axios 底层异常导致某环永不 settle 而堵死后续所有测速
@@ -20,14 +22,24 @@ function withHardTimeout(promise, ms, tag) {
 }
 
 class ClashService {
-    // 查询当前是否有全量测速正在进行
+    // 查询当前是否有全量测速正在进行 (带 TTL 自动解自愈)
     static isFullSpeedtestInProgress() {
-        return fullSpeedtestInProgress;
+        if (fullSpeedtestInProgress) {
+            if (Date.now() - speedtestLockTime > LOCK_TTL_MS) {
+                Logger.warn('ClashService', '⚠️ 检测到测速锁被持续占用已超 3 分钟，执行超时安全解锁自愈');
+                fullSpeedtestInProgress = false;
+                speedtestLockTime = 0;
+                return false;
+            }
+            return true;
+        }
+        return false;
     }
 
     // 标记全量测速开始/结束
     static setFullSpeedtestFlag(active) {
         fullSpeedtestInProgress = active;
+        speedtestLockTime = active ? Date.now() : 0;
     }
 
     // 获取 Clash (Mihomo) HTTP 客户端实例

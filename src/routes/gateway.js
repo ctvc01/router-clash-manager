@@ -346,59 +346,141 @@ router.get('/nodes', async (req, res) => {
             return [name];
         };
 
-        // 辅助函数：对物理节点列表进行精简与特征过滤，减少传输和渲染负担，防止 OOM
-        const getSortedAndFilteredNodes = (allNames, currentSelectedNode, mode = 'proxy', limit = 30, returnAll = false) => {
-            if (!allNames) return [];
-            
-            let leafNames = getAllLeafNodes(allNames);
-            leafNames = [...new Set(leafNames)];
-            
-            let nodes = leafNames
-                .filter(name => !filterOutGroups.includes(name))
-                .map(name => {
-                    const p = proxies[name];
-                    // 额外防守过滤：即便在展平后仍被认为是策略组的项也过滤掉
-                    if (p && p.all && Array.isArray(p.all)) {
-                        return null;
-                    }
-                    let delay = 0;
-                    if (p && p.history && p.history.length > 0) {
-                        const valid = p.history.filter(h => h.delay > 0);
-                        delay = valid.length > 0 ? valid[valid.length - 1].delay : 0;
-                    }
-                    return { name, delay };
-                })
-                .filter(n => n !== null);
+       // 辅助函数：对物理节点列表进行精简与特征过滤，减少传输和渲染负担，防止 OOM
+       const getSortedAndFilteredNodes = (allNames, currentSelectedNode, mode = 'proxy', limit = 30, returnAll = false) => {
+           if (!allNames) return [];
+           
+            let leafNames;
+            if (mode === 'game') {
+                // 游戏模式直接使用策略组的直接子节点，不递归解析 🚀 节点选择，防止引入非本组节点
+                const gameGroupNames = ['🚀 节点选择', '🚀 选择节点', '👑 高级节点', 'DIRECT', 'GLOBAL', 'REJECT', 'REJECT-DROP', 'PASS', 'COMPATIBLE'];
+                leafNames = (Array.isArray(allNames) ? allNames : []).filter(name => !gameGroupNames.includes(name));
+            } else {
+                leafNames = getAllLeafNodes(allNames);
+            }
+           leafNames = [...new Set(leafNames)];
+           
+           let nodes = leafNames
+               .filter(name => !filterOutGroups.includes(name))
+               .map(name => {
+                   const p = proxies[name];
+                   // 额外防守过滤：即便在展平后仍被认为是策略组的项也过滤掉
+                   if (p && p.all && Array.isArray(p.all)) {
+                       return null;
+                   }
+                   let delay = 0;
+                   if (p && p.history && p.history.length > 0) {
+                       const valid = p.history.filter(h => h.delay > 0);
+                       delay = valid.length > 0 ? valid[valid.length - 1].delay : 0;
+                   }
+                   return { name, delay };
+               })
+               .filter(n => n !== null);
 
-            // 模式特定的特殊过滤
-            if (mode === 'ai') {
-                // AI 模式过滤：仅 IPLC/IEPL 中继节点（排除香港）
-                nodes = nodes.filter(node => {
-                    const lowerName = node.name.toLowerCase();
-                    const isIPLC = lowerName.includes('iplc') || lowerName.includes('iepl');
-                    const isHK = lowerName.includes('hk') || lowerName.includes('hongkong') || 
-                                 lowerName.includes('香港') || lowerName.includes('港');
-                    return isIPLC && !isHK;
-                });
-            } else if (mode === 'game') {
-                // 游戏模式过滤：仅保留带有专线/游戏特征，或者延迟低于 120ms 的节点
-                nodes = nodes.filter(node => {
-                    const lowerName = node.name.toLowerCase();
+          // 模式特定的特殊过滤
+          if (mode === 'ai') {
+              // AI 模式过滤：优先 IPLC/IEPL 中继节点，同时纳入香港/新加坡/日本的直連 gRPC 节点
+              nodes = nodes.filter(node => {
+                  const lowerName = node.name.toLowerCase();
+                  const isIPLC = lowerName.includes('iplc') || lowerName.includes('iepl');
+                  const isHK = lowerName.includes('hk') || lowerName.includes('hongkong') || 
+                               lowerName.includes('香港') || lowerName.includes('港');
+                  const hasAILabel = lowerName.includes('gemini') || lowerName.includes('gpt') || lowerName.includes('ai');
+                   const isGRPC = lowerName.includes('grpc');
+                   const isGoodRegion = isHK || 
+                       lowerName.includes('sg') || lowerName.includes('singapore') || lowerName.includes('新加坡') ||
+                       lowerName.includes('jp') || lowerName.includes('japan') || lowerName.includes('日本') || lowerName.includes('日');
+                   return (isIPLC && (!isHK || hasAILabel)) || (isGRPC && isGoodRegion);
+              });
+           } else if (mode === 'game') {
+               // 游戏模式过滤：仅保留带有专线/游戏特征，或者延迟低于 120ms 的节点
+               nodes = nodes.filter(node => {
+                   const lowerName = node.name.toLowerCase();
                     const isGameKey = lowerName.includes('iplc') || 
                                      lowerName.includes('iepl') || 
                                      lowerName.includes('专线') || 
                                      lowerName.includes('game') || 
-                                     lowerName.includes('游戏');
+                                     lowerName.includes('游戏') ||
+                                     lowerName.includes('download') ||
+                                     lowerName.includes('下载') ||
+                                     lowerName.includes('grpc');
                     return isGameKey || (node.delay > 0 && node.delay < 120);
-                });
+               });
+           }
 
-                // 2小时时效性兜底：合并 cache 中 2 小时以内的丢包率测速结果
+           // 分离存活节点和无测速死节点
+           let aliveNodes = nodes.filter(n => n.delay > 0).sort((a, b) => a.delay - b.delay);
+           let deadNodes = nodes.filter(n => n.delay === 0);
+           // In 游戏模式, prioritize download/GRPC dead nodes by treating them as alive
+           if (mode === 'game') {
+               const downloadDead = deadNodes.filter(node => {
+                   const lower = node.name.toLowerCase();
+                   return lower.includes('download') || lower.includes('grpc') || lower.includes('下载');
+               });
+               // Remove from deadNodes
+               deadNodes = deadNodes.filter(d => !downloadDead.includes(d));
+               // Prepend to aliveNodes so they are considered before limiting
+               aliveNodes = downloadDead.concat(aliveNodes);
+           }
+
+           // 主代理组如果没有传递 all=true，或者不是 'proxy' 模式，我们就截断
+           const shouldLimit = (mode !== 'proxy') || !returnAll;
+           
+           let resultNodes = aliveNodes;
+           if (shouldLimit) {
+               resultNodes = aliveNodes.slice(0, limit);
+           }
+           
+           // 确保当前选中的物理节点一定要在列表里，即使它不通或不在前 limit 个里
+           const isCurrentInResult = resultNodes.some(n => n.name === currentSelectedNode);
+           if (!isCurrentInResult && currentSelectedNode && !filterOutGroups.includes(currentSelectedNode)) {
+               const p = proxies[currentSelectedNode];
+               const isGroup = p && p.all && Array.isArray(p.all);
+               if (!isGroup) {
+                   const currentData = nodes.find(n => n.name === currentSelectedNode);
+                   if (currentData) {
+                       resultNodes.push(currentData);
+                   } else {
+                       // 从完整的 proxies 状态中直接读取延迟，防止赋 0 造成与顶部显示不一致的现象
+                       let delay = 0;
+                       if (p && p.history && p.history.length > 0) {
+                           const valid = p.history.filter(h => h.delay > 0);
+                           delay = valid.length > 0 ? valid[valid.length - 1].delay : 0;
+                       }
+                       resultNodes.push({ name: currentSelectedNode, delay });
+                   }
+               }
+           }
+
+           // 如果活的节点数量太少，优先加入游戏模式的下载/GRPC 死节点，然后再补齐其他死节点，最多补到 limit 个
+           if (shouldLimit && resultNodes.length < limit && deadNodes.length > 0) {
+               // 先加入下载/GRPC 类型的死节点
+               if (mode === 'game') {
+                   const downloadDead = deadNodes.filter(node => {
+                       const lower = node.name.toLowerCase();
+                       return lower.includes('download') || lower.includes('grpc') || lower.includes('下载');
+                   });
+                   const neededForDownload = Math.min(limit - resultNodes.length, downloadDead.length);
+                   if (neededForDownload > 0) {
+                       resultNodes = resultNodes.concat(downloadDead.slice(0, neededForDownload));
+                   }
+               }
+               // 再补齐其余死节点
+               const needed = limit - resultNodes.length;
+               if (needed > 0) {
+                   const remainingDead = deadNodes.filter(d => !resultNodes.some(r => r.name === d.name));
+                   resultNodes = resultNodes.concat(remainingDead.slice(0, needed));
+               }
+           }
+
+            // 游戏模式丢包率合并（放在当前选中节点保底逻辑和死节点补齐之后，确保所有节点都能拿到丢包率）
+            if (mode === 'game') {
                 try {
                     const SpeedtestState = require('../services/speedtestState');
                     const state = SpeedtestState.get('game') || {};
                     const perNode = state.perNodeResults || [];
                     const cacheMap = new Map(perNode.map(item => [item.name, item]));
-                    nodes.forEach(node => {
+                    resultNodes.forEach(node => {
                         const cached = cacheMap.get(node.name);
                         if (cached && cached.loss !== undefined && cached.timestamp) {
                             const age = Date.now() - cached.timestamp;
@@ -411,46 +493,7 @@ router.get('/nodes', async (req, res) => {
                     Logger.debug('Gateway', '组装游戏节点丢包率缓存数据异常', e);
                 }
             }
-
-            // 分离存活节点和无测速死节点
-            const aliveNodes = nodes.filter(n => n.delay > 0).sort((a, b) => a.delay - b.delay);
-            const deadNodes = nodes.filter(n => n.delay === 0);
-
-            // 主代理组如果没有传递 all=true，或者不是 'proxy' 模式，我们就截断
-            const shouldLimit = (mode !== 'proxy') || !returnAll;
-            
-            let resultNodes = aliveNodes;
-            if (shouldLimit) {
-                resultNodes = aliveNodes.slice(0, limit);
-            }
-            
-            // 确保当前选中的物理节点一定要在列表里，即使它不通或不在前 limit 个里
-            const isCurrentInResult = resultNodes.some(n => n.name === currentSelectedNode);
-            if (!isCurrentInResult && currentSelectedNode && !filterOutGroups.includes(currentSelectedNode)) {
-                const p = proxies[currentSelectedNode];
-                const isGroup = p && p.all && Array.isArray(p.all);
-                if (!isGroup) {
-                    const currentData = nodes.find(n => n.name === currentSelectedNode);
-                    if (currentData) {
-                        resultNodes.push(currentData);
-                    } else {
-                        // 从完整的 proxies 状态中直接读取延迟，防止赋 0 造成与顶部显示不一致的现象
-                        let delay = 0;
-                        if (p && p.history && p.history.length > 0) {
-                            const valid = p.history.filter(h => h.delay > 0);
-                            delay = valid.length > 0 ? valid[valid.length - 1].delay : 0;
-                        }
-                        resultNodes.push({ name: currentSelectedNode, delay });
-                    }
-                }
-            }
-
-            // 如果活的节点数量太少，可以从不通的节点里补齐，最多补到 limit 个，方便用户切换
-            if (shouldLimit && resultNodes.length < limit && deadNodes.length > 0) {
-                const needed = limit - resultNodes.length;
-                resultNodes = resultNodes.concat(deadNodes.slice(0, needed));
-            }
-            
+           
             return resultNodes;
         };
 
@@ -526,49 +569,43 @@ router.post('/select', async (req, res) => {
                 try {
                     const SpeedtestState = require('../services/speedtestState');
                     SpeedtestState.setLockedNode(mode, node);
-                    Logger.info('Gateway', `用户手动切换物理节点，已自动将 ${mode} 模式锁定到: ${node}`);
-                } catch (lockErr) {
-                    Logger.error('Gateway', `自动锁定 ${mode} 节点异常`, lockErr);
-                }
-            }
+                    
+                    // 获取当前已有的测速缓存状态，避免手动选择节点时覆盖真实的延迟和丢包数据
+                    const currentStatus = SpeedtestState.getStatus();
+                    const currentModeState = currentStatus[mode] || {};
+                    let delay = 0;
+                    let loss = 0;
+                    let samples = 0;
 
-            ClashService.testNodeDelay(node, 3000, testUrl).then(delay => {
-                if (delay > 0) ClashService.clearProxiesCache(); // 清缓存刷新
-            }).catch(e => Logger.debug('Gateway', '切换节点单次延迟测试失败', e));
-
-            // 游戏模式额外处理：启动新选中节点的丢包率背景估测并刷入 SpeedtestState
-            if (isGame && node !== 'DIRECT') {
-                (async () => {
-                    try {
-                        const NODE_SAMPLES = 3;
-                        let successCount = 0, totalDelay = 0;
-                        for (let i = 0; i < NODE_SAMPLES; i++) {
-                            const delay = await ClashService.testNodeDelay(node, 2500, 'http://ctest.cdn.nintendo.net/');
-                            if (delay > 0) { successCount++; totalDelay += delay; }
-                            await new Promise(r => setTimeout(r, 200));
+                    if (mode === 'game') {
+                        const perNodeResults = currentModeState.perNodeResults || [];
+                        const found = perNodeResults.find(r => r.name === node);
+                        if (found) {
+                            delay = found.delay || 0;
+                            loss = found.loss || 0;
+                            samples = found.samples || 0;
                         }
-                        const loss = (NODE_SAMPLES - successCount) / NODE_SAMPLES;
-                        const avgDelay = successCount > 0 ? Math.round(totalDelay / successCount) : 0;
-                        
-                        // 更新 perNodeResults 并写入存储，以便前端直接读取
-                        const SpeedtestState = require('../services/speedtestState');
-                        const currentStatus = SpeedtestState.getStatus();
-                        const results = currentStatus.game.perNodeResults || [];
-                        
-                        const nodeIdx = results.findIndex(r => r.name === node);
-                        const nodeRes = { name: node, delay: avgDelay, loss, samples: successCount };
-                        if (nodeIdx !== -1) {
-                            results[nodeIdx] = nodeRes;
-                        } else {
-                            results.push(nodeRes);
-                        }
-                        SpeedtestState.updateGamePerNodeResults(results);
-                        SpeedtestState.updateResult('game', nodeRes);
-                        Logger.info('Gateway', `已为新切换的游戏节点 ${node} 完成丢包率异步速测: ${loss * 100}% 丢包, ${avgDelay}ms`);
-                    } catch (e) {
-                        Logger.debug('Gateway', `切换游戏节点丢包速测失败: ${e.message}`);
                     }
-                })();
+
+                    // 如果 perNodeResults 中没有，从 Clash 内存中获取该物理节点的最新延迟
+                    if (delay <= 0) {
+                        try {
+                            const proxiesData = await ClashService.getProxies(1000);
+                            const p = proxiesData.proxies[node];
+                            if (p && p.history && p.history.length > 0) {
+                                const valid = p.history.filter(h => h.delay > 0);
+                                delay = valid.length > 0 ? valid[valid.length - 1].delay : 0;
+                            }
+                        } catch (err) {
+                            Logger.debug('Gateway', `从 Clash 获取节点 ${node} 缓存延迟失败`, err);
+                        }
+                    }
+
+                    SpeedtestState.updateResult(mode, { name: node, delay, loss, samples });
+                    Logger.info('Gateway', `用户手动切换物理节点，已自动将 ${mode} 模式锁定并更新结果为: ${node} (${delay}ms)`);
+                } catch (lockErr) {
+                    Logger.error('Gateway', `自动锁定 ${mode} 节点及更新结果异常`, lockErr);
+                }
             }
 
             cache.clear('gatewayStatus');

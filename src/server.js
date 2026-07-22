@@ -4,11 +4,31 @@ const Logger = require('./utils/logger');
 const PersistenceService = require('./services/persistenceService');
 
 // 进程级异常兜底：防止未捕获的 Promise rejection 或同步异常导致 Node.js 进程崩溃退出
+// 注意：在两个 handler 中都不能调用 Logger.error()，因为 EPIPE 递归循环的根源就是
+// Logger.error → console.error → EPIPE → uncaughtException → Logger.error → 死循环
+// 改为直接通过文件写入记录，避免使用 console.*
 process.on('unhandledRejection', (reason) => {
-    Logger.error('Process', 'Unhandled Promise Rejection (已拦截，进程不退出):', reason);
+    const msg = reason && reason.stack ? reason.stack : (reason && reason.message ? reason.message : JSON.stringify(reason));
+    try {
+        const fs = require('fs');
+        const t = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }).replace(' ', 'T') + '+08:00';
+        const dir = process.env.LOG_DIR || '/data/logs';
+        fs.appendFileSync(dir + '/app.log', `[${t}] ❌ [Process] Unhandled Promise Rejection (已拦截，进程不退出):\n    ${msg}\n`, 'utf8');
+    } catch (_) { /* 静默处理 */ }
 });
 process.on('uncaughtException', (err) => {
-    Logger.error('Process', 'Uncaught Exception (已拦截，进程不退出):', err);
+    // 检测 EPIPE 递归：如果是 console.* 导致的 EPIPE，直接返回，不再做任何输出
+    if (err && (err.code === 'EPIPE' || (err.stack && err.stack.includes('EPIPE')))) {
+        return;
+    }
+    // 非 EPIPE 错误，直接写入文件，不通过 Logger（避免 console.* 再次触发 EPIPE）
+    const msg = err && err.stack ? err.stack : (err && err.message ? err.message : JSON.stringify(err));
+    try {
+        const fs = require('fs');
+        const t = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }).replace(' ', 'T') + '+08:00';
+        const dir = process.env.LOG_DIR || '/data/logs';
+        fs.appendFileSync(dir + '/app.log', `[${t}] ❌ [Process] Uncaught Exception (已拦截，进程不退出):\n    ${msg}\n`, 'utf8');
+    } catch (_) { /* 静默处理 */ }
 });
 
 const ClashService = require('./services/clashService');
@@ -22,19 +42,12 @@ const ConfigVersionManager = require('./services/configVersionManager');
 const ChangelogManager = require('./services/changelogManager');
 const SystemValidator = require('./services/systemValidator');
 const SshService = require('./services/sshService');
+const SubscriptionUpdateService = require('./services/subscriptionUpdateService');
 const { ROUTER_PATHS } = require('./constants');
 
 // 1. 启动前强校验环境变量与核心凭证
 validateEnvironment();
 
-// 1.2 [新增方案三] 本地 Clash 内核极致压缩冷备自检
-(async () => {
-    try {
-        await SshService.prepareUpxKernel();
-    } catch (err) {
-        Logger.error('Server', '启动前准备 UPX 压缩内核发生异常', err);
-    }
-})();
 
 // 1.5 初始化数据持久化框架
 PersistenceService.initializeAll();
@@ -106,39 +119,13 @@ Logger.info('Server', '✅ 配置版本管理系统已初始化');
     if (activeGameDevices.length > 0) {
         Logger.info('Daemon', `检测到当前有 ${activeGameDevices.length} 个加速设备，正在自动激活游戏加速守护进程...`);
         GameAccService.startGameAccMonitor();
-
-        // 启动后 60 秒内触发首次测速（Clash 30s 内就绪足够）
-        setTimeout(() => {
-            if (SpeedtestState.isLocked('game')) {
-                Logger.info('Server', '🔄 启动后首次游戏节点测速(LOCKED:仅更新)...');
-                GameAccService.findFastestGameNode().catch(e =>
-                    Logger.warn('Server', '启动测速失败', e.message));
-            } else {
-                Logger.info('Server', '🔄 启动后首次游戏节点测速+锁定...');
-                GameAccService.findBestAndLock().catch(e =>
-                    Logger.warn('Server', '启动测速失败', e.message));
-            }
-        }, 60000);
     }
-
-    // 启动北京时间每日凌晨 04:00 定时测速重测与锁定自愈任务
-    GameAccService.startDailyTaskMonitor();
 
     // 初始化 AI 强化后台守护进程与定时监控任务
     if (activeAiDevices.length > 0) {
         Logger.info('Daemon', `检测到当前有 ${activeAiDevices.length} 个 AI 强化设备，正在自动激活 AI 强化守护进程...`);
         AiBoostService.startAiBoostMonitor();
-
-        // 启动后 90 秒内触发首次 AI 测速（错峰 Clash 启动 + 游戏测速）
-        setTimeout(() => {
-            Logger.info('Server', '🔄 启动后首次 AI 节点测速+锁定...');
-            AiBoostService.findBestAndLock().catch(e =>
-                Logger.warn('Server', 'AI 启动测速失败', e.message));
-        }, 90000);
     }
-
-    // 启动 AI 强化每日凌晨定时切换任务
-    AiBoostService.startDailyTaskMonitor();
 
     // 启动代理端口及链路自愈全局健康度监测守护进程
     ProxyHealthService.startProxyHealthMonitor();
@@ -148,6 +135,9 @@ Logger.info('Server', '✅ 配置版本管理系统已初始化');
 
     // 启动自动配置备份任务
     ConfigVersionManager.startAutoBackup(ROUTER_PATHS.CLASH_CONFIG);
+
+    SubscriptionUpdateService.startWeeklyUpdate();
+    Logger.info('Server', '✅ 每周订阅更新定时任务已启动');
     Logger.info('Server', '✅ 自动配置备份任务已启动');
 })();
 

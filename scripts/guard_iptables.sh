@@ -8,17 +8,22 @@ while true; do
     CLASH_PID=$(pidof mihomo || pidof Clash)
 
     if [ -z "$CLASH_PID" ]; then
-        # 核心进程不存在，需要检查引流防火墙规则是否仍在生效
+        # 核心进程不存在，卸载透明代理引流，平滑降级为 DIRECT 直连，防止局域网设备断网
+        # 1. 清理指定端口 (7892) 的 TCP REDIRECT 规则
+        while iptables -t nat -C PREROUTING -p tcp -j REDIRECT --to-ports 7892 2>/dev/null; do
+            iptables -t nat -D PREROUTING -p tcp -j REDIRECT --to-ports 7892 2>/dev/null
+        done
+        # 2. 清理官方 PREROUTING_RULES 自定义链引流（如有）
         if iptables -t nat -C PREROUTING -p tcp -j PREROUTING_RULES 2>/dev/null; then
-            # 卸载透明代理引流，平滑降级为 DIRECT 直连，防止局域网设备断网
-            iptables -t nat -D PREROUTING -p tcp -j PREROUTING_RULES
+            iptables -t nat -D PREROUTING -p tcp -j PREROUTING_RULES 2>/dev/null
         fi
     else
         # 核心进程已正常运行，确保引流已自动挂载
-        if ! iptables -t nat -C PREROUTING -p tcp -j PREROUTING_RULES 2>/dev/null; then
-            # 如果重定向自定义链存在，则重新加挂
-            if iptables -t nat -L PREROUTING_RULES >/dev/null 2>&1; then
-                iptables -t nat -I PREROUTING -p tcp -j PREROUTING_RULES
+        if ! iptables -t nat -C PREROUTING -p tcp -j REDIRECT --to-ports 7892 2>/dev/null; then
+            if [ -f /data/ShellCrash/setup_iptables.sh ]; then
+                /bin/sh /data/ShellCrash/setup_iptables.sh >/dev/null 2>&1
+            elif iptables -t nat -L PREROUTING_RULES >/dev/null 2>&1; then
+                iptables -t nat -I PREROUTING -p tcp -j PREROUTING_RULES 2>/dev/null
             fi
         fi
     fi

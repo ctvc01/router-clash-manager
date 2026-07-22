@@ -43,18 +43,42 @@ class AiBoostService {
                 return null;
             }
             
-            // 过滤：排除 HK 节点（Gemini 在港不可用）、排除组名（Selector/URLTest）、排除直连
-            const filteredNodes = group.all.filter(nodeName => {
+            const proxies = proxiesData.proxies || {};
+            
+            // 递归展开虚拟节点到叶子节点（与前端 /api/nodes 的 getAllLeafNodes 一致）
+            const getAllLeafNodes = (nameOrNames, visited = new Set()) => {
+                if (Array.isArray(nameOrNames)) {
+                    let res = [];
+                    for (const n of nameOrNames) {
+                        res = res.concat(getAllLeafNodes(n, visited));
+                    }
+                    return res;
+                }
+                if (!nameOrNames || visited.has(nameOrNames)) return [];
+                visited.add(nameOrNames);
+                const p = proxies[nameOrNames];
+                if (!p) return [nameOrNames];
+                if (p.all && Array.isArray(p.all)) {
+                    return getAllLeafNodes(p.all, visited);
+                }
+                return [nameOrNames];
+            };
+
+            const leafNodes = getAllLeafNodes(group.all);
+            
+            // 过滤：IPLC/IEPL 中继节点，同时纳入香港/新加坡/日本的直連 gRPC 节点（与前端 /api/nodes 一致）
+            const filteredNodes = leafNodes.filter(nodeName => {
                 const lowerName = nodeName.toLowerCase();
-                return !lowerName.includes('hk') && 
-                       !lowerName.includes('hongkong') && 
-                       !lowerName.includes('香港') && 
-                       !lowerName.includes('港') &&
-                       !['direct', 'global'].includes(lowerName) &&
-                       !lowerName.includes('选择节点') &&
-                       !lowerName.includes('节点选择') &&
-                       !lowerName.includes('自动测速') &&
-                       !lowerName.includes('自动选择');
+                if (['direct', 'global'].includes(lowerName)) return false;
+                const isIPLC = lowerName.includes('iplc') || lowerName.includes('iepl');
+                const isHK = lowerName.includes('hk') || lowerName.includes('hongkong') || 
+                             lowerName.includes('香港') || lowerName.includes('港');
+                const hasAILabel = lowerName.includes('gemini') || lowerName.includes('gpt') || lowerName.includes('ai');
+                const isGRPC = lowerName.includes('grpc');
+                const isGoodRegion = isHK || 
+                    lowerName.includes('sg') || lowerName.includes('singapore') || lowerName.includes('新加坡') ||
+                    lowerName.includes('jp') || lowerName.includes('japan') || lowerName.includes('日本') || lowerName.includes('日');
+                return (isIPLC && (!isHK || hasAILabel)) || (isGRPC && isGoodRegion);
             });
 
             if (filteredNodes.length === 0) {
@@ -69,7 +93,7 @@ class AiBoostService {
             const BATCH_COOLDOWN_MS = 2000;
             for (let i = 0; i < filteredNodes.length; i++) {
                 const nodeName = filteredNodes[i];
-                const delay = await ClashService.testNodeDelay(nodeName, 2000, 'http://www.google.com/generate_204');
+                const delay = await ClashService.testNodeDelay(nodeName, 2000, 'https://generativelanguage.googleapis.com/');
                 results.push({ name: nodeName, delay: delay > 0 ? delay : 99999 });
                 if (i < filteredNodes.length - 1) {
                     await new Promise(r => setTimeout(r, NODE_COOLDOWN_MS));
@@ -143,20 +167,6 @@ class AiBoostService {
         }, 60000); // 60秒错峰偏置
         Logger.info('AiBoost', '🛡️ AI 强化故障心跳已排程，将在 60 秒后错峰激活 (周期 10 分钟)');
 
-        // 2. 启动后台定期静默测速优化检测定时器：延迟 5 分钟 (300000ms) 启动，每 60 分钟一次 (3600000ms)
-        if (!silentPeriodicalTimer && !silentStartTimeout) {
-            silentStartTimeout = setTimeout(() => {
-                silentStartTimeout = null;
-                const aiMacs = this.readAiDevices();
-                if (aiMacs.length === 0) return;
-
-                Logger.info('AiBoost', '🕰️ AI 节点后台静默测速优化任务正式启动 (周期 60 分钟)');
-                this.runSilentPeriodicalCheck();
-
-                silentPeriodicalTimer = setInterval(() => this.runSilentPeriodicalCheck(), 3600000);
-            }, 300000); // 5分钟错峰偏置
-            Logger.info('AiBoost', '🕰️ AI 后台静默测速优化已排程，将在 5 分钟后错峰激活 (周期 60 分钟)');
-        }
     }
 
     static async _checkAiNodeHealth() {
@@ -195,99 +205,12 @@ class AiBoostService {
                 return;
             }
             
-            const delay = await ClashService.testNodeDelay(currentNode, 4000, 'http://www.google.com/generate_204');
+            const delay = await ClashService.testNodeDelay(currentNode, 4000, 'https://generativelanguage.googleapis.com/');
             if (delay === 0) {
-                Logger.warn('AiBoost', `⚠️ 当前锁定的 AI 节点 [${currentNode}] 已完全断联！触发自动故障转移测速...`);
-                const fastestNode = await this.findFastestAiNode();
-                if (fastestNode && fastestNode.name !== currentNode) {
-                    await this.lockAiNode(fastestNode.name);
-                    if (SpeedtestState.isLocked('ai')) {
-                        SpeedtestState.setLockedNode('ai', fastestNode.name);
-                    }
-                }
+                Logger.warn('AiBoost', `⚠️ 当前锁定的 AI 节点 [${currentNode}] 已完全断联！请在详情弹窗中手动测速或手动切换节点。`);
             }
         } catch (err) {
             Logger.error('AiBoost', '故障转移心跳检测发生异常', err);
-        }
-    }
-
-    // 后台定期静默测速与克制切换
-    static async runSilentPeriodicalCheck() {
-        if (silentRunning) {
-            Logger.debug('AiBoost', '静默测速仍在进行中，跳过本轮触发');
-            return;
-        }
-        // 【路由器保护】：启动前预检 uptime + loadavg，路由器刚开机或负载已高时跳过本轮
-        try {
-            const snap = await SshService.getRouterHealthSnapshot();
-            if (snap.ok) {
-                if (snap.uptime > 0 && snap.uptime < 600) {
-                    Logger.warn('AiBoost', `路由器刚开机仅 ${Math.floor(snap.uptime)}s（<600s），跳过本轮静默测速，60min 后再来`);
-                    return;
-                }
-                if (snap.load1 >= 2.0) {
-                    Logger.warn('AiBoost', `路由器 1min 负载 ${snap.load1.toFixed(2)} >= 2.0，已在高负载区间，跳过本轮静默测速`);
-                    return;
-                }
-            }
-        } catch (e) {
-            Logger.debug('AiBoost', `uptime 预检异常，放行本轮: ${e.message || e}`);
-        }
-        silentRunning = true;
-        ClashService.setFullSpeedtestFlag(true);
-        try {
-            const aiMacs = this.readAiDevices();
-            if (aiMacs.length === 0) return;
-
-            const isLocked = SpeedtestState.isLocked('ai');
-            Logger.info('AiBoost', `🕰️ 触发 AI 节点定期静默测速优化检测... (${isLocked ? 'LOCKED' : 'UNLOCK'})`);
-            const proxiesData = await ClashService.getProxies();
-            const group = proxiesData.proxies['🤖 AI强化'];
-            if (!group || !group.now) return;
-
-            const currentNode = group.now;
-            
-            // 1. 快速测速当前节点
-            let currentDelay = await ClashService.testNodeDelay(currentNode, 4000, 'http://www.google.com/generate_204');
-            if (currentDelay === 0) currentDelay = 99999;
-
-            // 【极简优化 3】：如果当前节点延迟表现极佳 (<= 500ms)，直接判定为可用，免去无意义的全局扫盘测速
-            if (currentDelay <= 500) {
-                Logger.info('AiBoost', `定期检测：当前节点 [${currentNode}] 延迟极佳 (${currentDelay}ms) <= 500ms，免去全量测速寻优，减轻路由器负荷。`);
-                if (!isLocked) {
-                    SpeedtestState.updateResult('ai', { name: currentNode, delay: currentDelay });
-                }
-                return;
-            }
-
-            // 2. 全量测速寻找最优节点（当当前节点拉胯时才执行）
-            const fastestNode = await this.findFastestAiNode();
-            if (!fastestNode) return;
-
-            // LOCKED 状态下只更新结果不切换
-            if (isLocked) {
-                Logger.info('AiBoost', `定期检测(LOCKED)：仅更新测速结果 (${fastestNode.name} ${fastestNode.delay}ms)，不切换节点。`);
-                return;
-            }
-
-            if (fastestNode.name === currentNode) {
-                Logger.info('AiBoost', `定期检测：当前锁定的 AI 节点 [${currentNode}] (${currentDelay}ms) 已经是最新最优节点，保持不变。`);
-                return;
-            }
-
-            // 3. 克制切换判断：延迟差距需大于 200ms
-            const diff = currentDelay - fastestNode.delay;
-            if (diff > 200) {
-                Logger.info('AiBoost', `🎉 发现更优 AI 节点: [${fastestNode.name}] (${fastestNode.delay}ms)，比当前节点 [${currentNode}] (${currentDelay}ms) 快了 ${diff}ms (已超出 200ms 门槛)，执行锁定切换。`);
-                await this.lockAiNode(fastestNode.name);
-            } else {
-                Logger.info('AiBoost', `定期检测：虽发现更快节点 [${fastestNode.name}] (${fastestNode.delay}ms)，但相较当前节点 [${currentNode}] (${currentDelay}ms) 优化差值 ${diff}ms <= 200ms，为保持连接稳定性，跳过主动切换。`);
-            }
-        } catch (err) {
-            Logger.error('AiBoost', '定期静默测速优化任务异常', err);
-        } finally {
-            ClashService.setFullSpeedtestFlag(false);
-            silentRunning = false;
         }
     }
 
@@ -302,46 +225,6 @@ class AiBoostService {
             aiBoostCheckTimer = null;
             Logger.info('AiBoost', '🛑 停止 AI 强化节点状态守护监测进程');
         }
-        if (silentStartTimeout) {
-            clearTimeout(silentStartTimeout);
-            silentStartTimeout = null;
-        }
-        if (silentPeriodicalTimer) {
-            clearInterval(silentPeriodicalTimer);
-            silentPeriodicalTimer = null;
-            Logger.info('AiBoost', '🛑 已注销 AI 后台静默测速定时任务');
-        }
-    }
-
-    // 启动每日凌晨 4:00 (UTC+8) 定时测速锁定更新任务
-    static startDailyTaskMonitor() {
-        if (dailyCheckTimer) return;
-        Logger.info('AiBoost', '🕰️ AI 强化每日凌晨定时切换任务启动成功');
-        
-        dailyCheckTimer = setInterval(async () => {
-            const { hour, minute } = getBeijingTimeParts();
-            
-            if (hour === 4 && minute >= 30 && minute < 35) {
-                if (!dailyCheckDone) {
-                    dailyCheckDone = true;
-                        const aiMacs = this.readAiDevices();
-                        if (aiMacs.length > 0) {
-                            const isLocked = SpeedtestState.isLocked('ai');
-                            Logger.info('AiBoost', `🕰️ 检测到当前是北京时间 04:30 且有设备开启 AI 强化，自动触发重测... (${isLocked ? 'LOCKED:仅更新' : 'UNLOCK:切换'})`);
-                            try {
-                                const fastestNode = await this.findFastestAiNode();
-                                if (fastestNode && !isLocked) {
-                                    await this.lockAiNode(fastestNode.name);
-                                }
-                            } catch (err) {
-                                Logger.error('AiBoost', '每日凌晨定时测速切换异常', err);
-                            }
-                        }
-                }
-            } else {
-                dailyCheckDone = false;
-            }
-        }, 300000); // 5 分钟轮询，降低路由器负载
     }
 }
 

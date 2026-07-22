@@ -66,23 +66,46 @@ class RulesEngine {
             }
         }
 
-        // 2c. 注入 max-connections 限制（防止路由器 OOM 断流）
-        const hasMaxConn = configLines.findIndex(line => line.trim().startsWith('max-connections:')) !== -1;
-        if (!hasMaxConn) {
+        // 2c. 强制重写或注入 max-connections 限制（限制并发以防路由器 OOM）
+        let maxConnIdx = configLines.findIndex(line => line.trim().startsWith('max-connections:'));
+        if (maxConnIdx !== -1) {
+            configLines[maxConnIdx] = 'max-connections: 800';
+        } else {
             let insertAfter = configLines.findIndex(line => line.trim().startsWith('tproxy-port:'));
             if (insertAfter === -1) insertAfter = configLines.findIndex(line => line.trim().startsWith('allow-lan:'));
             if (insertAfter !== -1) {
-                configLines.splice(insertAfter + 1, 0, 'max-connections: 1500');
+                configLines.splice(insertAfter + 1, 0, 'max-connections: 800');
             }
         }
 
-        // 2d. 注入 memory-limit 与 gc-interval（从根源控制 mihomo 内存增长，防止 OOM）
-        const hasMemLimit = configLines.findIndex(line => line.trim().startsWith('memory-limit:')) !== -1;
-        if (!hasMemLimit) {
+        // 2d. 强制重写或注入 memory-limit、gc-interval 和 log-level（强制触发高频 GC，防止运存跑满）
+        let memLimitIdx = configLines.findIndex(line => line.trim().startsWith('memory-limit:'));
+        if (memLimitIdx !== -1) {
+            configLines[memLimitIdx] = 'memory-limit: 90MB';
+        } else {
             let insertAfter = configLines.findIndex(line => line.trim().startsWith('max-connections:'));
             if (insertAfter !== -1) {
-                configLines.splice(insertAfter + 1, 0, 'memory-limit: 160MB');
-                configLines.splice(insertAfter + 2, 0, 'gc-interval: 30s');
+                configLines.splice(insertAfter + 1, 0, 'memory-limit: 90MB');
+            }
+        }
+
+        let gcIdx = configLines.findIndex(line => line.trim().startsWith('gc-interval:'));
+        if (gcIdx !== -1) {
+            configLines[gcIdx] = 'gc-interval: 20s';
+        } else {
+            let insertAfter = configLines.findIndex(line => line.trim().startsWith('memory-limit:'));
+            if (insertAfter !== -1) {
+                configLines.splice(insertAfter + 1, 0, 'gc-interval: 20s');
+            }
+        }
+
+        let logLevelIdx = configLines.findIndex(line => line.trim().startsWith('log-level:'));
+        if (logLevelIdx !== -1) {
+            configLines[logLevelIdx] = 'log-level: warning';
+        } else {
+            let insertAfter = configLines.findIndex(line => line.trim().startsWith('gc-interval:'));
+            if (insertAfter !== -1) {
+                configLines.splice(insertAfter + 1, 0, 'log-level: warning');
             }
         }
  
@@ -138,7 +161,7 @@ class RulesEngine {
                     '    - +.wechatpay.com',
                     '    - +.tenpay.com',
                     '    - +.wechatos.net',
-                    '  cache-size: 4096'
+                    '  cache-size: 2000'
                 );
             }
         }
@@ -175,7 +198,7 @@ class RulesEngine {
                 '    - +.wechatpay.com',
                 '    - +.tenpay.com',
                 '    - +.wechatos.net',
-                    '  cache-size: 4096'
+                    '  cache-size: 2000'
         ];
                 configLines.splice(insertIdx + 1, 0, ...dnsLines);
                 insertIdx += dnsLines.length;
@@ -193,42 +216,7 @@ class RulesEngine {
             }
         }
 
-        // 4.3 强制替换/注入整个 hosts 广告拦截配置块
-        try {
-            const adBlockHosts = require('./adBlockService').getAdBlockHosts();
-            const adBlockKeys = Object.keys(adBlockHosts);
-            
-            // 清理已存在的旧 hosts 块
-            let hostsStart = -1, hostsEnd = -1, inHostsBlock = false;
-            for (let i = 0; i < configLines.length; i++) {
-                const line = configLines[i].trim();
-                if (line.startsWith('hosts:')) {
-                    inHostsBlock = true; hostsStart = i; hostsEnd = i; continue;
-                }
-                if (inHostsBlock && line.length > 0 && !configLines[i].startsWith(' ') && !configLines[i].startsWith('\t') && !line.startsWith('#')) {
-                    break;
-                }
-                if (inHostsBlock) hostsEnd = i;
-            }
-
-            const hostsLines = ['hosts:'];
-            if (adBlockKeys.length > 0) {
-                for (const key of adBlockKeys) {
-                    hostsLines.push(`  '${key}': ${adBlockHosts[key]}`);
-                }
-            }
-
-            if (hostsStart >= 0) {
-                configLines.splice(hostsStart, hostsEnd - hostsStart + 1, ...hostsLines);
-            } else {
-                const insertIdx = configLines.findIndex(line => line.trim().startsWith('mixed-port:'));
-                if (insertIdx !== -1) {
-                    configLines.splice(insertIdx + 1, 0, ...hostsLines);
-                }
-            }
-        } catch (adError) {
-            Logger.error('RulesEngine', '动态注入广告 Hosts 异常', adError);
-        }
+        // 4.3 已移除 AdBlock 广告拦截配置块（YAGNI 极简稳定性优化）
 
         // 5. 清理旧 of AI 分流规则
         configLines = configLines.filter(line => {
@@ -418,7 +406,9 @@ class RulesEngine {
                     '- DOMAIN-SUFFIX,deepmind.com,🤖 AI强化',
                     '- DOMAIN-SUFFIX,generativeai.google,🤖 AI强化',
                     '- DOMAIN-KEYWORD,colab,🤖 AI强化',
-                    '- DOMAIN-KEYWORD,developer.google.com,🤖 AI强化',
+                    '- DOMAIN-SUFFIX,developer.google.com,🤖 AI强化',
+                    '- DOMAIN-SUFFIX,content-push.googleapis.com,🤖 AI强化',
+                    '- DOMAIN-SUFFIX,firebase.googleapis.com,🤖 AI强化',
                     '- DOMAIN-SUFFIX,google.com,🤖 AI强化',
                     '- DOMAIN-SUFFIX,googleapis.com,🤖 AI强化',
                     '- DOMAIN-SUFFIX,gstatic.com,🤖 AI强化',
@@ -564,7 +554,7 @@ class RulesEngine {
             }
 
             if (gameMacs.length > 0) {
-                groupLines.push(`${indent}- {name: '${PROXY_GROUPS.GAME_ACC}', type: select, proxies: ['${actualNodeSelect}', 'DIRECT'], use: [${providerName}], filter: "(?i)(Japan|Korea|Taiwan|Singapore|日本|韩国|台灣|台湾|新加坡|JP|KR|TW|SG)"}`);
+                groupLines.push(`${indent}- {name: '${PROXY_GROUPS.GAME_ACC}', type: select, proxies: ['${actualNodeSelect}', 'DIRECT'], use: [${providerName}], filter: "(?i)(Japan|Korea|Taiwan|Singapore|Hongkong|USA|United States|日本|韩国|台灣|台湾|新加坡|香港|港|美国|美|IPLC|IEPL|gRPC|Download)"}`);
             }
 
             if (aiMacs.length > 0) {
@@ -685,10 +675,21 @@ class RulesEngine {
                 throw new Error('全局规则完整性检查失败');
             }
 
-            // 提前对比：如果在内存中修改后的配置与路由器当前的配置完全一致，则直接返回成功
-            // 避免后续的 SCP 上传、文件覆盖以及 8~10 秒的无意义热重载等待
-            if (currentConfig === finalConfig) {
-                Logger.info('RulesEngine', '⚡️ 零延迟拦截：配置内容未发生实质变化，跳过上传、校验与热重载流程。');
+            // 提前对比：如果在内存中修改后的配置与路由器当前的配置完全一致，
+            // 且当前 Clash API 能响应，则安全进行零延迟拦截。
+            // 否则（例如 Clash 挂了或未绑定），必须放行执行下发配置和冷重启拉起自愈流程。
+            let isClashResponsive = false;
+            try {
+                const version = await ClashService.getVersion(1500);
+                if (version && version.version) {
+                    isClashResponsive = true;
+                }
+            } catch (e) {
+                isClashResponsive = false;
+            }
+
+            if (currentConfig === finalConfig && isClashResponsive) {
+                Logger.info('RulesEngine', '⚡️ 零延迟拦截：配置内容未发生实质变化且内核在线响应，跳过上传、校验与热重载流程。');
                 return true;
             }
 

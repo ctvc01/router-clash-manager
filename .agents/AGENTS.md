@@ -82,13 +82,29 @@
 
 ### 核心规约区 (Core Rules)
 <!-- rule-evolution:core-start -->
+### 5.0 部署与重启指引 (Deployment Guide)
+* **必读文档**：当用户要求部署、重启服务，或涉及 NAS 构建与容器重启时，必须先读取 `docs/DEPLOYMENT.md` 了解完整部署流程。
+* **网络场景**：项目部署在 NAS（192.168.31.66）上，通过 `deploy.sh` 一键部署：
+  - 同一局域网：自动使用 SSH 直连内网 IP `192.168.31.66`
+  - 外部网络：自动降级为 `dev.jinjitu.com`（通过 Cloudflare Tunnel 经 `cloudflared` 转发）
+* **SSH 配置**：本地 `~/.ssh/config` 已配置 `Host dev.jinjitu.com` 使用 `ProxyCommand /opt/homebrew/bin/cloudflared access ssh --hostname %h`
+* **登录凭证**：NAS 用户 `ctpdrqm`，部署路径 `/vol1/1000/router-clash-manager`，Web 入口 `https://meta.jinjitu.com`。SSH 远程执行时无需额外密码（密钥认证已配置）。
+* **重启命令**：`ssh ctpdrqm@<HOST> "cd /vol1/1000/router-clash-manager && docker compose up --force-recreate -d"`（`<HOST>` 替换为 `192.168.31.66` 或 `dev.jinjitu.com`）
 <!-- rule-evolution:core-end -->
 
 ### 草案孵化区 (Draft Rules)
 <!-- rule-evolution:draft-start -->
 ### 5.1 前端状态即时刷新与长耗时任务的静默自愈 (UI State Hydration & Silent Polling)
-* **正面指导原则**：当后端接口包含长耗时的异步后台测速或硬件交互，且为防止阻塞前端而立即返回 `success` 时，前端**必须**在收到成功响应后立即主动拉取一次最新状态（Instant UX），使 UI（如锁定徽标）实现零延迟更新。对于后端未完成的异步结果（如 3-4 秒后才得出的测速/丢包率），前端应通过 `setTimeout` 延迟几秒进行一次无 Loading 的静默拉取（Silent Hydration），从而无感地将最终数据刷入界面。
+* **正面指导原则**：当后端接口包含长耗时的异步后台测速或硬件交互，且为防止阻塞前端而立即返回 `success` 时，前端**必须**在收到成功响应后立即主动拉取一次最新状态（Instant UX），使 UI（如锁定徽标）实现零延迟更新。对于后端未完成 of 异步结果（如 3-4 秒后才得出的测速/丢包率），前端应通过 `setTimeout` 延迟几秒进行一次无 Loading 的静默拉取（Silent Hydration），从而无感地将最终数据刷入界面。
 * **反面避坑 (Anti-Pattern)**：严禁前端在执行完状态变更操作后，仅仅依赖全局的 `setInterval` 轮询（如 30s 一次）来被动刷新数据。这会导致用户产生“操作卡顿”或“延迟 5 秒才生效”的错觉（因为轮询的残余时间不可控）。状态变更操作必须配对主动状态拉取。 <!-- hits:1 created:2026-07-05 session:优化游戏模式节点锁定徽标5秒延迟UX -->
+
+### 5.2 测速操作通道独占与并发互斥校验 (Exclusive Control for Hardware Benchmarking)
+* **正面指导原则**：手动触发或大批量硬件测速，必须在后端进程级通过全局锁或状态标记控制独占（例如调用 Clash API 测速前检查并设置 `isFullSpeedtestInProgress()`），且对于多用户或高频重复点击，接口层**必须返回 `409` 冲突错误**以阻止并发请求穿透至底层。前端在触发后需将按钮置灰或显示 Loading 以限制再次发起，并轮询状态直至完成。
+* **反面避坑 (Anti-Pattern)**：严禁允许并发触发多路测速，防止多路并发测速拖垮低功耗网关硬件 CPU 甚至诱发 OOM 崩溃。
+
+### 5.3 去除高风险/冗余的嵌入式网关广告拦截配置 (Avoid Bloated In-Memory Ad Blocking in Gateways)
+* **正面指导原则**：在内存极度受限的嵌入式路由器中，应避免在网关级代理配置中强制拼装和载入过于冗余的 hosts 广告拦截规则（如包含上千行 Hosts 域名）。应保持网关层配置的极简和纯粹，将广告过滤交给专门的浏览器客户端插件（如 uBlock Origin）或独立的轻量级 DNS 拦截服务（如 AdGuard Home）。
+* **反面避坑 (Anti-Pattern)**：严禁在内存受限设备上加载庞大体积的内存拦截规则，此类臃肿规则不仅使配置平滑热重载时间从毫秒级被拉长至数秒，而且极大增加了进程崩溃或内存溢出的风险。
 <!-- rule-evolution:draft-end -->
 
 ### 个人偏好区 (User Prefs)
