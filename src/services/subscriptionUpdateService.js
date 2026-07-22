@@ -74,21 +74,9 @@ class SubscriptionUpdateService {
             if (apiResult.includes('HTTP:2') || apiResult.includes('HTTP:204')) {
                 Logger.info('SubscriptionUpdate', '✅ 通过 API 热更新订阅成功');
             } else {
-                Logger.warn('SubscriptionUpdate', '⚠️ API 热更新失败，降级为重启 Clash 服务...');
-                await SshService.runRemoteCommand(
-                    `killall mihomo 2>/dev/null; sleep 2; /tmp/ShellCrash/mihomo -d /data/ShellCrash -f /data/ShellCrash/config.yaml </dev/null >/dev/null 2>/dev/null &`
-                );
-                // 等待 API 就绪
-                for (let i = 0; i < 15; i++) {
-                    const ready = await SshService.runRemoteCommand(
-                        `curl -s --connect-timeout 2 http://127.0.0.1:9999/version 2>/dev/null | grep -q 'version' && echo 'ready' || echo 'waiting'`
-                    );
-                    if (ready.trim() === 'ready') {
-                        Logger.info('SubscriptionUpdate', '✅ Clash 重启完成，API 已就绪');
-                        break;
-                    }
-                    await new Promise(r => setTimeout(r, 1000));
-                }
+                Logger.warn('SubscriptionUpdate', '⚠️ API 热更新失败，降级为安全重启 Clash 服务...');
+                await SshService.restartShellCrashSecurely();
+                Logger.info('SubscriptionUpdate', '✅ Clash 安全重启完成，API 已就绪');
             }
 
             // 6. 验证节点数量
