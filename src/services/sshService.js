@@ -317,70 +317,60 @@ class SshService {
                 await this.runRemoteCommand('rm -f /data/ShellCrash/.start_error');
                 Logger.info('ShellCrash', '已清除启动错误标记文件');
 
-                // 0a. 路由器重启后自动补全内核与地理数据库 (本地Gzip冷备极速自愈 + 网络上传兜底)
+                // 0a. 清理可能残存的旧备份，防止塞爆只有 20.8M 的 /data 闪存分区
+                await this.runRemoteCommand('rm -f /data/ShellCrash/mihomo.bak 2>/dev/null || true');
+
+                // 0b. 探测并极速补全 /tmp/ShellCrash/mihomo 内核（0 字节占用 /data 闪存）
                 const isKernelExist = await this.runRemoteCommand('[ -f /tmp/ShellCrash/mihomo ] && echo 1 || echo 0');
                 if (isKernelExist.trim() !== '1') {
-                    Logger.warn('ShellCrash', '⚠️ 探测到路由器重启导致 /tmp 内核丢失，尝试本地冷备解压自愈...');
+                    Logger.warn('ShellCrash', '⚠️ 探测到路由器重启导致 /tmp 内核丢失，准备从 NAS 容器同步 Gzip 内核...');
                     await this.runRemoteCommand('mkdir -p /tmp/ShellCrash');
-                    
-                    // 优先尝试从路由器本地 /data/ShellCrash/mihomo.bak 闪存的 gzip 备份包进行解压恢复
-                    const localRestoreResult = await this.runRemoteCommand(
-                        'if [ -f /data/ShellCrash/mihomo.bak ]; then ' +
-                        'gzip -d -c /data/ShellCrash/mihomo.bak > /tmp/ShellCrash/mihomo && chmod +x /tmp/ShellCrash/mihomo && echo 1 || echo 0; ' +
-                        'else echo 0; fi'
-                    );
-                    
-                    if (localRestoreResult.trim() === '1') {
-                        Logger.info('ShellCrash', '✅ 成功从路由器本地闪存 /data 极速解压 Gzip 内核，微秒级零网络依赖自愈完成！');
-                    } else {
-                        Logger.warn('ShellCrash', '⚠️ 路由器本地无冷备或解压失败，启动 14MB Gzip 压缩包上传与备份同步自愈...');
-                        const backupDir = config.paths.clashBackup;
-                        const localClash = `${backupDir}/Clash`;
-                        const localGz = `${backupDir}/Clash.gz`;
 
-                        // 确保容器本地存在 gzip 压缩包，不存在则在容器内即时生成
-                        if (fs.existsSync(localClash)) {
-                            if (!fs.existsSync(localGz)) {
-                                Logger.info('ShellCrash', '正在容器内生成 14MB 高比例 Gzip 压缩内核...');
-                                const { execSync } = require('child_process');
-                                try {
-                                    execSync(`gzip -9 -c "${localClash}" > "${localGz}"`);
-                                    Logger.info('ShellCrash', '✅ 本地 14MB Gzip 压缩包创建完成');
-                                } catch (gzErr) {
-                                    Logger.error('ShellCrash', '本地生成 gzip 压缩包失败', gzErr);
-                                }
-                            }
+                    const backupDir = config.paths.clashBackup;
+                    const localClash = `${backupDir}/Clash`;
+                    const localGz = `${backupDir}/Clash.gz`;
 
-                            if (fs.existsSync(localGz)) {
-                                Logger.info('ShellCrash', '正在同步 14MB 压缩内核至路由器 /data 闪存冷备分区...');
-                                await this.uploadFileLocal(localGz, '/data/ShellCrash/mihomo.bak');
-                                Logger.info('ShellCrash', '正在将冷备内核解压至运行目录 /tmp/ShellCrash/mihomo...');
-                                await this.runRemoteCommand('gzip -d -c /data/ShellCrash/mihomo.bak > /tmp/ShellCrash/mihomo && chmod +x /tmp/ShellCrash/mihomo');
-                                Logger.info('ShellCrash', '✅ Gzip 压缩包自愈和本地冷备同步成功！');
-                            } else {
-                                // 终极兜底：直接传输 44MB 原始内核
-                                Logger.warn('ShellCrash', '⚠️ 压缩包生成失败，降级为直传 44MB 原始内核...');
-                                await this.uploadFileLocal(localClash, '/tmp/ShellCrash/mihomo');
-                                await this.runRemoteCommand('chmod +x /tmp/ShellCrash/mihomo');
+                    if (fs.existsSync(localClash)) {
+                        if (!fs.existsSync(localGz)) {
+                            Logger.info('ShellCrash', '正在容器内生成 Gzip 压缩包...');
+                            const { execSync } = require('child_process');
+                            try {
+                                execSync(`gzip -9 -c "${localClash}" > "${localGz}"`);
+                            } catch (gzErr) {
+                                Logger.error('ShellCrash', '生成 gzip 压缩包失败', gzErr);
                             }
+                        }
+
+                        if (fs.existsSync(localGz)) {
+                            Logger.info('ShellCrash', '正在同步 14MB 压缩内核至路由器 /tmp 内存分区...');
+                            await this.uploadFileLocal(localGz, '/tmp/ShellCrash/mihomo.gz');
+                            await this.runRemoteCommand('gzip -d -f /tmp/ShellCrash/mihomo.gz && chmod +x /tmp/ShellCrash/mihomo');
+                            Logger.info('ShellCrash', '✅ Gzip 压缩内核传输并解压成功！');
                         } else {
-                            Logger.error('ShellCrash', '❌ 容器内未找到备份的内核文件，自愈失败！');
+                            Logger.warn('ShellCrash', '⚠️ 降级为直传原始内核...');
+                            await this.uploadFileLocal(localClash, '/tmp/ShellCrash/mihomo');
+                            await this.runRemoteCommand('chmod +x /tmp/ShellCrash/mihomo');
                         }
-                    }
-                    
-                    // 补全 Country.mmdb (如果 /tmp 中没有或大小不正确)
-                    const isGeoDbExist = await this.runRemoteCommand('[ -f /tmp/ShellCrash/Country.mmdb ] && [ $(wc -c < /tmp/ShellCrash/Country.mmdb) -gt 5000000 ] && echo 1 || echo 0');
-                    if (isGeoDbExist.trim() !== '1') {
-                        if (fs.existsSync(`${backupDir}/Country.mmdb`)) {
-                            Logger.info('ShellCrash', '正在从本地备份上传 Country.mmdb 地理数据库...');
-                            await this.uploadFileLocal(`${backupDir}/Country.mmdb`, '/tmp/ShellCrash/Country.mmdb');
-                        }
+                    } else {
+                        Logger.error('ShellCrash', '❌ 容器内未找到备份的内核文件，自愈失败！');
                     }
                 }
 
-                // 0b. 确保 GeoIP 与 Country.mmdb 软链接正确且不挤爆闪存
-                await this.runRemoteCommand('rm -f /data/ShellCrash/geoip.metadb && ln -sf /tmp/ShellCrash/geoip.metadb /data/ShellCrash/geoip.metadb');
-                await this.runRemoteCommand('rm -f /data/ShellCrash/Country.mmdb && ln -sf /tmp/ShellCrash/Country.mmdb /data/ShellCrash/Country.mmdb');
+                // 0c. 独立补全 Country.mmdb (如果 /tmp 中缺失或损坏，独立补全，不依赖内核是否丢失)
+                const backupDir = config.paths.clashBackup;
+                const isGeoDbExist = await this.runRemoteCommand('[ -f /tmp/ShellCrash/Country.mmdb ] && [ $(wc -c < /tmp/ShellCrash/Country.mmdb) -gt 5000000 ] && echo 1 || echo 0');
+                if (isGeoDbExist.trim() !== '1') {
+                    if (fs.existsSync(`${backupDir}/Country.mmdb`)) {
+                        Logger.warn('ShellCrash', '⚠️ 探测到 Country.mmdb 缺失或损坏，正在上传 8MB 地理数据库...');
+                        await this.runRemoteCommand('mkdir -p /tmp/ShellCrash');
+                        await this.uploadFileLocal(`${backupDir}/Country.mmdb`, '/tmp/ShellCrash/Country.mmdb');
+                        Logger.info('ShellCrash', '✅ Country.mmdb 上传成功');
+                    }
+                }
+
+                // 0d. 确保 GeoIP 与 Country.mmdb 软链接正确且不挤爆闪存
+                await this.runRemoteCommand('rm -f /data/ShellCrash/geoip.metadb && ln -sf /tmp/ShellCrash/geoip.metadb /data/ShellCrash/geoip.metadb 2>/dev/null || true');
+                await this.runRemoteCommand('rm -f /data/ShellCrash/Country.mmdb && ln -sf /tmp/ShellCrash/Country.mmdb /data/ShellCrash/Country.mmdb 2>/dev/null || true');
 
                 // 0c. 新硬件灾备恢复：检测并重建配置文件
                 const isConfigExist = await this.runRemoteCommand('[ -s /data/ShellCrash/config.yaml ] && echo 1 || echo 0');
