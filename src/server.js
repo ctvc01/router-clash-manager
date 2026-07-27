@@ -153,7 +153,7 @@ async function verifyConnectivity() {
 }
 
 // 3. 开启网络服务器监听
-app.listen(config.port, () => {
+const server = app.listen(config.port, () => {
     Logger.info('Server', `===================================================`);
     Logger.info('Server', `  Clash Meta Whitelist Manager Backend is running!`);
     Logger.info('Server', `  Listening on Port: ${config.port}`);
@@ -162,4 +162,24 @@ app.listen(config.port, () => {
     
     // 异步执行连通性探测
     verifyConnectivity();
+});
+server.on('error', (err) => {
+    // 捕获端口监听失败（如 macOS 沙箱 EPERM），不崩溃进程
+    try {
+        const fs = require('fs');
+        const t = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }).replace(' ', 'T') + '+08:00';
+        const dir = process.env.LOG_DIR || '/data/logs';
+        fs.appendFileSync(dir + '/app.log', `[${t}] ❌ [Server] 端口 ${config.port} 监听失败: ${err.code} - ${err.message}\n`, 'utf8');
+        // 尝试备选端口
+        const fallbackPort = config.port + 1;
+        fs.appendFileSync(dir + '/app.log', `[${t}] ℹ️  [Server] 尝试备选端口 ${fallbackPort}...\n`, 'utf8');
+        const fallbackServer = app.listen(fallbackPort, () => {
+            fs.appendFileSync(dir + '/app.log', `[${t}] ℹ️  [Server] ✅ 已在备选端口 ${fallbackPort} 上启动成功!\n`, 'utf8');
+            config.port = fallbackPort;
+            verifyConnectivity();
+        });
+        fallbackServer.on('error', (err2) => {
+            fs.appendFileSync(dir + '/app.log', `[${t}] ❌ [Server] 备选端口 ${fallbackPort} 也失败: ${err2.code} - ${err2.message}\n`, 'utf8');
+        });
+    } catch (_) { /* 静默处理 */ }
 });

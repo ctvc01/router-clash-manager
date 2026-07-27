@@ -69,12 +69,12 @@ class RulesEngine {
         // 2c. 强制重写或注入 max-connections 限制（限制并发以防路由器 OOM）
         let maxConnIdx = configLines.findIndex(line => line.trim().startsWith('max-connections:'));
         if (maxConnIdx !== -1) {
-            configLines[maxConnIdx] = 'max-connections: 800';
+            configLines[maxConnIdx] = 'max-connections: 256';
         } else {
             let insertAfter = configLines.findIndex(line => line.trim().startsWith('tproxy-port:'));
             if (insertAfter === -1) insertAfter = configLines.findIndex(line => line.trim().startsWith('allow-lan:'));
             if (insertAfter !== -1) {
-                configLines.splice(insertAfter + 1, 0, 'max-connections: 800');
+                configLines.splice(insertAfter + 1, 0, 'max-connections: 256');
             }
         }
 
@@ -161,7 +161,7 @@ class RulesEngine {
                     '    - +.wechatpay.com',
                     '    - +.tenpay.com',
                     '    - +.wechatos.net',
-                    '  cache-size: 2000'
+                    '  cache-size: 1000'
                 );
             }
         }
@@ -198,7 +198,7 @@ class RulesEngine {
                 '    - +.wechatpay.com',
                 '    - +.tenpay.com',
                 '    - +.wechatos.net',
-                    '  cache-size: 2000'
+                    '  cache-size: 1000'
         ];
                 configLines.splice(insertIdx + 1, 0, ...dnsLines);
                 insertIdx += dnsLines.length;

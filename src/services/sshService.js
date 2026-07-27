@@ -61,7 +61,13 @@ class SshService {
             // 使用 execFile 避免本地 shell 注入；15s 硬 wall-clock 超时兜底，
             // 防止路由器过载导致 SSH 命令永久挂起并锁死上游串行队列
             const SSH_HARD_TIMEOUT_MS = 15000;
-            execFile(sshExecPath, [command], { timeout: SSH_HARD_TIMEOUT_MS, killSignal: 'SIGKILL' }, (error, stdout, stderr) => {
+            const env = {
+                ...process.env,
+                ROUTER_IP: config.router.ip,
+                ROUTER_USER: config.router.user,
+                ROUTER_PASSWORD: config.router.password
+            };
+            execFile(sshExecPath, [command], { env, timeout: SSH_HARD_TIMEOUT_MS, killSignal: 'SIGKILL' }, (error, stdout, stderr) => {
                 if (error) {
                     // 特例：如果是 pgrep 命令返回 1（说明进程不存在），这在 Shell 语法中代表未匹配，应正常处理
                     if (command.includes('pgrep') && error.code === 1) {
@@ -105,7 +111,13 @@ class SshService {
                         if (isHardTimeout) {
                             Logger.error('SSH', `命令被 15s 硬超时终止 (attempt=${attempt + 1}): "${command.slice(0, 120)}"`);
                         } else {
-                            Logger.error('SSH', `远程命令执行失败 (已重试${attempt}次): "${command}"`, { error, stderr, stdout });
+                            // 格式化长命令日志：截断到 200 字符，避免巨型日志填满文件
+                            const truncatedCmd = command.length > 200 ? command.slice(0, 200) + '...' : command;
+                            const truncatedErr = {
+                                error: error ? { code: error.code, message: error.message } : null,
+                                stderr: (stderr || '').slice(0, 500),
+                                stdout: (stdout || '').slice(0, 500) };
+                            Logger.error('SSH', `远程命令执行失败 (已重试${attempt}次): "${truncatedCmd}"`, truncatedErr);
                         }
                         reject({ error, stdout, stderr, attempts: attempt + 1 });
                     }
@@ -239,7 +251,14 @@ class SshService {
                     if (!pidOut.trim()) break;
                     await new Promise(r => setTimeout(r, 1000));
                 }
+                // 清理 tmpfs 缓存和旧文件，防止 OOM
+                await this.runRemoteCommand('rm -f /tmp/ShellCrash/mihomo.gz /tmp/ShellCrash/*.bak 2>/dev/null; sync; echo 3 > /proc/sys/vm/drop_caches 2>/dev/null; echo 4096 > /proc/sys/net/netfilter/nf_conntrack_max 2>/dev/null; echo 8192 > /proc/sys/vm/min_free_kbytes 2>/dev/null; echo 200 > /proc/sys/vm/vfs_cache_pressure 2>/dev/null; echo 1 > /proc/sys/vm/compact_memory 2>/dev/null || true');
+                // 确保 CrashCore/Clash 软链接存在，保障 ShellCrash 脚本兼容
+                await this.runRemoteCommand('ln -sf /tmp/ShellCrash/mihomo /data/ShellCrash/CrashCore 2>/dev/null || true');
+                await this.runRemoteCommand('ln -sf /tmp/ShellCrash/mihomo /data/ShellCrash/Clash 2>/dev/null || true');
                 await this.runRemoteCommand('( /tmp/ShellCrash/mihomo -d /data/ShellCrash -f /data/ShellCrash/config.yaml </dev/null >/dev/null 2>/dev/null & )');
+                // 设置 mihomo OOM 优先级（防止内核优先杀死 Clash 进程）
+                await this.runRemoteCommand('for p in $(pidof mihomo 2>/dev/null); do echo -500 > /proc/$p/oom_score_adj 2>/dev/null; done; for p in $(pidof Clash 2>/dev/null); do echo -500 > /proc/$p/oom_score_adj 2>/dev/null; done || true');
                 const apiReady = await ClashService.waitClashReady(15);
                 if (apiReady) {
                     Logger.info('ShellCrash', '轻量冷重启完成，API 已就绪。');
@@ -344,8 +363,16 @@ class SshService {
                         if (fs.existsSync(localGz)) {
                             Logger.info('ShellCrash', '正在同步 14MB 压缩内核至路由器 /tmp 内存分区...');
                             await this.uploadFileLocal(localGz, '/tmp/ShellCrash/mihomo.gz');
-                            await this.runRemoteCommand('gzip -d -f /tmp/ShellCrash/mihomo.gz && chmod +x /tmp/ShellCrash/mihomo');
-                            Logger.info('ShellCrash', '✅ Gzip 压缩内核传输并解压成功！');
+                            await this.runRemoteCommand('gzip -d -f /tmp/ShellCrash/mihomo.gz && chmod +x /tmp/ShellCrash/mihomo && rm -f /tmp/ShellCrash/mihomo.gz');
+                            // 验证解压结果，失败则降级直传
+                            const verifyKernel = await this.runRemoteCommand('[ -f /tmp/ShellCrash/mihomo ] && echo 1 || echo 0');
+                            if (verifyKernel.trim() === '1') {
+                                Logger.info('ShellCrash', '✅ Gzip 压缩内核传输并解压成功！');
+                            } else {
+                                Logger.warn('ShellCrash', '⚠️ gzip 解压失败，降级为直传原始内核...');
+                                await this.uploadFileLocal(localClash, '/tmp/ShellCrash/mihomo');
+                                await this.runRemoteCommand('chmod +x /tmp/ShellCrash/mihomo');
+                            }
                         } else {
                             Logger.warn('ShellCrash', '⚠️ 降级为直传原始内核...');
                             await this.uploadFileLocal(localClash, '/tmp/ShellCrash/mihomo');
@@ -371,6 +398,13 @@ class SshService {
                 // 0d. 确保 GeoIP 与 Country.mmdb 软链接正确且不挤爆闪存
                 await this.runRemoteCommand('rm -f /data/ShellCrash/geoip.metadb && ln -sf /tmp/ShellCrash/geoip.metadb /data/ShellCrash/geoip.metadb 2>/dev/null || true');
                 await this.runRemoteCommand('rm -f /data/ShellCrash/Country.mmdb && ln -sf /tmp/ShellCrash/Country.mmdb /data/ShellCrash/Country.mmdb 2>/dev/null || true');
+
+                // 0d1. 创建 CrashCore/Clash 软链接，保障 ShellCrash 脚本兼容
+                await this.runRemoteCommand('ln -sf /tmp/ShellCrash/mihomo /data/ShellCrash/CrashCore 2>/dev/null || true');
+                await this.runRemoteCommand('ln -sf /tmp/ShellCrash/mihomo /data/ShellCrash/Clash 2>/dev/null || true');
+
+                // 0d2. 清理 /data 无用文件，节省闪存空间
+                await this.runRemoteCommand('rm -f /data/ShellCrash/cache.db /data/ShellCrash/config.yaml.bak 2>/dev/null; rmdir /data/ShellCrash/ui /data/ShellCrash/yamls 2>/dev/null || true');
 
                 // 0c. 新硬件灾备恢复：检测并重建配置文件
                 const isConfigExist = await this.runRemoteCommand('[ -s /data/ShellCrash/config.yaml ] && echo 1 || echo 0');
@@ -404,6 +438,8 @@ class SshService {
 
                 // 1. 杀死旧进程
                 await this.runRemoteCommand('killall mihomo Clash 2>/dev/null; true');
+                // 内核内存调优：减少 conntrack 预分配，提高缓存回收效率，触发碎片整理
+                await this.runRemoteCommand('echo 4096 > /proc/sys/net/netfilter/nf_conntrack_max 2>/dev/null; echo 8192 > /proc/sys/vm/min_free_kbytes 2>/dev/null; echo 200 > /proc/sys/vm/vfs_cache_pressure 2>/dev/null; echo 1 > /proc/sys/vm/compact_memory 2>/dev/null || true');
 
                 // 2. 等待旧进程完全退出（最多等待 5s）
                 for (let i = 0; i < 5; i++) {
@@ -417,6 +453,8 @@ class SshService {
 
                 // 3. 启动新进程
                 await this.runRemoteCommand('( /tmp/ShellCrash/mihomo -d /data/ShellCrash -f /data/ShellCrash/config.yaml </dev/null >/dev/null 2>/dev/null & )');
+                // 设置 mihomo OOM 优先级（防止内核优先杀死 Clash 进程）
+                await this.runRemoteCommand('for p in $(pidof mihomo 2>/dev/null); do echo -500 > /proc/$p/oom_score_adj 2>/dev/null; done; for p in $(pidof Clash 2>/dev/null); do echo -500 > /proc/$p/oom_score_adj 2>/dev/null; done || true');
                 Logger.info('ShellCrash', '已下发 Clash 进程启动命令，等待进程启动...');
 
                 // 4. 等待新进程启动（最多等待 15s，给配置加载充足时间）

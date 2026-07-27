@@ -218,14 +218,16 @@ class ProxyHealthService {
                     lastTier1FailAt = 0;
                     tier1Pending = false;
                 }
-            }
             if (tier1Ok) {
-                // 长期健康：允许 consecutiveRestarts 计数器自然清零，避免历史故障永久压制自愈
-                if (consecutiveRestarts > 0 && Date.now() - lastProxyRestartTime > 30 * 60 * 1000) {
-                    Logger.info('ProxyDaemon', '连续 30 分钟健康，重启计数器自动清零');
+                // 一旦健康检测通过立即重置连续重启计数器，避免死锁
+                // 原逻辑要求 30 分钟健康才能清零，但 consecutiveRestarts >= 3 时会跳过重启
+                // 导致 API 无法恢复 -> tier1Ok 永不为 true -> 计数器永不重置的死锁
+                if (consecutiveRestarts > 0) {
+                    Logger.info('ProxyDaemon', '健康检测通过，连续重启计数器归零');
                     consecutiveRestarts = 0;
                 }
                 return true;
+            }
             }
 
             // ⚡ Tier 2: 深度 SSH 诊断
@@ -241,7 +243,7 @@ class ProxyHealthService {
                 `echo "IPT:$(iptables -t nat -L PREROUTING -n 2>/dev/null | grep -c REDIRECT || echo 0)"`,
                 `echo "UPTIME:$(cat /proc/uptime 2>/dev/null | awk '{print \$1}' || echo 0)"`,
                 `FREE_MEM=\$(awk '/MemFree:/ {print \$2}' /proc/meminfo 2>/dev/null || echo 0)`,
-                `[ \$FREE_MEM -gt 0 ] && [ \$FREE_MEM -lt 30000 ] && (sync; echo 3 > /proc/sys/vm/drop_caches; echo "MEM_CLEAN:done") || echo "MEM_CLEAN:skip"`,
+                `[ \$FREE_MEM -gt 0 ] && [ \$FREE_MEM -lt 30000 ] && (sync; echo 3 > /proc/sys/vm/drop_caches; echo 1 > /proc/sys/vm/compact_memory; echo "MEM_CLEAN:done") || echo "MEM_CLEAN:skip"`,
                 `echo "VMRSS:$(awk '/VmRSS:/ {print $2}' /proc/$(pidof mihomo 2>/dev/null || pidof Clash 2>/dev/null)/status 2>/dev/null || echo 0)"`,
                 `echo "MEMAVAIL:$(awk '/MemAvailable:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)"`,
                 `echo "BATCH_END"`
@@ -277,9 +279,9 @@ class ProxyHealthService {
             }
 
 
-            // 内存守卫：检查 MemAvailable 和 mihomo VmRSS，超过阈值则触发轻量冷重启
-            if (memAvailable > 0 && memAvailable < 80000) {
-                Logger.warn('ProxyDaemon', '路由器可用内存 (MemAvailable) 低于 80MB（当前 ' + memAvailable + 'KB），触发轻量冷重启释放内存...');
+            // 内存守卫：检查 MemAvailable 和 mihomo VmRSS，只有进入极度危险区才触发重启
+            if (memAvailable > 0 && memAvailable < 20000) {
+                Logger.warn('ProxyDaemon', '⚠️ 路由器可用内存 (MemAvailable) 进入极度危险区（< 20MB，当前 ' + Math.round(memAvailable / 1024) + 'MB），触发轻量冷重启自愈...');
                 await SshService.quickRestartShellCrash();
                 lastProxyRestartTime = Date.now();
                 consecutiveFailures = 0;
