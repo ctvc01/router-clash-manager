@@ -28,9 +28,23 @@ describe('Validators 单元测试', () => {
 
             invalidMacs.forEach(mac => {
                 expect(() => Validators.validateMAC(mac)).toThrow();
-            });
-        });
     });
+});
+
+describe('auditStaticCommands 白名单覆盖率审计', () => {
+    test('源码中所有静态 runRemoteCommand 调用均应通过白名单校验', () => {
+        const path = require('path');
+        const srcDir = path.join(__dirname, '..', '..', 'src');
+        const violations = Validators.auditStaticCommands(srcDir);
+        if (violations.length > 0) {
+            const details = violations.map(v =>
+                `  [${v.file}] "${v.command.slice(0, 80)}" -> ${v.error}`
+            ).join('\n');
+            throw new Error(`发现 ${violations.length} 个未覆盖命令:\n${details}`);
+        }
+    });
+});
+});
 
     describe('validateDeviceCustom 校验测试', () => {
         test('应该放行合法的设备名称与分类类型', () => {

@@ -2,6 +2,7 @@ const app = require('./app');
 const { config, validateEnvironment } = require('./config');
 const Logger = require('./utils/logger');
 const PersistenceService = require('./services/persistenceService');
+const Validators = require('./utils/validators');
 
 // 进程级异常兜底：防止未捕获的 Promise rejection 或同步异常导致 Node.js 进程崩溃退出
 // 注意：在两个 handler 中都不能调用 Logger.error()，因为 EPIPE 递归循环的根源就是
@@ -47,6 +48,17 @@ const { ROUTER_PATHS } = require('./constants');
 
 // 1. 启动前强校验环境变量与核心凭证
 validateEnvironment();
+
+// 1.1 SSH command whitelist audit at startup
+const _sshAudit = Validators.auditStaticCommands();
+if (_sshAudit.length > 0) {
+    Logger.warn('Server', `SSH whitelist audit: ${_sshAudit.length} uncovered command(s):`);
+    _sshAudit.forEach(v => {
+        Logger.warn('Server', `  [${v.file}] "${v.command.slice(0, 80)}" -> ${v.error}`);
+    });
+} else {
+    Logger.info('Server', `SSH command whitelist audit passed`);
+}
 
 
 // 1.5 初始化数据持久化框架

@@ -1,6 +1,59 @@
 // 数据输入校验与防御模块
 
 const Validators = {
+    // 启动时静态审计：扫描 src/ 下所有 .js 文件中的 runRemoteCommand('...') 静态字符串调用，
+    // 逐条过白名单校验，提前发现缺失命令，避免自愈机制被安全验证器静默阻断。
+    // 仅审计静态字符串字面量（单引号/双引号/无 ${} 的模板字符串），动态拼接的命令跳过。
+    auditStaticCommands(srcDir) {
+        const fs = require('fs');
+        const path = require('path');
+        const root = srcDir || path.join(__dirname, '..');
+        const violations = [];
+
+        const scanDir = (dir) => {
+            let entries;
+            try {
+                entries = fs.readdirSync(dir, { withFileTypes: true });
+            } catch (_) {
+                return;
+            }
+            for (const entry of entries) {
+                const fullPath = path.join(dir, entry.name);
+                if (entry.isDirectory()) {
+                    if (entry.name === 'node_modules' || entry.name === '.git' || entry.name === 'tests') continue;
+                    scanDir(fullPath);
+                } else if (entry.name.endsWith('.js')) {
+                    // 跳过本文件自身（auditStaticCommands 内的正则字符串会被误匹配）
+                    if (entry.name === 'validators.js' && dir === path.join(root, 'utils')) continue;
+                    let content;
+                    try {
+                        content = fs.readFileSync(fullPath, 'utf8');
+                    } catch (_) {
+                        continue;
+                    }
+                    const regex = /runRemoteCommand\(\s*(['"`])([\s\S]*?)\1/g;
+                    let match;
+                    while ((match = regex.exec(content)) !== null) {
+                        const cmd = match[2];
+                        if (cmd.includes('${')) continue;
+                        try {
+                            this.validateSSHCommand(cmd);
+                        } catch (e) {
+                            violations.push({
+                                file: path.relative(root, fullPath),
+                                command: cmd,
+                                error: e.message
+                            });
+                        }
+                    }
+                }
+            }
+        };
+
+        scanDir(root);
+        return violations;
+    },
+
     // 验证 MAC 地址格式是否正确 (支持冒号和横线分隔)
     MAC_ADDRESS_PATTERN: /^([0-9a-fA-F]{2}[:-]){5}([0-9a-fA-F]{2})$/,
     
@@ -56,7 +109,7 @@ const Validators = {
 
         // 1. 黑名单：绝对禁用的危险操作
         const FORBIDDEN_PATTERNS = [
-            /\brm\s+-rf\s+\//,        // rm -rf / 等根目录危险操作
+            /\brm\s+-rf\s+\/(?:\s|$)/,  // rm -rf / 仅根目录本身（不误杀 /tmp/ /data/ 等子路径）
             /\brm\s+(-[a-z]*\s+)*(\/data\s|\/data$|\/etc\s|\/etc$|\/root\s|\/root$|\/sys\s|\/sys$|\/usr\s|\/usr$|\/lib\s|\/lib$|\/bin\s|\/bin$|\/sbin\s|\/sbin$|\/boot\s|\/boot$)/,  // 只拦截删除整个关键目录本身
             /\bchown\b/,              // 所有权修改
             /(?:^|[\s;])dd\s+/,       // 磁盘操作 dd 命令（要求命令前面为分号或空格，且后接空格参数）
@@ -76,7 +129,7 @@ const Validators = {
         }
 
         const ALLOWED_COMMANDS = [
-            'pidof', 'pgrep', 'cat', 'echo', 'grep', 'kill', 'sleep', 'curl', 'gzip',
+            'pidof', 'pgrep', 'cat', 'echo', 'grep', 'kill', 'sleep', 'curl', 'gzip', 'ls',
             'netstat', 'cp', 'touch', 'base64', 'for', 'if', '(', 'true', 'false',
             'ubus', 'printf', 'top', '/etc/init.d/', 'rm', 'sed', 'mkdir', 'ln', 'iptables',
             'tail', 'head', 'awk', 'find', 'cut', 'df', 'tr', '[', 'test', 'sh', 'chmod', 'timeout',
