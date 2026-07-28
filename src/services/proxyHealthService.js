@@ -18,6 +18,7 @@ let lastProxyRestartTime = 0; // 本地追踪最近重启时间（不依赖 SshS
 let lastDeepCheckTime = 0;   // 最近一次深度 SSH 诊断时间
 let lastTier1FailAt = 0;     // 最近一次 Tier1 HTTP 失败时间戳（用于温柔重试）
 let tier1Pending = false;    // 上一轮 Tier1 首次失败进入宽限期，调度器需强制 30s 复测
+let _networkFailures = 0;    // 网络级失败计数（SSH/HTTP 都连不上），用于指数退避
 
 class ProxyHealthService {
     // 检测路由器本地指定 TCP 端口是否在监听
@@ -157,10 +158,18 @@ class ProxyHealthService {
             if (consecutiveRestarts >= 3) {
                 nextInterval = 600000;
             } else if (!isHealthy || consecutiveFailures > 0 || tier1Pending) {
-                nextInterval = 30000;
-                // 如果是 ECONNREFUSED（路由器确定不可达），延长到60s
-                if (lastTier1FailAt > 0 && Date.now() - lastTier1FailAt > 90000) {
-                    nextInterval = 60000;
+                // 网络级失败指数退避：前3次 30s 快速重检，4-9 次 2 分钟，10+ 次 5 分钟
+                // 避免路由器持续不可达时每 30s 产生一条巨型错误日志
+                if (_networkFailures >= 10) {
+                    nextInterval = 300000;
+                } else if (_networkFailures >= 4) {
+                    nextInterval = 120000;
+                } else {
+                    nextInterval = 30000;
+                    // ECONNREFUSED（路由器确定不可达），延长到60s
+                    if (lastTier1FailAt > 0 && Date.now() - lastTier1FailAt > 90000) {
+                        nextInterval = 60000;
+                    }
                 }
             } else {
                 nextInterval = 600000;
@@ -367,12 +376,21 @@ class ProxyHealthService {
             } else {
                 consecutiveFailures = 0;
                 consecutiveRestarts = 0;
+                _networkFailures = 0;
                 Logger.debug('ProxyDaemon', '✅ 全部检测通过');
             }
 
             return !hasIssue;
         } catch (err) {
-            Logger.error('ProxyDaemon', '自愈守护进程心跳检测发生异常（不计入进程故障次数，避免网络瞬间闪断引发误重启）', err);
+            // 截断 error 对象，避免完整 SSH 命令字符串（~1.5KB）反复写入日志导致膨胀
+            const safeErr = err && err.error ? {
+                code: err.error.code,
+                message: err.error.message,
+                stdout: (err.stdout || '').slice(0, 200),
+                attempts: err.attempts
+            } : (err && err.message ? { message: err.message } : { detail: String(err).slice(0, 200) });
+            _networkFailures++;
+            Logger.error('ProxyDaemon', '自愈守护进程心跳检测发生异常（不计入进程故障次数，避免网络瞬间闪断引发误重启）', safeErr);
             return false;
         }
     }

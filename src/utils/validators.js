@@ -76,7 +76,7 @@ const Validators = {
         }
 
         const ALLOWED_COMMANDS = [
-            'pidof', 'pgrep', 'cat', 'echo', 'grep', 'kill', 'sleep', 'curl',
+            'pidof', 'pgrep', 'cat', 'echo', 'grep', 'kill', 'sleep', 'curl', 'gzip',
             'netstat', 'cp', 'touch', 'base64', 'for', 'if', '(', 'true', 'false',
             'ubus', 'printf', 'top', '/etc/init.d/', 'rm', 'sed', 'mkdir', 'ln', 'iptables',
             'tail', 'head', 'awk', 'find', 'cut', 'df', 'tr', '[', 'test', 'sh', 'chmod', 'timeout',

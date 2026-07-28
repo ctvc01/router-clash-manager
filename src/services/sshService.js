@@ -119,7 +119,13 @@ class SshService {
                                 stdout: (stdout || '').slice(0, 500) };
                             Logger.error('SSH', `远程命令执行失败 (已重试${attempt}次): "${truncatedCmd}"`, truncatedErr);
                         }
-                        reject({ error, stdout, stderr, attempts: attempt + 1 });
+                        // reject 时也截断 error 对象，避免 cmd 字段（~1.5KB）在下游日志中膨胀
+                        reject({
+                            error: error ? { code: error.code, message: error.message } : null,
+                            stdout: (stdout || '').slice(0, 500),
+                            stderr: (stderr || '').slice(0, 500),
+                            attempts: attempt + 1
+                        });
                     }
                 } else {
                     const cleaned = this._cleanOutput(stdout);
