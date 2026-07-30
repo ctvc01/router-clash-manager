@@ -151,6 +151,7 @@ class ProxyHealthService {
                 consecutiveFailures = 0;
                 consecutiveRestarts = 0;
                 nextInterval = 600000;
+                _lastHeartbeatTime = Date.now();
                 proxyHealthMonitorTimer = setTimeout(() => this._runHealthCheckScheduler(), nextInterval);
                 return;
             }
