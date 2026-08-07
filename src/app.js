@@ -29,7 +29,10 @@ app.use(express.static(path.join(__dirname, '..', 'public')));
 
 // 4. 健康检查与自愈 WebHook 端点
 app.get('/health', (req, res) => {
-    res.json({ status: 'healthy', timestamp: new Date().toISOString() });
+    const epermStatus = require('./services/sshService').getEpermStatus
+        ? require('./services/sshService').getEpermStatus()
+        : { blocked: false };
+    res.json({ status: 'healthy', timestamp: new Date().toISOString(), eperm: epermStatus });
 });
 app.post('/api/router-boot-hook', async (req, res) => {
     Logger.warn('Server', '收到路由器主动开机通知，触发紧急内核自愈流程！');

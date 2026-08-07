@@ -5,6 +5,82 @@ const Validators = require('../utils/validators');
 const ClashService = require('./clashService');
 const fs = require('fs');
 const path = require('path');
+let _epermBlocked = false;         // EPERM 防火墙封锁标记
+let _epermBlockedAt = 0;           // EPERM 封锁时间戳
+let _epermRecoveryInProgress = false; // EPERM 恢复中标记
+let _epermRecoveryTimer = null;    // EPERM 恢复定时器
+
+// EPERM 防火墙封锁自愈恢复
+async function _recoverFromEperm(logger) {
+    if (_epermRecoveryInProgress) return;
+    _epermRecoveryInProgress = true;
+    logger.warn('SSH', '🧯 尝试从 EPERM 防火墙封锁中恢复...');
+    try {
+        const { execFile } = require('child_process');
+        // 1. 尝试 ping 路由器，刷新路由器 ARP 缓存；如不可用则尝试 arping 作为备选
+        try {
+            execFile('ping', ['-c', '3', '-W', '5', config.router.ip], { timeout: 10000 }, (err, stdout) => {
+                if (err) {
+                    logger.warn('SSH', 'ping 路由器失败，尝试 arping 作为备选');
+                    try {
+                        execFile('arping', ['-c', '3', '-w', '5', config.router.ip], { timeout: 10000 }, (aerr) => {
+                            if (aerr) logger.warn('SSH', 'arping 路由器也失败，忽略');
+                            else logger.info('SSH', 'arping 路由器成功，ARP 表已刷新');
+                        });
+                    } catch (_) {}
+                } else {
+                    logger.info('SSH', 'ping 路由器成功，ARP 缓存已刷新');
+                }
+            });
+        } catch (_) {}
+        // 2. 等待 5 秒让路由器 ARP 表刷新
+        await new Promise(r => setTimeout(r, 5000));
+        // 3. 尝试一次 SSH 连接验证是否恢复
+        const testResult = await new Promise((resolve) => {
+            const sshExecPath = config.paths.sshExec;
+            const env = {
+                ...process.env,
+                ROUTER_IP: config.router.ip,
+                ROUTER_USER: config.router.user,
+                ROUTER_PASSWORD: config.router.password
+            };
+            execFile(sshExecPath, ['echo EPERM_TEST_OK'], { env, timeout: 10000, killSignal: 'SIGKILL' }, (error, stdout, stderr) => {
+                if (error) {
+                    resolve(false);
+                } else {
+                    resolve(true);
+                }
+            });
+        });
+        if (testResult) {
+            _epermBlocked = false;
+            _epermBlockedAt = 0;
+            logger.info('SSH', '✅ EPERM 防火墙封锁已解除，SSH 连接恢复！');
+        } else {
+            logger.warn('SSH', '⏳ EPERM 封锁尚未解除，30 秒后再次尝试恢复...');
+            if (_epermRecoveryTimer) clearTimeout(_epermRecoveryTimer);
+            _epermRecoveryTimer = setTimeout(() => {
+                _epermRecoveryInProgress = false;
+                _recoverFromEperm(logger);
+            }, 30000);
+        }
+    } catch (e) {
+        logger.warn('SSH', 'EPERM 恢复过程中发生异常', e);
+    }
+    _epermRecoveryInProgress = false;
+}
+
+// 获取 EPERM 封锁状态
+function getEpermStatus() {
+    return {
+        blocked: _epermBlocked,
+        blockedAt: _epermBlockedAt,
+        blockedDuration: _epermBlockedAt > 0 ? Date.now() - _epermBlockedAt : 0
+    };
+}
+
+module.exports.getEpermStatus = getEpermStatus;
+
 
 let restartPromise = Promise.resolve();
 let lastRestartTime = 0;
@@ -82,6 +158,18 @@ class SshService {
                     const combined = stderrStr + stdoutStr;
 
                     // Node execFile 命中 timeout 会 kill 子进程并设置 error.killed=true, signal=SIGKILL
+                    // EPERM 检测：防火墙封锁
+                    // EPERM 检测：防火墙封锁（仅匹配 SSH 连接 EPERM，不匹配文件权限错误）
+                    const isEperm = error.code === 'EPERM' ||
+                                    combined.includes('Operation not permitted') ||
+                                    (combined.includes('Permission denied') && !combined.includes('root@'));
+                    if (isEperm && !_epermBlocked) {
+                        _epermBlocked = true;
+                        _epermBlockedAt = Date.now();
+                        Logger.warn('SSH', '🚨 检测到路由器防火墙 EPERM 封锁！SSH 和 Clash API 同时被内核拦截。启动自愈恢复流程...');
+                        _recoverFromEperm(Logger);
+                    }
+
                     const isHardTimeout = error.killed === true && (error.signal === 'SIGKILL' || error.signal === 'SIGTERM');
                     const isTimeout = isHardTimeout ||
                                      error.code === 'ETIMEDOUT' ||

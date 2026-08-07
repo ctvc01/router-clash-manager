@@ -7,7 +7,6 @@ class Logger {
     static MAX_LOG_SIZE = 5 * 1024 * 1024; // 5MB —— 减小轮转文件大小，降低单次写入压力和磁盘占用
     static MIN_ROTATION_INTERVAL_MS = 60000; // 轮转最小间隔 60s，防止频繁 rename 触发 EPIPE
     static TRIM_THRESHOLD = 1 * 1024 * 1024; // 1MB —— 超过此值触发主动修剪，保留最近日志
-    static MAX_LOG_LINES = 2000;             // 修剪时保留的最后行数
     static MAX_TOTAL_LOG_SIZE = 10 * 1024 * 1024; // 10MB —— 日志目录总大小硬限制，超过时从最旧的轮转文件开始删
     static SMALL_FILE_THRESHOLD = 100 * 1024;       // 100KB —— 小文件阈值，低于此值时延长检查间隔
     static MEDIUM_FILE_THRESHOLD = 500 * 1024;      // 500KB —— 中等文件阈值
@@ -28,6 +27,12 @@ class Logger {
     static _epipeSafeMode = false;   // 当检测到 console EPIPE 时进入安全模式，跳过 console.* 输出
     static _epipeResetTimer = null;  // EPIPE 安全模式定时重置器
     static _cleanupTimer = null;     // 日志文件自动修剪定时器（自适应间隔）
+    // 48 小时时间戳保留窗口（毫秒）
+    static RETENTION_HOURS = 48;
+    static RETENTION_MS = 48 * 60 * 60 * 1000;
+    // 保底行数上限（即使 48h 内的日志量超大，也最多保留这些行）
+    static MAX_LOG_LINES_ABSOLUTE = 50000;
+
 
     // 安全地调用 console.*，捕获 EPIPE 并切换至文件安全模式
     static _safeConsole(method, ...args) {
@@ -126,10 +131,12 @@ class Logger {
     }
 
 
-    // 清理日志目录：当总大小超过 MAX_TOTAL_LOG_SIZE 时，删除最旧的轮转文件释放空间
+    // 清理日志目录：删除超过 48 小时的非标准旋转文件（如 crash-analysis 转储）,
+    // 以及当总大小超过 MAX_TOTAL_LOG_SIZE 时，删除最旧的旋转文件释放空间
     static _cleanupLogDir() {
         try {
             if (!fs.existsSync(Logger.LOG_DIR)) return;
+            const cutoff = Date.now() - Logger.RETENTION_MS;
             const files = fs.readdirSync(Logger.LOG_DIR)
                 .filter(f => f.startsWith('app.log'))
                 .map(f => ({
@@ -137,6 +144,19 @@ class Logger {
                     path: path.join(Logger.LOG_DIR, f),
                     isRotated: f.startsWith('app.log.')
                 }))
+                .filter(f => {
+                    // 保留主文件
+                    if (f.name === 'app.log') return true;
+                    // 检查文件修改时间，超过 48h 的删除
+                    try {
+                        const stat = fs.statSync(f.path);
+                        if (stat.mtimeMs < cutoff) {
+                            fs.unlinkSync(f.path);
+                            return false;
+                        }
+                    } catch (_) {}
+                    return true;
+                })
                 .sort((a, b) => {
                     if (a.isRotated !== b.isRotated) return a.isRotated ? -1 : 1;
                     return a.name.localeCompare(b.name);
@@ -202,30 +222,64 @@ class Logger {
         }
     }
 
-    // 主动修剪日志文件：如果超过阈值，保留最近 MAX_LOG_LINES 行，删除较早的日志
+    // 主动修剪日志文件：保留最近 RETENTION_HOURS 小时内的日志行，删除更早的条目
+    // 保留不超过 MAX_LOG_LINES_ABSOLUTE 行作为保底上限
+    // 日志格式：[2026/7/28T22:45:20+08:00] ℹ️  [Persistence] 消息...
     static _trimLogFile() {
         try {
             if (!fs.existsSync(Logger.LOG_FILE)) return;
             const stat = fs.statSync(Logger.LOG_FILE);
             if (stat.size < Logger.TRIM_THRESHOLD) return;
 
-            const content = fs.readFileSync(Logger.LOG_FILE, 'utf8');
-            const lines = content.split('\n');
+            const rawContent = fs.readFileSync(Logger.LOG_FILE, 'utf8');
+            const rawLines = rawContent.split('\n');
             // 空文件或行数不足时不处理
-            if (lines.length <= Logger.MAX_LOG_LINES) return;
+            if (rawLines.length <= 100) return;
 
-            // 保留最后 MAX_LOG_LINES 行
-            const trimmed = lines.slice(-Logger.MAX_LOG_LINES).join('\n');
-            fs.writeFileSync(Logger.LOG_FILE, trimmed, 'utf8');
-            Logger.logFileSize = trimmed.length;
+            const cutoff = Date.now() - Logger.RETENTION_MS;
+            const keptLines = [];
 
-            const sizeMB = (stat.size / 1024 / 1024).toFixed(1);
-            Logger._safeConsole('log', `[Logger] 日志文件超过限制 (${sizeMB}MB)，已修剪至最后 ${Logger.MAX_LOG_LINES} 行`);
+            for (const cl of rawLines) {
+                // 空行保留（保持文件格式整洁）
+                if (!cl.trim()) {
+                    keptLines.push(cl);
+                    continue;
+                }
+                // 解析行首时间戳 [YYYY/M/DTHH:mm:ss+08:00]
+                const match = cl.match(/^\[(\d{4}\/\d{1,2}\/\d{1,2})T(\d{2}:\d{2}:\d{2})/);
+                if (match) {
+                    const dateStr = match[1] + ' ' + match[2];
+                    const lineTime = new Date(dateStr).getTime();
+                    if (!isNaN(lineTime) && lineTime >= cutoff) {
+                        keptLines.push(cl);
+                    }
+                    // 超过 48h 的丢弃
+                } else {
+                    // 无时间戳的行（如 Stack trace 续行），跟随上一行保留
+                    keptLines.push(cl);
+                }
+            }
+
+            // 保底行数上限
+            let finalContent;
+            if (keptLines.length > Logger.MAX_LOG_LINES_ABSOLUTE) {
+                const finalLines = keptLines.slice(-Logger.MAX_LOG_LINES_ABSOLUTE);
+                finalContent = finalLines.join('\n');
+            } else {
+                finalContent = keptLines.join('\n');
+            }
+            fs.writeFileSync(Logger.LOG_FILE, finalContent, 'utf8');
+            Logger.logFileSize = Buffer.byteLength(finalContent, 'utf8');
+
+            const removed = rawLines.length - keptLines.length;
+            if (removed > 0) {
+                Logger._safeConsole('log', `[Logger] 日志文件已按 ${Logger.RETENTION_HOURS}h 窗口修剪: 移除 ${removed} 行, 保留 ${keptLines.length} 行`);
+            }
         } catch (e) {
             // 修剪失败不影响程序运行
+            Logger._safeConsole('log', `[Logger] 日志修剪临时异常: ${e.message}`);
         }
     }
-
     // 启动定时自动清理日志文件
     static startAutoCleanup() {
         if (Logger._cleanupTimer) return;

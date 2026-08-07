@@ -19,6 +19,16 @@ function withHardTimeout(promise, ms, tag) {
         timer = setTimeout(() => reject(new Error(`${tag} 超过 ${ms}ms 硬超时`)), ms);
     });
     return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timer));
+// 去重日志：防止每次调用 modifyConfigText 时打印重复的 dns/sniffer 注入消息
+const _loggedConfigFeatures = new Set();
+
+function _logOnce(key, level, tag, msg) {
+    if (!_loggedConfigFeatures.has(key)) {
+        _loggedConfigFeatures.add(key);
+        Logger[level](tag, msg);
+    }
+}
+
 }
 
 class RulesEngine {
@@ -172,7 +182,9 @@ class RulesEngine {
         
         if (insertIdx !== -1) {
             if (!hasDns) {
-                Logger.info('RulesEngine', '检测到 Clash 配置文件未开启 dns，正在内存中自动注入...');
+                _logOnce("dns_inject", "info", "RulesEngine", "检测到 Clash 配置文件未开启 dns，正在内存中自动注入...");
+
+
                 const dnsLines = [
                     'dns:',
                     '  enable: true',
@@ -205,7 +217,8 @@ class RulesEngine {
             }
             
             if (!hasSniffer) {
-                Logger.info('RulesEngine', '检测到 Clash 配置文件未开启 sniffer，正在内存中自动注入...');
+                _logOnce("sniffer_inject", "info", "RulesEngine", "检测到 Clash 配置文件未开启 sniffer，正在内存中自动注入...");
+
                 const snifferLines = [
                     'sniffer:',
                     '  enable: true',
@@ -759,5 +772,8 @@ class RulesEngine {
         return chained; // 调用方拿到原始 promise（保留真实错误传播）
     }
 }
+
+// 规则注入完成后复位去重日志，以便下次启动时重新记录
+RulesEngine.resetLoggedFeatures = () => { _loggedConfigFeatures.clear(); };
 
 module.exports = RulesEngine;
