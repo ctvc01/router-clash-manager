@@ -19,6 +19,8 @@ function withHardTimeout(promise, ms, tag) {
         timer = setTimeout(() => reject(new Error(`${tag} 超过 ${ms}ms 硬超时`)), ms);
     });
     return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timer));
+}
+
 // 去重日志：防止每次调用 modifyConfigText 时打印重复的 dns/sniffer 注入消息
 const _loggedConfigFeatures = new Set();
 
@@ -27,8 +29,6 @@ function _logOnce(key, level, tag, msg) {
         _loggedConfigFeatures.add(key);
         Logger[level](tag, msg);
     }
-}
-
 }
 
 class RulesEngine {
@@ -91,11 +91,11 @@ class RulesEngine {
         // 2d. 强制重写或注入 memory-limit、gc-interval 和 log-level（强制触发高频 GC，防止运存跑满）
         let memLimitIdx = configLines.findIndex(line => line.trim().startsWith('memory-limit:'));
         if (memLimitIdx !== -1) {
-            configLines[memLimitIdx] = 'memory-limit: 90MB';
+            configLines[memLimitIdx] = 'memory-limit: 60MB';
         } else {
             let insertAfter = configLines.findIndex(line => line.trim().startsWith('max-connections:'));
             if (insertAfter !== -1) {
-                configLines.splice(insertAfter + 1, 0, 'memory-limit: 90MB');
+                configLines.splice(insertAfter + 1, 0, 'memory-limit: 60MB');
             }
         }
 

@@ -53,6 +53,12 @@ proxy-groups:
         expect(finalConfig).toContain('allow-lan: true');
     });
 
+    test('应该强制注入 60MB 的内存限制以降低路由器 OOM 风险', () => {
+        const finalConfig = RulesEngine.modifyConfigText(baseConfig, [], []);
+        expect(finalConfig).toContain('memory-limit: 60MB');
+        expect(finalConfig).toContain('gc-interval: 20s');
+    });
+
     test('如果 dns 和 sniffer 未开启，应该能够自动在 mixed-port 后注入', () => {
         const finalConfig = RulesEngine.modifyConfigText(baseConfig, [], []);
         expect(finalConfig).toContain('dns:');

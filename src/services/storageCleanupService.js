@@ -7,6 +7,13 @@ let storageCleanupTimer = null;
 let lastCheckTime = 0;
 
 class StorageCleanupService {
+    // 生成 BusyBox 兼容的旧日志清理命令。
+    // BusyBox find 不支持 -mtime/-newer，这里改用 stat 比较 mtime 时间戳。
+    static _buildLogCleanupCommand(days) {
+        const seconds = days * 86400;
+        return `find /data -name '*.log' -type f | while IFS= read -r f; do if [ "$(stat -c %Y "$f" 2>/dev/null || echo 0)" -lt "$(( $(date +%s) - ${seconds} ))" ]; then rm -f "$f"; fi; done 2>/dev/null`;
+    }
+
     // 启动定时清理任务 + 实时监控
     static startDailyCleanup() {
         if (storageCleanupTimer) return;
@@ -77,7 +84,7 @@ class StorageCleanupService {
     static async basicCleanup() {
         try {
             Logger.debug('StorageCleanup', 'Level 1: 清理 > 1 天的日志及大文件备份');
-            await SshService.runRemoteCommand("timeout 30 find /data -name '*.log' -type f -mtime +1 -exec rm -f {} \\; 2>/dev/null || true");
+            await SshService.runRemoteCommand(this._buildLogCleanupCommand(1));
             await SshService.runRemoteCommand("rm -f /data/ShellCrash/cache.db /data/ShellCrash/mihomo.bak 2>/dev/null || true");
         } catch (err) {
             Logger.warn('StorageCleanup', 'Level 1 清理失败', err);
@@ -100,7 +107,7 @@ class StorageCleanupService {
         try {
             Logger.debug('StorageCleanup', 'Level 3: 删除所有可选文件 + 所有日志');
             await this.aggressiveCleanup();
-            await SshService.runRemoteCommand("timeout 30 find /data -name '*.log' -type f -exec rm -f {} \\; 2>/dev/null || true");
+            await SshService.runRemoteCommand(this._buildLogCleanupCommand(0));
             await SshService.runRemoteCommand("rm -f /data/ShellCrash/Country.mmdb 2>/dev/null || true");
         } catch (err) {
             Logger.warn('StorageCleanup', 'Level 3 清理失败', err);
@@ -113,7 +120,7 @@ class StorageCleanupService {
             Logger.info('StorageCleanup', '🧹 执行定时清理流程...');
 
             // 1. 清理旧日志（3 天前）
-            await SshService.runRemoteCommand("timeout 30 find /data -name '*.log' -type f -mtime +3 -exec rm -f {} \\; 2>/dev/null");
+            await SshService.runRemoteCommand(this._buildLogCleanupCommand(3));
             Logger.info('StorageCleanup', '✓ 已清理 3 天前的日志');
 
             // 2. 清理缓存数据库

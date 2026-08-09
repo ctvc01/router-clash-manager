@@ -102,9 +102,17 @@ backup_config() {
 cleanup_old_logs() {
     log "清理本地过期日志..."
 
-    # 删除 7 天前的日志
-    find /data -name "*.log" -type f -mtime +7 -exec rm -f {} \; 2>/dev/null
-    find /tmp -name "*.log" -type f -mtime +3 -exec rm -f {} \; 2>/dev/null
+    # 删除 7 天前的日志（BusyBox find 不支持 -mtime，按 stat 时间戳比较）
+    find /data -name "*.log" -type f | while IFS= read -r f; do
+        if [ "$(stat -c %Y "$f" 2>/dev/null || echo 0)" -lt "$(( $(date +%s) - 604800 ))" ]; then
+            rm -f "$f"
+        fi
+    done 2>/dev/null
+    find /tmp -name "*.log" -type f | while IFS= read -r f; do
+        if [ "$(stat -c %Y "$f" 2>/dev/null || echo 0)" -lt "$(( $(date +%s) - 259200 ))" ]; then
+            rm -f "$f"
+        fi
+    done 2>/dev/null
 
     success "本地过期日志已清理"
 }

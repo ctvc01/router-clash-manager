@@ -26,7 +26,11 @@ echo ""
 
 # 1. 清理旧日志
 echo "1️⃣  清理旧日志..."
-find /data -name "*.log" -type f -mtime +7 -exec rm -f {} \; 2>/dev/null
+find /data -name "*.log" -type f | while IFS= read -r f; do
+    if [ "$(stat -c %Y "$f" 2>/dev/null || echo 0)" -lt "$(( $(date +%s) - 604800 ))" ]; then
+        rm -f "$f"
+    fi
+done 2>/dev/null
 echo "   ✓ 已清理 7 天前的日志"
 
 # 2. 清理缓存
