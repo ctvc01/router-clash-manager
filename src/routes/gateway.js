@@ -87,7 +87,7 @@ router.get('/status', async (req, res) => {
         }
 
         // 1. 并行：SSH 系统统计 + 代理节点信息（减少总延迟）
-        const statsCmd = `pid=\$(pidof mihomo || pidof Clash || pidof CrashCore || pgrep -x mihomo || pgrep -x Clash || pgrep -x CrashCore); echo "PID:\$pid"; if [ -n "\$pid" ]; then echo "CLASH_RAW:\$(awk '{print int(\$1)}' /proc/uptime 2>/dev/null):\$(awk '{print \$22}' /proc/\$pid/stat 2>/dev/null)"; cat /proc/\$pid/status | grep VmRSS; timeout 1 top -b -n 1 2>/dev/null | grep -v grep | grep -E "mihomo|Clash|CrashCore" | head -n 1; fi; cat /proc/meminfo | grep -E "MemTotal|MemFree"; df -m /data | tail -n 1`;
+        const statsCmd = `pid=\$(pidof mihomo || pidof Clash || pidof CrashCore || pgrep -x mihomo || pgrep -x Clash || pgrep -x CrashCore); echo "PID:\$pid"; if [ -n "\$pid" ]; then echo "CLASH_RAW:\$(awk '{print int(\$1)}' /proc/uptime 2>/dev/null):\$(awk '{print \$22}' /proc/\$pid/stat 2>/dev/null)"; cat /proc/\$pid/status | grep VmRSS; top -b -n 1 2>/dev/null | grep -v grep | grep -E "mihomo|Clash|CrashCore" | head -n 1; fi; cat /proc/meminfo | grep -E "MemTotal|MemFree"; df -m /data | tail -n 1`;
         const nodeInfoPromise = getCurrentNodeInfo();
         const statsOutput = await SshService.runRemoteCommand(statsCmd);
 

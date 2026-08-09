@@ -132,7 +132,7 @@ const Validators = {
             'pidof', 'pgrep', 'cat', 'echo', 'grep', 'kill', 'sleep', 'curl', 'gzip', 'ls',
             'netstat', 'cp', 'touch', 'base64', 'for', 'if', '(', 'true', 'false',
             'ubus', 'printf', 'top', '/etc/init.d/', 'rm', 'sed', 'mkdir', 'ln', 'iptables',
-            'tail', 'head', 'awk', 'find', 'cut', 'df', 'tr', '[', 'test', 'sh', 'chmod', 'timeout',
+            'tail', 'head', 'awk', 'find', 'cut', 'df', 'tr', '[', 'test', 'sh', 'chmod', 'killall',
             'pid='
         ];
 
@@ -144,6 +144,11 @@ const Validators = {
         ];
 
         const firstWord = trimmedCmd.split(/[\s|;&<>]/)[0].trim();
+
+        // 放行 shell 变量赋值前缀（剩余部分仍会经过黑名单检查）
+        if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(firstWord)) {
+            return trimmedCmd;
+        }
 
         // 先检查是否是绝对路径
         if (firstWord.startsWith('/')) {
@@ -158,7 +163,8 @@ const Validators = {
         const isAllowed = ALLOWED_COMMANDS.some(cmd => {
             if (firstWord === cmd) return true;
             if (firstWord.startsWith(cmd + ' ')) return true;
-            if (firstWord.startsWith(cmd)) return true;  // 允许路径前缀匹配
+            // 仅放行变量赋值这类本身以等号结尾的前缀，避免 cat/rm/sed 等被命令名前缀误放行
+            if (cmd.endsWith('=') && firstWord.startsWith(cmd)) return true;
             return false;
         });
 

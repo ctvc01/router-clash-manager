@@ -11,6 +11,13 @@ API_PORT="${API_PORT:-9999}"
 BASE_URL="http://${ROUTER_IP}:${API_PORT}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# 本地部署配置，优先从环境变量或 .env.deploy 读取
+if [ -f "${SCRIPT_DIR}/.env.deploy" ]; then
+    set -a
+    . "${SCRIPT_DIR}/.env.deploy"
+    set +a
+fi
+
 # ANSI 颜色定义
 C_RESET="\033[0m"
 C_BOLD="\033[1m"
@@ -191,14 +198,25 @@ action_backup() {
     echo -e "${C_BLUE}[*] 正在创建本地备份目录 configs_backup/...${C_RESET}"
     mkdir -p configs_backup/router configs_backup/nas
 
+    local nas_user="${NAS_USER:-}"
+    local nas_lan_host="${NAS_LAN_HOST:-}"
+    local nas_domain_host="${NAS_DOMAIN_HOST:-}"
+    local nas_path="${NAS_PATH:-/vol1/1000/router-clash-manager}"
+
+    if [ -z "$nas_user" ] || { [ -z "$nas_lan_host" ] && [ -z "$nas_domain_host" ]; }; then
+        echo -e "${C_RED}❌ [ERROR] 缺少 NAS 部署环境变量（NAS_USER、NAS_LAN_HOST / NAS_DOMAIN_HOST）${C_RESET}"
+        echo "请先设置环境变量或创建 .env.deploy 文件"
+        return 1
+    fi
+
     # 1. 探测内网或外网 SSH 连通性
-    local nas_host="192.168.31.66"
-    local local_ip="192.168.31.66"
-    local domain_host="dev.jinjitu.com"
+    local nas_host=""
+    local local_ip="${nas_lan_host}"
+    local domain_host="${nas_domain_host}"
 
     echo -e "${C_CYAN}[*] 正在探测 NAS 连通性...${C_RESET}"
     # 使用 curl 检测内网 HTTP 端口是否响应，比 nc 检测 22 握手在外部防火墙下更为精准可靠
-    if curl -s -o /dev/null --connect-timeout 2 "http://${local_ip}:3000/health"; then
+    if [ -n "$local_ip" ] && curl -s -o /dev/null --connect-timeout 2 "http://${local_ip}:3000/health"; then
         nas_host="${local_ip}"
         echo -e "${C_GREEN}● [LAN] 探测成功，正在使用局域网直连 IP: ${nas_host}${C_RESET}"
     else
@@ -211,7 +229,7 @@ action_backup() {
     
     rsync -avz --delete \
         -e "ssh -o StrictHostKeyChecking=no" \
-        ctpdrqm@${nas_host}:/vol1/1000/router-clash-manager/configs_backup/ ./configs_backup/
+        ${nas_user}@${nas_host}:${nas_path}/configs_backup/ ./configs_backup/
         
     if [ $? -eq 0 ]; then
         echo -e "\n${C_BOLD}${C_GREEN}✔ 所有备份同步已完成！备份文件保存在 configs_backup/ 目录下，可直接进行 Git 存档。${C_RESET}\n"
@@ -224,14 +242,24 @@ action_backup() {
 # 动作：远程可用性检测
 action_check() {
     echo -e "${C_BLUE}[*] 正在选择测试发起端 (NAS)...${C_RESET}"
+
+    local nas_user="${NAS_USER:-}"
+    local nas_lan_host="${NAS_LAN_HOST:-}"
+    local nas_domain_host="${NAS_DOMAIN_HOST:-}"
+
+    if [ -z "$nas_user" ] || { [ -z "$nas_lan_host" ] && [ -z "$nas_domain_host" ]; }; then
+        echo -e "${C_RED}❌ [ERROR] 缺少 NAS 部署环境变量（NAS_USER、NAS_LAN_HOST / NAS_DOMAIN_HOST）${C_RESET}"
+        echo "请先设置环境变量或创建 .env.deploy 文件"
+        return 1
+    fi
     
     # 1. 探测内网或外网 SSH 连通性
-    local nas_host="192.168.31.66"
-    local local_ip="192.168.31.66"
-    local domain_host="dev.jinjitu.com"
+    local nas_host=""
+    local local_ip="${nas_lan_host}"
+    local domain_host="${nas_domain_host}"
 
     echo -e "${C_CYAN}[*] 正在探测 NAS 连通性...${C_RESET}"
-    if curl -s -o /dev/null --connect-timeout 2 "http://${local_ip}:3000/health"; then
+    if [ -n "$local_ip" ] && curl -s -o /dev/null --connect-timeout 2 "http://${local_ip}:3000/health"; then
         nas_host="${local_ip}"
         echo -e "${C_GREEN}● [LAN] 探测成功，正在使用局域网直连 IP: ${nas_host}${C_RESET}"
     else
@@ -241,7 +269,7 @@ action_check() {
 
     echo -e "${C_BLUE}[*] 正在远程请求 NAS (clash-meta 容器) 执行可用性检测...${C_RESET}\n"
     # 执行远程容器内的检测脚本
-    ssh -o StrictHostKeyChecking=no ctpdrqm@${nas_host} "docker exec clash-meta /app/scripts/check_modes.sh"
+    ssh -o StrictHostKeyChecking=no ${nas_user}@${nas_host} "docker exec clash-meta /app/scripts/check_modes.sh"
 }
 
 # 动作：帮助文档

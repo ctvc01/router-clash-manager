@@ -236,6 +236,7 @@ class ProxyHealthService {
                     Logger.info('ProxyDaemon', '健康检测通过，连续重启计数器归零');
                     consecutiveRestarts = 0;
                 }
+                _networkFailures = 0;
                 return true;
             }
             }

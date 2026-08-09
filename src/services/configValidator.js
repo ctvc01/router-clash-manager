@@ -7,9 +7,8 @@ class ConfigValidator {
         try {
             const coreBinary = '/tmp/ShellCrash/mihomo';
             
-            // 使用 timeout -t 15 适应 AdBlock 规则膨胀后的配置验证（~268KB YAML）
-            // 并把 stderr 重定向到 stdout 以便我们统一处理日志输出
-            const cmd = `timeout -t 15 ${coreBinary} -t -d /data/ShellCrash -f ${configPath} 2>&1`;
+            // 配置校验耗时受 SSH 侧 wall-clock 超时保护，不再依赖路由器 BusyBox 的 timeout 命令
+            const cmd = `${coreBinary} -t -d /data/ShellCrash -f ${configPath} 2>&1`;
             
             let output = '';
             let valid = false;

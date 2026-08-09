@@ -55,19 +55,29 @@ async function _recoverFromEperm(logger) {
         if (testResult) {
             _epermBlocked = false;
             _epermBlockedAt = 0;
+            _epermRecoveryInProgress = false;
+            if (_epermRecoveryTimer) {
+                clearTimeout(_epermRecoveryTimer);
+                _epermRecoveryTimer = null;
+            }
             logger.info('SSH', '✅ EPERM 防火墙封锁已解除，SSH 连接恢复！');
         } else {
             logger.warn('SSH', '⏳ EPERM 封锁尚未解除，30 秒后再次尝试恢复...');
             if (_epermRecoveryTimer) clearTimeout(_epermRecoveryTimer);
             _epermRecoveryTimer = setTimeout(() => {
+                _epermRecoveryTimer = null;
                 _epermRecoveryInProgress = false;
                 _recoverFromEperm(logger);
             }, 30000);
         }
     } catch (e) {
         logger.warn('SSH', 'EPERM 恢复过程中发生异常', e);
+        _epermRecoveryInProgress = false;
+        if (_epermRecoveryTimer) {
+            clearTimeout(_epermRecoveryTimer);
+            _epermRecoveryTimer = null;
+        }
     }
-    _epermRecoveryInProgress = false;
 }
 
 // 获取 EPERM 封锁状态
@@ -136,7 +146,7 @@ class SshService {
 
             // 使用 execFile 避免本地 shell 注入；15s 硬 wall-clock 超时兜底，
             // 防止路由器过载导致 SSH 命令永久挂起并锁死上游串行队列
-            const SSH_HARD_TIMEOUT_MS = 15000;
+            const SSH_HARD_TIMEOUT_MS = 25000;
             const env = {
                 ...process.env,
                 ROUTER_IP: config.router.ip,
@@ -197,7 +207,7 @@ class SshService {
                         }, delay);
                     } else {
                         if (isHardTimeout) {
-                            Logger.error('SSH', `命令被 15s 硬超时终止 (attempt=${attempt + 1}): "${command.slice(0, 120)}"`);
+                            Logger.error('SSH', `命令被 25s 硬超时终止 (attempt=${attempt + 1}): "${command.slice(0, 120)}"`);
                         } else {
                             // 格式化长命令日志：截断到 200 字符，避免巨型日志填满文件
                             const truncatedCmd = command.length > 200 ? command.slice(0, 200) + '...' : command;
@@ -583,7 +593,7 @@ class SshService {
                 // 5b. [新增] 写入路由器开机脚本 rc.local 注册自愈 WebHook 回调与 guard_iptables.sh 自启动守护进程
                 try {
                     const os = require('os');
-                    let localIp = '192.168.31.66'; // fallback
+                    let localIp = config.localLanIp || '';
                     const interfaces = os.networkInterfaces();
                     for (const devName in interfaces) {
                         const iface = interfaces[devName];
@@ -609,22 +619,31 @@ class SshService {
                     
                     // 守护进程注入与 WebHook 注入
                     const guardCmd = '( sleep 15 && /data/ShellCrash/guard_iptables.sh ) </dev/null >/dev/null 2>&1 &';
-                    const webhookUrl = `http://${localIp}:${port}/api/router-boot-hook`;
-                    const webhookCmd = `( sleep 5 && curl -X POST ${webhookUrl} ) </dev/null >/dev/null 2>&1 &`;
                     
                     // 先强行清除已有的旧配置行，防止因 IP 变更或配置变更导致旧配置不刷新
                     await this.runRemoteCommand("sed -i '/mihomo.bak/d' /etc/rc.local 2>/dev/null || true");
                     await this.runRemoteCommand("sed -i '/guard_iptables.sh/d' /etc/rc.local 2>/dev/null || true");
                     await this.runRemoteCommand("sed -i '/router-boot-hook/d' /etc/rc.local 2>/dev/null || true");
                     
+                    if (!localIp) {
+                        Logger.warn('ShellCrash', '未配置 NAS_LAN_HOST / LOCAL_LAN_IP，跳过 rc.local 自愈 WebHook 注入');
+                    }
+                    const webhookCmd = localIp
+                        ? `( sleep 5 && curl -X POST http://${localIp}:${port}/api/router-boot-hook ) </dev/null >/dev/null 2>&1 &`
+                        : '';
+                    
                     if (hasExitZero) {
                         // 插入在 exit 0 之前
                         await this.runRemoteCommand(`sed -i '/exit 0/i ${guardCmd}' /etc/rc.local`);
-                        await this.runRemoteCommand(`sed -i '/exit 0/i ${webhookCmd}' /etc/rc.local`);
+                        if (webhookCmd) {
+                            await this.runRemoteCommand(`sed -i '/exit 0/i ${webhookCmd}' /etc/rc.local`);
+                        }
                     } else {
                         // 直接追加在文件末尾
                         await this.runRemoteCommand(`echo "${guardCmd}" >> /etc/rc.local`);
-                        await this.runRemoteCommand(`echo "${webhookCmd}" >> /etc/rc.local`);
+                        if (webhookCmd) {
+                            await this.runRemoteCommand(`echo "${webhookCmd}" >> /etc/rc.local`);
+                        }
                     }
                     
                     Logger.info('ShellCrash', '路由器开机自启脚本 rc.local 注入自愈与守护守护成功');

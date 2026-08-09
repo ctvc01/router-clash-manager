@@ -18,6 +18,8 @@ const config = {
     },
     // 后端服务监听端口
     port: parseInt(process.env.PORT || '3000', 10),
+    // NAS 局域网地址（用于路由器回连 WebHook，不硬编码具体 IP）
+    localLanIp: process.env.NAS_LAN_HOST || process.env.LOCAL_LAN_IP || '',
     
     // 数据文件存储路径
     paths: {

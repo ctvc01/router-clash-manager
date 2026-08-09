@@ -17,6 +17,7 @@ if [ -z "$REMOTE_USER" ] || [ -z "$REMOTE_HOST" ]; then
     echo "请在终端先执行以下命令："
     echo "  export NAS_USER='your_nas_username'"
     echo "  export NAS_HOST='your_nas_domain_or_ip'"
+    echo "  或设置 NAS_LAN_HOST='your_lan_nas_ip' NAS_DOMAIN_HOST='your_public_nas_domain'"
     echo "  export NAS_PATH='/vol1/path_to_project'"
     echo ""
     echo "或者复制一份 deploy.sh.example 并改名为 deploy.sh，自行在本地填写（注意：deploy.sh 已写入 .gitignore，本地修改不会被提交）"

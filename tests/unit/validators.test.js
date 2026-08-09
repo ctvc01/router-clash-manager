@@ -102,5 +102,28 @@ describe('auditStaticCommands 白名单覆盖率审计', () => {
                 expect(() => Validators.validateSSHCommand(cmd)).toThrow();
             });
         });
+
+        test('应该拒绝白名单命令名前缀被滥用的指令', () => {
+            const forgedCommands = [
+                'catfoo /etc/passwd',
+                'rmfoo /tmp/anything',
+                'sedfoo /data/ShellCrash/config.yaml',
+                'lsfoo /tmp',
+                'timeout 1 top -b -n 1'
+            ];
+            forgedCommands.forEach(cmd => {
+                expect(() => Validators.validateSSHCommand(cmd)).toThrow();
+            });
+        });
+
+        test('应该继续放行变量赋值前缀的合法写法', () => {
+            const safeCommands = [
+                'pid=$(pidof mihomo || pidof Clash); echo "PID:$pid"',
+                'FREE_MEM=$(awk \'/MemFree:/ {print $2}\' /proc/meminfo)'
+            ];
+            safeCommands.forEach(cmd => {
+                expect(Validators.validateSSHCommand(cmd)).toBe(cmd);
+            });
+        });
     });
 });

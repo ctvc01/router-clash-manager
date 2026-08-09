@@ -284,10 +284,11 @@ class Logger {
     static startAutoCleanup() {
         if (Logger._cleanupTimer) return;
         // 启动后 5 秒首次检查（同时修剪单文件和清理目录总大小）
-        setTimeout(() => {
+        const firstCheck = setTimeout(() => {
             Logger._trimLogFile();
             Logger._cleanupLogDir();
         }, 5000);
+        if (firstCheck.unref) firstCheck.unref();
         // 使用自适应间隔调度后续检查，文件小→延长周期，文件大→加密检查
         const scheduleNext = () => {
             const interval = Logger._getAdaptiveInterval();
@@ -296,6 +297,7 @@ class Logger {
                 Logger._cleanupLogDir();
                 scheduleNext();
             }, interval);
+            if (Logger._cleanupTimer.unref) Logger._cleanupTimer.unref();
         };
         scheduleNext();
     }

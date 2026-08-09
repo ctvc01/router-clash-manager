@@ -9,10 +9,15 @@ set -e
 
 # 配置参数
 ROUTER_LOG_PATHS=("/data/ShellCrash" "/tmp/ShellCrash")
-NAS_IP="192.168.31.66"
-NAS_USER="ctpdrqm"
-NAS_DEST="/vol1/1000/clash-full-storage/logs"
-NAS_BACKUP_DEST="/vol1/1000/clash-full-storage/backups"
+NAS_IP="${NAS_IP:-}"
+NAS_USER="${NAS_USER:-}"
+NAS_DEST="${NAS_DEST:-/vol1/1000/clash-full-storage/logs}"
+NAS_BACKUP_DEST="${NAS_BACKUP_DEST:-/vol1/1000/clash-full-storage/backups}"
+
+if [ -z "$NAS_IP" ] || [ -z "$NAS_USER" ]; then
+    echo "❌ [Error] 缺少 NAS 配置环境变量：NAS_IP、NAS_USER" >&2
+    exit 1
+fi
 
 # SCP 连接选项
 SCP_OPTS="-o StrictHostKeyChecking=no -o ConnectTimeout=5 -o BatchMode=no"
