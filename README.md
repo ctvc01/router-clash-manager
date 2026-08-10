@@ -108,8 +108,8 @@ public/
 <summary><b>点击查看游戏模式测速与精细分流逻辑 (Routing Specs)</b></summary>
 
 * **采样降级与死节点熔断**：测速采样缩减为更轻量的 3 次。首包测试超时 (delay === 0) 触发熔断保护，直接判定为死节点跳出，不再对该节点进行余下 2 次测试。
-* **下载流量 DIRECT 逃逸**：联机与对局域名路由至 `🎮 游戏加速` 节点组，而普通大流量下载 CDN 域名（如 `*.download.nintendo.net` 等）强制直连 (`DIRECT`) 跑满物理大宽带。
-* **DNS fake-ip-filter 避让**：在 DNS 注入中自动写入 `+.nintendo.net` 与 `+.nintendo.com`，使主机在联机探测时获取真实公网 IP，确保 Switch 联机 P2P 能建立 Full Cone，维持 NAT-A/B 等级。
+* **下载流量代理加速**：大流量下载 CDN 域名（`d4c.srv.nintendo.net`、`penne.srv.nintendo.net`、`*.download.nintendo.net` 等）由路由器 dnsmasq 定向转发至 Clash DNS(1053) 出 fake-ip，经透明代理路由至 `🎮 游戏下载` 组跑高带宽节点；联机与对局域名路由至 `🎮 游戏加速` 组。
+* **NAT 保 B（联机域真实 IP）**：dnsmasq 只收窄转发下载 CDN 子域，联机/NAT 探测域（`npln.srv.nintendo.net`、`conntest.nintendowifi.net` 等）走 dnsmasq 正常上游解析真实公网 IP 直连，UDP 可建立 Full Cone 维持 NAT-A/B；fake-ip-filter 同步注入 `+.nintendowifi.net`、`npln.srv.nintendo.net` 等兜底，防止联机域被误转 fake-ip 黑洞导致 NAT-F。
 
 </details>
 
