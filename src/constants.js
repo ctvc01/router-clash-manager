@@ -4,6 +4,7 @@ const PROXY_GROUPS = {
 
 
     GAME_ACC: '🎮 游戏加速',
+    GAME_DOWNLOAD: '🎮 游戏下载',
     AI_BOOST: '🤖 AI强化',
     NODE_SELECT: '🚀 节点选择',
     DIRECT: 'DIRECT',

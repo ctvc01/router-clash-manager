@@ -50,9 +50,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const elNodeProxyDelay = document.getElementById('node-proxy-delay');
     const elNodeAiReal = document.getElementById('node-ai-real');
     const elNodeAiDelay = document.getElementById('node-ai-delay');
-    const elNodeGameReal = document.getElementById('node-game-real');
-    const elNodeGameDelay = document.getElementById('node-game-delay');
-    const elBtnSpeedtestProxy = document.getElementById('btn-speedtest-proxy');
+   const elNodeGameReal = document.getElementById('node-game-real');
+   const elNodeGameDelay = document.getElementById('node-game-delay');
+   const elNodeGameDownloadReal = document.getElementById('node-game-download-real');
+   const elNodeGameDownloadSpeed = document.getElementById('node-game-download-speed');
+  const elBtnToggleGameDownloadDropdown = document.getElementById('btn-toggle-game-download-dropdown');
+   const elIconGameDownloadDropdownArrow = document.getElementById('icon-game-download-dropdown-arrow');
+   const elBtnSpeedtestProxy = document.getElementById('btn-speedtest-proxy');
     const elBtnSpeedtestAi = document.getElementById('btn-speedtest-ai');
     const elBtnSpeedtestGame = document.getElementById('btn-speedtest-game');
     
@@ -60,7 +64,70 @@ document.addEventListener('DOMContentLoaded', () => {
     const elBtnToggleGameDropdown = document.getElementById('btn-toggle-game-dropdown');
     const elIconGameDropdownArrow = document.getElementById('icon-game-dropdown-arrow');
     const elGameNodeDropdownMenu = document.getElementById('game-node-dropdown-menu');
-    const elGameDropdownListContainer = document.getElementById('game-dropdown-list-container');
+   const elGameDropdownListContainer = document.getElementById('game-dropdown-list-container');
+
+  // 游戏下拉菜单当前模式：'online' = 联机节点列表，'download' = 下载节点列表
+  let gameDropdownMode = 'online';
+   let cachedGameData = null;
+
+   function renderGameDropdown() {
+       if (!cachedGameData || !elGameDropdownListContainer) return;
+       const game = cachedGameData;
+       const groupKeywords = ['选择', '自动', 'DIRECT', 'GLOBAL', '测速'];
+       const currentTag = gameDropdownMode === 'download' ? '下载' : '联机';
+       const currentSelectedNode = gameDropdownMode === 'download' ? lastSelectedGameDownloadNode : lastSelectedGameNode;
+       elGameDropdownListContainer.innerHTML = '';
+       let allCandidates = [];
+       (game.all || []).forEach(node => {
+           if (node && node.name) {
+               const isGroup = groupKeywords.some(k => node.name.includes(k));
+               if (!isGroup) {
+                   if (getGameNodeTag(node.name) !== currentTag) return;
+                   let nodeLoss = undefined, nodeDownloadSpeed = null, nodeRealMbps = null;
+                   const perNode = (state.speedtest.perNodeResults || []);
+                   const found = perNode.find(p => p.name === node.name);
+                   if (found) {
+                       if (found.loss !== undefined) nodeLoss = found.loss;
+                       if (found.realDownloadMbps) { nodeDownloadSpeed = found.realDownloadMbps; nodeRealMbps = found.realDownloadMbps; }
+                       else if (found.downloadSpeed) nodeDownloadSpeed = found.downloadSpeed;
+                   }
+                   allCandidates.push({ name: node.name, delay: node.delay || 0, displayName: node.name, loss: nodeLoss, downloadSpeed: nodeDownloadSpeed || node.downloadSpeed || null, realDownloadMbps: nodeRealMbps });
+               }
+           }
+       });
+       const existInCandidates = allCandidates.some(c => c.name === currentSelectedNode);
+       if (currentSelectedNode && currentSelectedNode !== 'DIRECT' && currentSelectedNode !== 'GLOBAL' && !existInCandidates) {
+           allCandidates.push({ name: currentSelectedNode, delay: game.delay || 0, displayName: currentSelectedNode });
+       }
+       allCandidates = sortGameNodeCandidates(allCandidates);
+       allCandidates.forEach(cand => {
+           const isSelected = cand.name === currentSelectedNode;
+           const itemDiv = document.createElement('div');
+           itemDiv.className = `game-dropdown-item${isSelected ? ' selected' : ''}`;
+           const leftDiv = document.createElement('div');
+           leftDiv.className = 'game-dropdown-item-left';
+           if (isSelected) {
+               leftDiv.innerHTML = `<svg class="icon-svg icon-selected-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px; color: var(--primary);"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>`;
+           } else {
+               leftDiv.innerHTML = `<span class="icon-placeholder"></span>`;
+           }
+           const nameSpan = document.createElement('span');
+          nameSpan.className = 'game-dropdown-item-name';
+           nameSpan.textContent = cand.displayName;
+           leftDiv.appendChild(nameSpan);
+           itemDiv.appendChild(leftDiv);
+           const rightDiv = document.createElement('span');
+           renderGameNodeMetrics(cand.name, rightDiv, cand.delay);
+           itemDiv.appendChild(rightDiv);
+           itemDiv.addEventListener('click', async (e) => {
+               e.stopPropagation();
+               const alreadySelected = cand.name === currentSelectedNode;
+               if (alreadySelected) { closeGameDropdown(); return; }
+               await handleGameNodeSelect(cand.name);
+           });
+           elGameDropdownListContainer.appendChild(itemDiv);
+       });
+   }
 
     // AI模式下拉菜单相关 DOM
     const elBtnToggleAiDropdown = document.getElementById('btn-toggle-ai-dropdown');
@@ -147,6 +214,119 @@ document.addEventListener('DOMContentLoaded', () => {
         const groupKeywords = ['选择', '自动', 'direct', 'global', '测速'];
         if (groupKeywords.some(k => lower.includes(k))) return false;
         return true;
+    }
+
+    // 游戏模式标签统一读取共享规则，避免前后端规则漂移。
+    const getGameNodeTag = (window.GameNodeRules && window.GameNodeRules.getGameNodeTag) || (() => '联机');
+
+    // 游戏模式节点排序：先联机、后下载；下载按下载速度降序，联机优先丢包率低、再比延迟小。
+    function sortGameNodeNames(nodeNames) {
+        const tagOrder = { '联机': 0, '下载': 1 };
+        return [...nodeNames].sort((a, b) => {
+            const ta = getGameNodeTag(a);
+            const tb = getGameNodeTag(b);
+            if (ta !== tb) return (tagOrder[ta] ?? 1) - (tagOrder[tb] ?? 1);
+            return 0;
+        });
+    }
+
+    function sortGameNodeCandidates(candidates) {
+        const tagOrder = { '联机': 0, '下载': 1 };
+        return [...candidates].sort((a, b) => {
+            const ta = getGameNodeTag(a.name);
+            const tb = getGameNodeTag(b.name);
+            if (ta !== tb) return (tagOrder[ta] ?? 1) - (tagOrder[tb] ?? 1);
+            if (ta === '下载') {
+                const sa = typeof (a.realDownloadMbps || a.downloadSpeed) === 'number' && (a.realDownloadMbps || a.downloadSpeed) > 0 ? (a.realDownloadMbps || a.downloadSpeed) : -Infinity;
+                const sb = typeof (b.realDownloadMbps || b.downloadSpeed) === 'number' && (b.realDownloadMbps || b.downloadSpeed) > 0 ? (b.realDownloadMbps || b.downloadSpeed) : -Infinity;
+                return sb - sa;
+            }
+            const la = typeof a.loss === 'number' && a.loss >= 0 ? a.loss : Infinity;
+            const lb = typeof b.loss === 'number' && b.loss >= 0 ? b.loss : Infinity;
+            if (la !== lb) return la - lb;
+            const da = a.delay > 0 ? a.delay : Infinity;
+            const db = b.delay > 0 ? b.delay : Infinity;
+            return da - db;
+        });
+    }
+
+    // 辅助：渲染游戏节点右侧核心指标。联机节点展示丢包+延迟；下载节点优先展示下载带宽。
+    function renderGameNodeMetrics(nodeName, rightEl, fallbackDelay) {
+        if (!rightEl) return;
+        const perNode = state.speedtest.perNodeResults || [];
+        const found = perNode.find(p => p.name === nodeName);
+        const tag = getGameNodeTag(nodeName);
+        if (tag === '下载') {
+            const speed = found && (found.realDownloadMbps || found.downloadSpeed);
+            if (speed) {
+                rightEl.style.cssText = 'display:flex;align-items:center;gap:4px;flex-shrink:0;';
+                rightEl.className = 'text-green flex-shrink-0';
+                const badge = found && found.realTrafficSeen ? '<span style="font-size:10px;color:#fff;background:#16a34a;border-radius:3px;padding:0 4px;line-height:14px;">实测</span>' : '';
+                rightEl.innerHTML = `${badge}${speed} Mbps`;
+            } else {
+                // 下载节点不展示延迟/丢包；测速未完成或无带宽值时统一占位
+                rightEl.style.cssText = '';
+                rightEl.className = 'text-muted flex-shrink-0';
+                rightEl.textContent = speedtestInProgress ? '测速中' : '--';
+            }
+            return;
+        }
+        const hasLoss = found && found.loss !== undefined && found.loss >= 0;
+        const delayRaw = (found && found.delay) || fallbackDelay || 0;
+        const delay = (delayRaw === -1 || delayRaw >= 99999) ? 0 : delayRaw;
+        const delayStr = (delayRaw === -1 || delayRaw >= 99999) ? '超时' : (delay > 0 ? delay + 'ms' : '--');
+        const delayClass = (delayRaw === -1 || delayRaw >= 99999) ? 'text-red' : (delay > 0 ? getDelayClass(delay) : 'text-muted');
+        const lossPct = hasLoss ? (found.loss > 0 ? (found.loss * 100).toFixed(0) + '%' : '0%') : null;
+        const lossColor = hasLoss && found.loss === 0 ? 'text-green' : (hasLoss && found.loss <= 0.2 ? 'text-orange' : (hasLoss ? 'text-red' : ''));
+        if (lossPct && lossColor) {
+            rightEl.style.cssText = 'display:flex;align-items:center;gap:2px;flex-shrink:0;';
+            rightEl.className = '';
+            rightEl.innerHTML = `<span class="${lossColor}">${lossPct}</span><span style="font-size:10px;color:var(--text-secondary);">丢包</span><span class="${delayClass}">${delayStr}</span>`;
+            return;
+        }
+        if (delay > 0) {
+            rightEl.className = getDelayClass(delay) + ' flex-shrink-0';
+            rightEl.textContent = delay + ' ms';
+            return;
+        }
+        rightEl.className = 'text-muted flex-shrink-0';
+        rightEl.textContent = '--';
+    }
+
+    // 辅助：渲染游戏模式顶部选中节点的核心指标。
+    // 下载节点显示带宽 Mbps 并隐藏丢包行；联机节点显示延迟+丢包。
+    function renderGameTopSummary(nodeName, fallbackDelay) {
+        if (!elNodeGameDelay) return;
+        const tag = getGameNodeTag(nodeName);
+        const perNode = state.speedtest.perNodeResults || [];
+        const found = perNode.find(p => p.name === nodeName);
+        if (tag === '下载') {
+            const speed = found && (found.realDownloadMbps || found.downloadSpeed);
+            const isReal = !!(found && found.realTrafficSeen);
+            elNodeGameDelay.textContent = speed ? `${speed} Mbps` : '--';
+            elNodeGameDelay.className = speed ? 'text-green' : 'text-muted';
+            if (elNodeGameLoss) elNodeGameLoss.innerHTML = isReal ? '<span style="font-size:10px;color:#fff;background:#16a34a;border-radius:3px;padding:0 4px;line-height:14px;">实测</span>' : '';
+            return;
+        }
+        const delayRaw = (found && found.delay) || fallbackDelay || 0;
+        const delay = (delayRaw === -1 || delayRaw >= 99999) ? 0 : delayRaw;
+        elNodeGameDelay.textContent = delay > 0 ? `${delay} ms` : '-- ms';
+        elNodeGameDelay.className = `${getDelayClass(delay)}`;
+        if (elNodeGameLoss) {
+            let lossNum = found && found.loss !== undefined ? found.loss : (state.speedtest.game?.lastLoss ?? -1);
+            const hasLoss = lossNum !== undefined && lossNum >= 0;
+            const lossPct = hasLoss ? (lossNum > 0 ? (lossNum * 100).toFixed(0) + '%' : '0%') : '--%';
+            elNodeGameLoss.innerHTML = '';
+            const pctSpan = document.createElement('span');
+            pctSpan.textContent = lossPct + ' ';
+            pctSpan.className = hasLoss ? (lossNum === 0 ? 'text-green' : lossNum <= 0.2 ? 'text-orange' : 'text-red') : 'text-muted';
+            const labelSpan = document.createElement('span');
+            labelSpan.textContent = '丢包';
+            labelSpan.style.cssText = 'font-size:10px; color: var(--text-secondary);';
+            elNodeGameLoss.appendChild(pctSpan);
+            elNodeGameLoss.appendChild(labelSpan);
+            elNodeGameLoss.style.fontSize = '';
+        }
     }
 
     // 辅助：智能根据 Hostname 推定设备类型归类 (PC, 手机, 游戏机, IoT, 其它)
@@ -1103,7 +1283,8 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // [新增] 缓存上次选择的节点，用于二次确认取消时回滚
-    let lastSelectedGameNode = '';
+   let lastSelectedGameNode = '';
+   let lastSelectedGameDownloadNode = '';
 
     // 辅助：获取延迟的颜色等级 Class
     function getDelayClass(delay) {
@@ -1149,13 +1330,15 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    function openGameDropdown() {
-        closeAiDropdown();
-        closeProxyDropdown();
-        
-        const triggerRect = elBtnToggleGameDropdown.getBoundingClientRect();
-        
-        elGameNodeDropdownMenu.style.display = 'block';
+   function openGameDropdown() {
+       closeAiDropdown();
+       closeProxyDropdown();
+       
+        const triggerEl = gameDropdownMode === 'download' ? elBtnToggleGameDownloadDropdown : elBtnToggleGameDropdown;
+        const arrowEl = gameDropdownMode === 'download' ? elIconGameDownloadDropdownArrow : elIconGameDropdownArrow;
+        const triggerRect = triggerEl.getBoundingClientRect();
+       
+       elGameNodeDropdownMenu.style.display = 'block';
         elGameNodeDropdownMenu.style.left = triggerRect.left + 'px';
         
         // 宽度与触发按钮完全一致，实现完美水平对齐
@@ -1174,25 +1357,26 @@ document.addEventListener('DOMContentLoaded', () => {
             elGameNodeDropdownMenu.style.top = (triggerRect.bottom + 6) + 'px';
         }
         
-        elGameNodeDropdownMenu.classList.add('animate-dropdown');
-        elIconGameDropdownArrow.classList.add('active');
+       elGameNodeDropdownMenu.classList.add('animate-dropdown');
+        arrowEl.classList.add('active');
 
-        // 平滑滚动，防止在 Bottom Sheet 底部被遮挡
-        try {
-            elBtnToggleGameDropdown.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        } catch (e) {}
-    }
+       // 平滑滚动，防止在 Bottom Sheet 底部被遮挡
+       try {
+            triggerEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+       } catch (e) {}
+   }
 
-    function closeGameDropdown() {
-        elGameNodeDropdownMenu.style.display = 'none';
-        elGameNodeDropdownMenu.classList.remove('animate-dropdown');
-        elGameNodeDropdownMenu.style.top = '';
-        elGameNodeDropdownMenu.style.left = '';
-        elGameNodeDropdownMenu.style.width = '';
-        elGameNodeDropdownMenu.style.minWidth = '';
-        elGameNodeDropdownMenu.style.maxWidth = '';
+   function closeGameDropdown() {
+       elGameNodeDropdownMenu.style.display = 'none';
+       elGameNodeDropdownMenu.classList.remove('animate-dropdown');
+       elGameNodeDropdownMenu.style.top = '';
+       elGameNodeDropdownMenu.style.left = '';
+       elGameNodeDropdownMenu.style.width = '';
+       elGameNodeDropdownMenu.style.minWidth = '';
+       elGameNodeDropdownMenu.style.maxWidth = '';
         elIconGameDropdownArrow.classList.remove('active');
-    }
+        if (elIconGameDownloadDropdownArrow) elIconGameDownloadDropdownArrow.classList.remove('active');
+   }
 
     // AI模式下拉菜单操作函数
     function toggleAiDropdown() {
@@ -1364,38 +1548,38 @@ document.addEventListener('DOMContentLoaded', () => {
         // 3. 获取节点列表：优先从 API 获取节点名列表，按下拉列表顺序构建 spinner 行
         //    确保即使 DOM 未渲染也能正确清空旧值并显示 loading
         const groupKeywords = ['选择', '自动', 'DIRECT', 'GLOBAL', '测速'];
-        const hkKeywords = ['hk', 'hongkong', '香港', '港'];
         const nodeOrder = [];
 
         // 优先从现有 DOM 行读取节点名，保留下拉框原有顺序
         // 确保即使 API 失败也能正确清空旧值并显示 loading
-        if (container) {
-            container.querySelectorAll('.game-dropdown-item').forEach(item => {
-                if (item.classList.contains('show-more-nodes')) return;
-                const nodeName = item.getAttribute('data-node-name');
-                if (nodeName) {
-                    const lower = nodeName.toLowerCase();
-                    if (groupKeywords.some(k => lower.includes(k.toLowerCase()))) return;
-                    nodeOrder.push(nodeName);
-                }
-            });
-        }
+       // 游戏模式跳过 DOM 读取（DOM 仅含当前标签节点），改由 API 获取全量节点
+       if (container && mode !== 'game') {
+           container.querySelectorAll('.game-dropdown-item').forEach(item => {
+               if (item.classList.contains('show-more-nodes')) return;
+               const nodeName = item.getAttribute('data-node-name');
+               if (nodeName) {
+                   const lower = nodeName.toLowerCase();
+                   if (groupKeywords.some(k => lower.includes(k.toLowerCase()))) return;
+                   nodeOrder.push(nodeName);
+               }
+           });
+       }
 
-        // 如果 DOM 中没有节点，回退到 API 获取节点列表
-        if (nodeOrder.length === 0) {
-            try {
-                const nodesRes = await fetch('/api/nodes?nocache=1');
-                if (nodesRes.ok) {
-                    const nodesData = await nodesRes.json();
-                    if (nodesData.status === 'success' && nodesData.proxies) {
-                        const modeData = nodesData.proxies[mode];
-                        if (modeData && modeData.all) {
-                            modeData.all.forEach(node => {
-                                if (!node || !node.name) return;
-                                const lower = node.name.toLowerCase();
-                                if (groupKeywords.some(k => lower.includes(k.toLowerCase()))) return;
-                                nodeOrder.push(node.name);
-                            });
+       // 如果 DOM 中没有节点，回退到 API 获取节点列表
+       if (nodeOrder.length === 0) {
+           try {
+               const nodesRes = await fetch('/api/nodes?nocache=1');
+               if (nodesRes.ok) {
+                   const nodesData = await nodesRes.json();
+                   if (nodesData.status === 'success' && nodesData.proxies) {
+                       const modeData = nodesData.proxies[mode];
+                      if (modeData && modeData.all) {
+                          modeData.all.forEach(node => {
+                              if (!node || !node.name) return;
+                              const lower = node.name.toLowerCase();
+                              if (groupKeywords.some(k => lower.includes(k.toLowerCase()))) return;
+                              nodeOrder.push(node.name);
+                          });
                         }
                     }
                 }
@@ -1412,10 +1596,12 @@ document.addEventListener('DOMContentLoaded', () => {
                                : (mode === 'ai' ? handleAiNodeSelect : handleGameNodeSelect);
             
             // 获取当前已选中的节点以维持高亮和绿色勾号图标
-            const currentSelectedNode = mode === 'proxy' ? elNodeProxyReal.textContent.trim()
-                                       : (mode === 'ai' ? elNodeAiReal.textContent.trim() : elNodeGameReal.textContent.trim());
+          const currentSelectedNode = mode === 'proxy' ? elNodeProxyReal.textContent.trim()
+                                      : (mode === 'ai' ? elNodeAiReal.textContent.trim()
+                                      : (gameDropdownMode === 'download' ? (elNodeGameDownloadReal ? elNodeGameDownloadReal.textContent.trim() : '') : elNodeGameReal.textContent.trim()));
 
-            nodeOrder.forEach(nodeName => {
+           const orderedNodeNames = mode === 'game' ? sortGameNodeNames(nodeOrder) : nodeOrder;
+           orderedNodeNames.forEach(nodeName => {
                 const isSelected = nodeName === currentSelectedNode;
                 const itemDiv = document.createElement('div');
                 itemDiv.className = `game-dropdown-item${isSelected ? ' selected' : ''}`;
@@ -1435,7 +1621,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 nameSpan.textContent = nodeName;
                 leftDiv.appendChild(nameSpan);
                 
-                if (isDownloadNode(nodeName)) {
+                if (mode !== 'game' && isDownloadNode(nodeName)) {
                     const badge = document.createElement('span');
                     badge.textContent = '下载';
                     badge.style.cssText = 'margin-left:6px;font-size:10px;background:rgba(0, 210, 255, 0.15);color:#00d2ff;border:1px solid rgba(0, 210, 255, 0.3);border-radius:3px;padding:0 4px;line-height:14px;font-weight:bold;display:inline-block;vertical-align:middle;';
@@ -1465,17 +1651,22 @@ document.addEventListener('DOMContentLoaded', () => {
                 elNodeAiDelay.className = 'node-delay-testing';
                 elNodeAiDelay.innerHTML = ROW_SPINNER_SVG + '<span>测速中</span>';
             }
-        } else if (mode === 'game') {
-            if (elNodeGameDelay) {
-                elNodeGameDelay.className = 'node-delay-testing';
-                elNodeGameDelay.innerHTML = ROW_SPINNER_SVG + '<span>测速中</span>';
-            }
-            if (elNodeGameLoss) {
-                elNodeGameLoss.className = 'text-muted';
-                elNodeGameLoss.innerHTML = 'loss:--%';
-            }
-        }
-        // 设置总进度数
+       } else if (mode === 'game') {
+           if (elNodeGameDelay) {
+               elNodeGameDelay.className = 'node-delay-testing';
+               elNodeGameDelay.innerHTML = ROW_SPINNER_SVG + '<span>测速中</span>';
+           }
+           if (elNodeGameLoss) {
+               elNodeGameLoss.className = 'text-muted';
+               elNodeGameLoss.innerHTML = 'loss:--%';
+           }
+           // 同步清空下载摘要行，显示测速中状态
+           if (elNodeGameDownloadSpeed) {
+               elNodeGameDownloadSpeed.className = 'node-delay-testing';
+               elNodeGameDownloadSpeed.innerHTML = ROW_SPINNER_SVG + '<span>测速中</span>';
+           }
+       }
+       // 设置总进度数
         speedtestTotal = nodeOrder.length;
         // 更新按钮显示 x/y 进度
         if (targetBtn) {
@@ -1630,48 +1821,35 @@ document.addEventListener('DOMContentLoaded', () => {
                             if (syncData.status === 'success' && syncData.proxies) {
                                 // 测速同步时，把延迟>0和延迟=0的都更新，超时节点显示"--"
                                 const syncContainer = mode === 'proxy' ? elProxyDropdownListContainer : (mode === 'ai' ? elAiDropdownListContainer : elGameDropdownListContainer);
-                                if (syncContainer) {
-                                    const syncModeData = syncData.proxies[mode];
-                                    if (syncModeData && syncModeData.all) {
-                                        const syncDelayMap = {};
-                                        syncModeData.all.forEach(n => { if (n && n.name) syncDelayMap[n.name] = n.delay || 0; });
-                                        const perNodeResults = mode === 'game' ? (state.speedtest.game?.perNodeResults || []) : [];
-                                        syncContainer.querySelectorAll('.game-dropdown-item').forEach(item => {
-                                            if (item.classList.contains('show-more-nodes')) return;
-                                            const nodeName = item.getAttribute('data-node-name');
-                                            if (!nodeName || syncDelayMap[nodeName] === undefined) return;
-                                            const sd = syncDelayMap[nodeName];
-                                            const rightEl = item.querySelector('.game-dropdown-item-left')?.nextElementSibling;
-                                            if (!rightEl) return;
-                                            // 跳过已被 backendDone 标记为"超时"的节点，防止同步覆盖
-                                            if (rightEl.classList.contains("text-red")) return;
-                                            
-                                            if (mode === 'game') {
-                                                const found = perNodeResults.find(r => r.name === nodeName);
-                                                if (found && found.loss !== undefined) {
-                                                    const lossNum = found.loss;
-                                                    const lossPct = lossNum > 0 ? (lossNum * 100).toFixed(0) + '%' : '0%';
-                                                    const lossColor = lossNum === 0 ? 'text-green' : lossNum <= 0.2 ? 'text-orange' : 'text-red';
-                                                    const delay = found.delay || sd || 0;
-                                                    const delayStr = (delay === -1 || delay >= 99999) ? '超时' : (delay > 0 ? delay + 'ms' : '--');
-                                                    const delayClass = (delay === -1 || delay >= 99999) ? 'text-red' : (delay > 0 ? getDelayClass(delay) : 'text-muted');
-                                                    
-                                                    rightEl.style.cssText = 'display:flex;align-items:center;gap:2px;flex-shrink:0;';
-                                                    rightEl.innerHTML = '<span class="' + lossColor + '">' + lossPct + '</span><span style="font-size:10px;color:var(--text-secondary);">丢包</span><span class="' + delayClass + '">' + delayStr + '</span>';
-                                                    item.classList.remove('speedtest-row-pulsing');
-                                                    return;
-                                                }
-                                            }
+                               if (syncContainer) {
+                                   const syncModeData = syncData.proxies[mode];
+                                   if (syncModeData && syncModeData.all) {
+                                       const syncDelayMap = {};
+                                       syncModeData.all.forEach(n => { if (n && n.name) syncDelayMap[n.name] = n.delay || 0; });
+                                       const perNodeResults = mode === 'game' ? (state.speedtest.game?.perNodeResults || []) : [];
+                                       syncContainer.querySelectorAll('.game-dropdown-item').forEach(item => {
+                                           if (item.classList.contains('show-more-nodes')) return;
+                                           const nodeName = item.getAttribute('data-node-name');
+                                           if (!nodeName || syncDelayMap[nodeName] === undefined) return;
+                                           const sd = syncDelayMap[nodeName];
+                                           const rightEl = item.querySelector('.game-dropdown-item-left')?.nextElementSibling;
+                                           if (!rightEl) return;
+                                           // 跳过已被 backendDone 标记为"超时"的节点，防止同步覆盖
+                                           if (rightEl.classList.contains("text-red")) return;
+                                           
+                                           // 游戏模式跳过此处同步（state.speedtest 尚未刷新，perNodeResults 可能 stale），
+                                           // 改由下方 fetchSpeedtestStatus 后的同步更新和 renderGameDropdown 统一处理
+                                           if (mode === 'game') return;
 
-                                            if (sd > 0) {
-                                                rightEl.className = getDelayClass(sd) + ' flex-shrink-0';
-                                                rightEl.textContent = sd + ' ms';
-                                            } else {
-                                                rightEl.className = 'text-muted flex-shrink-0';
-                                                rightEl.textContent = '--';
-                                            }
-                                            item.classList.remove('speedtest-row-pulsing');
-                                        });
+                                           if (sd > 0) {
+                                               rightEl.className = getDelayClass(sd) + ' flex-shrink-0';
+                                               rightEl.textContent = sd + ' ms';
+                                           } else {
+                                               rightEl.className = 'text-muted flex-shrink-0';
+                                               rightEl.textContent = '--';
+                                           }
+                                           item.classList.remove('speedtest-row-pulsing');
+                                       });
                                     }
                                 }
                                 const p = syncData.proxies;
@@ -1700,38 +1878,14 @@ document.addEventListener('DOMContentLoaded', () => {
                                 elNodeAiDelay.textContent = matchedAiDelay > 0 ? `${matchedAiDelay} ms` : '-- ms';
                                 elNodeAiDelay.className = `${getDelayClass(matchedAiDelay)} flex-shrink-0`;
 
-                                let matchedGameDelay = game.delay || 0;
-                                if (game.realNode) {
-                                    const matched = (game.all || []).find(n => n && n.name === game.realNode);
-                                    if (matched && matched.delay > 0) matchedGameDelay = matched.delay;
-                                }
-                                elNodeGameDelay.textContent = matchedGameDelay > 0 ? `${matchedGameDelay} ms` : '-- ms';
-                                elNodeGameDelay.className = `${getDelayClass(matchedGameDelay)}`;
-
+                               let matchedGameDelay = game.delay || 0;
+                               if (game.realNode) {
+                                   const matched = (game.all || []).find(n => n && n.name === game.realNode);
+                                   if (matched && matched.delay > 0) matchedGameDelay = matched.delay;
+                               }
                                 // 同步刷新测速状态（含丢包率）
                                 await fetchSpeedtestStatus();
-                                const gameStateAfter = state.speedtest.game || {};
-                                if (elNodeGameLoss) {
-                                    let lossNum = gameStateAfter.lastLoss;
-                                    if (game.realNode) {
-                                        const perNodeResults = (state.speedtest.game?.perNodeResults || []);
-                                        const found = perNodeResults.find(r => r.name === game.realNode);
-                                        if (found && found.loss !== undefined) {
-                                            lossNum = found.loss;
-                                        }
-                                    }
-                                    const hasLoss = lossNum !== undefined && lossNum >= 0;
-                                    const lossPct = hasLoss ? (lossNum > 0 ? (lossNum * 100).toFixed(0) + '%' : '0%') : '--%';
-                                    elNodeGameLoss.innerHTML = '';
-                                    const pctSpan = document.createElement('span');
-                                    pctSpan.textContent = lossPct + ' ';
-                                    pctSpan.className = hasLoss ? (lossNum === 0 ? 'text-green' : lossNum <= 0.2 ? 'text-orange' : 'text-red') : 'text-muted';
-                                    const labelSpan = document.createElement('span');
-                                    labelSpan.textContent = '丢包';
-                                    labelSpan.style.cssText = 'font-size:10px;color:var(--text-secondary);';
-                                    elNodeGameLoss.appendChild(pctSpan);
-                                    elNodeGameLoss.appendChild(labelSpan);
-                                }
+                                renderGameTopSummary(game.realNode || game.now, matchedGameDelay);
 // 更新节点计数
                                 // 同步更新下拉列表中的游戏节点丢包率
                                 if (mode === 'game' && elGameDropdownListContainer) {
@@ -1741,35 +1895,33 @@ document.addEventListener('DOMContentLoaded', () => {
                                             const nodeName = item.getAttribute('data-node-name');
                                             if (!nodeName) return;
                                             const found = perNodeResults.find(p => p.name === nodeName);
-                                            if (found && found.loss !== undefined) {
+                                            if (found) {
                                                 const rightEl = item.querySelector('.game-dropdown-item-left')?.nextElementSibling;
                                                 if (!rightEl) return;
-                                                const lossNum = found.loss;
-                                                const lossPct = lossNum > 0 ? (lossNum * 100).toFixed(0) + '%' : '0%';
-                                                const lossColor = lossNum === 0 ? 'text-green' : lossNum <= 0.2 ? 'text-orange' : 'text-red';
-                                               const delay = found.delay || 0;
-                                                const delayStr = (delay === -1 || delay >= 99999) ? '超时' : (delay > 0 ? delay + 'ms' : '--');
-                                                const delayClass = (delay === -1 || delay >= 99999) ? 'text-red' : (delay > 0 ? getDelayClass(delay) : 'text-muted');
-                                                rightEl.innerHTML = '<span class="' + lossColor + '">' + lossPct + '</span><span style="font-size:10px;color:var(--text-secondary);">丢包</span><span class="' + delayClass + '">' + delayStr + '</span>';
+                                                renderGameNodeMetrics(nodeName, rightEl, 0);
                                             }
                                         });
                                     }
                                 }
                                 // 更新节点计数
                                 const groupKeywords = ['选择', '自动', 'DIRECT', 'GLOBAL', '测速'];
-                               const hkKeywords = ['hk', 'hongkong', '香港', '港'];
                                const proxyPhysical = (proxy.all || []).filter(n => n && n.name && !groupKeywords.some(k => n.name.includes(k)));
                                const proxyValid = proxyPhysical.filter(n => n.delay > 0).length;
                                if (elBadgeProxyCount) elBadgeProxyCount.textContent = proxyPhysical.length;
                                 const aiPhysical = (ai.all || []).filter(n => n && n.name && !groupKeywords.some(k => n.name.includes(k)));
                                const aiValid = aiPhysical.filter(n => n.delay > 0).length;
                                if (elBadgeAiCount) elBadgeAiCount.textContent = aiPhysical.length;
-                               const gamePhysical = (game.all || []).filter(n => n && n.name && !groupKeywords.some(k => n.name.includes(k)));
-                                const gameValid = gamePhysical.filter(n => n.delay > 0).length;
-                                if (elBadgeGameCount) elBadgeGameCount.textContent = gamePhysical.length;
-                            }
-                        }
-                    } catch (e) { /* 忽略 */ }
+                              const gamePhysical = (game.all || []).filter(n => n && n.name && !groupKeywords.some(k => n.name.includes(k)));
+                               const gameValid = gamePhysical.filter(n => n.delay > 0).length;
+                               if (elBadgeGameCount) elBadgeGameCount.textContent = gamePhysical.length;
+                               // 游戏模式：测速完成后用最新数据重新渲染下拉列表，恢复当前标签过滤
+                               if (mode === 'game') {
+                                   cachedGameData = game;
+                                   renderGameDropdown();
+                               }
+                           }
+                       }
+                   } catch (e) { /* 忽略 */ }
                 }
             }
         }, 3000);
@@ -1790,34 +1942,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 const nodeName = item.getAttribute('data-node-name');
                 if (!nodeName || delayMap[nodeName] === undefined) return;
                 const d = delayMap[nodeName];
-               // 延迟 > 0 表示成功，= 0 表示尚未测到或测速失败（由主循环的超时/后端完成逻辑处理）
-                // 游戏模式：即使 d=0 也允许通过，只要 perNodeResults 有数据就展示丢包率
-                if (d > 0 || (curMode === 'game' && perNodeResults.some(p => p.name === nodeName))) {
-                   const leftDiv = item.querySelector('.game-dropdown-item-left');
-                   const rightEl = leftDiv && leftDiv.nextElementSibling;
-                   if (rightEl && rightEl.classList.contains('node-delay-testing')) {
-                       // 游戏模式同时展示丢包率
-                       if (curMode === 'game' && perNodeResults.length > 0) {
-                           const found = perNodeResults.find(p => p.name === nodeName);
-                           const hasLoss = found && found.loss !== undefined && found.loss >= 0;
-                           const lossPct = hasLoss ? (found.loss > 0 ? (found.loss * 100).toFixed(0) + '%' : '0%') : null;
-                           const lossColor = hasLoss && found.loss === 0 ? 'text-green' : (hasLoss && found.loss <= 0.2 ? 'text-orange' : (hasLoss ? 'text-red' : ''));
-                           rightEl.style.cssText = 'display:flex;align-items:center;gap:4px;flex-shrink:0;';
-                           rightEl.className = '';
-                           if (lossPct && lossColor) {
-                                // 使用 perNodeResults 的延迟数据，处理 -1/99999 为超时
-                                const fDelay = found ? found.delay : d;
-                                const delayStr = (fDelay === -1 || fDelay >= 99999) ? '超时' : (fDelay > 0 ? fDelay + 'ms' : '--');
-                                const delayClass = (fDelay === -1 || fDelay >= 99999) ? 'text-red' : (fDelay > 0 ? getDelayClass(fDelay) : 'text-muted');
-                                rightEl.innerHTML = `<span class="${lossColor}">${lossPct}</span><span style="font-size:10px;color:var(--text-secondary);">丢包</span><span class="${delayClass}">${delayStr}</span>`;
-                            } else {
-                                rightEl.className = getDelayClass(d) + ' flex-shrink-0';
-                                rightEl.textContent = d + ' ms';
-                            }
-                        } else {
-                            rightEl.className = getDelayClass(d) + ' flex-shrink-0';
-                            rightEl.textContent = d + ' ms';
-                        }
+              // 延迟 > 0 表示成功，= 0 表示尚未测到或测速失败（由主循环的超时/后端完成逻辑处理）
+               // 游戏模式：即使 d=0 也允许通过，只要 perNodeResults 有数据就展示丢包率
+               // 游戏模式：仅当节点已在 perNodeResults 中（后端已完成丢包测试）时才更新，避免只显示延迟
+               if (curMode === 'game' ? perNodeResults.some(p => p.name === nodeName) : d > 0) {
+                  const leftDiv = item.querySelector('.game-dropdown-item-left');
+                  const rightEl = leftDiv && leftDiv.nextElementSibling;
+                  if (rightEl && rightEl.classList.contains('node-delay-testing')) {
+                     // 游戏模式同时展示丢包率
+                     if (curMode === 'game') {
+                         renderGameNodeMetrics(nodeName, rightEl, d);
+                      } else {
+                          rightEl.className = getDelayClass(d) + ' flex-shrink-0';
+                          rightEl.textContent = d + ' ms';
+                      }
                         item.classList.remove('speedtest-row-pulsing');
                         item.classList.add('delay-flash');
                         setTimeout(() => item.classList.remove('delay-flash'), 600);
@@ -1900,8 +2038,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         elNodeAiDelay.textContent = ai.delay > 0 ? `${ai.delay} ms` : '-- ms';
                         elNodeAiDelay.className = `${getDelayClass(ai.delay)} flex-shrink-0`;
                         elNodeGameReal.textContent = game.realNode || '--';
-                        elNodeGameDelay.textContent = game.delay > 0 ? `${game.delay} ms` : '-- ms';
-                        elNodeGameDelay.className = `${getDelayClass(game.delay)}`;
+                        renderGameTopSummary(game.realNode || game.now, game.delay);
                     }
                 }
             } catch (e) { /* 忽略 */ }
@@ -1913,7 +2050,6 @@ document.addEventListener('DOMContentLoaded', () => {
         closeProxyDropdown();
 
         const groupKeywords = ['选择', '自动', 'DIRECT', 'GLOBAL', '测速'];
-        const hkKeywords = ['hk', 'hongkong', '香港', '港'];
         
         try {
             const url = nocache ? '/api/nodes?nocache=1' : '/api/nodes';
@@ -1948,131 +2084,43 @@ document.addEventListener('DOMContentLoaded', () => {
             const aiValid = aiPhysical.filter(n => n.delay > 0).length;
             if (elBadgeAiCount) elBadgeAiCount.textContent = aiPhysical.length;
 
-            // 3. 回显：游戏模式
-            const gameState = state.speedtest.game || {};
-            elNodeGameReal.textContent = game.realNode || '--';
-            elNodeGameDelay.textContent = game.delay > 0 ? `${game.delay} ms` : '-- ms';
-            elNodeGameDelay.className = `${getDelayClass(game.delay)}`;
-            if (elNodeGameLoss) {
-                const lossNum = gameState.lastLoss;
-                const hasLoss = lossNum !== undefined && lossNum >= 0;
-                const lossPct = hasLoss ? (lossNum > 0 ? (lossNum * 100).toFixed(0) + '%' : '0%') : '--%';
-                elNodeGameLoss.innerHTML = '';
-                const pctSpan = document.createElement('span');
-                pctSpan.textContent = lossPct + ' ';
-                pctSpan.className = hasLoss ? (lossNum === 0 ? 'text-green' : lossNum <= 0.2 ? 'text-orange' : 'text-red') : 'text-muted';
-                const labelSpan = document.createElement('span');
-                labelSpan.textContent = '丢包';
-                labelSpan.style.cssText = 'font-size:10px; color: var(--text-secondary);';
-                elNodeGameLoss.appendChild(pctSpan);
-                elNodeGameLoss.appendChild(labelSpan);
-                elNodeGameLoss.style.fontSize = '';
-            }
-            lastSelectedGameNode = game.realNode || game.now || '';
-            const gamePhysical = (game.all || []).filter(n => n && n.name && !groupKeywords.some(k => n.name.includes(k)));
-            const gameValid = gamePhysical.filter(n => n.delay > 0).length;
-            if (elBadgeGameCount) elBadgeGameCount.textContent = gamePhysical.length;
+           // 3. 回显：游戏模式
+           const gameState = state.speedtest.game || {};
+           elNodeGameReal.textContent = game.realNode || '--';
+           renderGameTopSummary(game.realNode || game.now, game.delay);
+           lastSelectedGameNode = game.realNode || game.now || '';
+           const gamePhysical = (game.all || []).filter(n => n && n.name && !groupKeywords.some(k => n.name.includes(k)));
+           const gameValid = gamePhysical.filter(n => n.delay > 0).length;
+           if (elBadgeGameCount) elBadgeGameCount.textContent = gamePhysical.length;
+           // 3b. 回显：游戏下载组
+           const gameDl = data.proxies.gameDownload || {};
+           if (elNodeGameDownloadReal) {
+               elNodeGameDownloadReal.textContent = gameDl.realNode || '--';
+               lastSelectedGameDownloadNode = gameDl.realNode || gameDl.now || '';
+               const dlSpeed = gameState.lastDownloadSpeed;
+               if (elNodeGameDownloadSpeed) {
+                   if (dlSpeed) {
+                       elNodeGameDownloadSpeed.textContent = `${dlSpeed} Mbps`;
+                       elNodeGameDownloadSpeed.className = 'text-green';
+                   } else {
+                       const perNode = (state.speedtest.perNodeResults || []);
+                       const found = perNode.find(p => p.name === (gameDl.realNode || gameDl.now));
+                       if (found && found.downloadSpeed) {
+                           elNodeGameDownloadSpeed.textContent = `${found.downloadSpeed} Mbps`;
+                           elNodeGameDownloadSpeed.className = 'text-green';
+                       } else {
+                           elNodeGameDownloadSpeed.textContent = '-- Mbps';
+                           elNodeGameDownloadSpeed.className = 'text-muted';
+                       }
+                   }
+               }
+           }
 
-            // 4. 动态渲染游戏节点下拉菜单（仅物理节点，排除 Selector/URLTest）
-            elGameDropdownListContainer.innerHTML = '';
-            const allCandidates = [];
-            (game.all || []).forEach(node => {
-               if (node && node.name) {
-                    const isGroup = groupKeywords.some(k => node.name.includes(k));
-                    if (!isGroup) {
-                        // 从 SpeedtestState 中获取该节点的丢包率（Clash API 不返回丢包率）
-                        let nodeLoss = undefined;
-                        const perNode = (state.speedtest.perNodeResults || []);
-                        if (perNode.length > 0) {
-                            const found = perNode.find(p => p.name === node.name);
-                            if (found && found.loss !== undefined) nodeLoss = found.loss;
-                        }
-                        allCandidates.push({ name: node.name, delay: node.delay || 0, displayName: node.name, loss: nodeLoss });
-                    }
-                }
-            });
+          // 4. 动态渲染游戏节点下拉菜单（仅物理节点，排除 Selector/URLTest）
+           cachedGameData = game;
+           renderGameDropdown();
 
-            // 如果当前 now 节点不在备选里，为防空白添加临时选项
-            const existInCandidates = allCandidates.some(c => c.name === lastSelectedGameNode);
-            if (lastSelectedGameNode && lastSelectedGameNode !== 'DIRECT' && lastSelectedGameNode !== 'GLOBAL' && !existInCandidates) {
-                allCandidates.push({
-                    name: lastSelectedGameNode,
-                    delay: game.delay || 0,
-                    displayName: lastSelectedGameNode
-                });
-            }
-
-            allCandidates.sort((a, b) => {
-                if (a.delay <= 0 && b.delay <= 0) return 0;
-                if (a.delay <= 0) return 1;
-                if (b.delay <= 0) return -1;
-                return a.delay - b.delay;
-            });
-
-            // 循环添加节点项
-            allCandidates.forEach(cand => {
-                const isSelected = cand.name === lastSelectedGameNode;
-                
-                const itemDiv = document.createElement('div');
-                itemDiv.className = `game-dropdown-item${isSelected ? ' selected' : ''}`;
-                
-                const leftDiv = document.createElement('div');
-                leftDiv.className = 'game-dropdown-item-left';
-                if (isSelected) {
-                    leftDiv.innerHTML = `<svg class="icon-svg icon-selected-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px; color: var(--primary);"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>`;
-                } else {
-                    leftDiv.innerHTML = `<span class="icon-placeholder"></span>`;
-                }
-                const nameSpan = document.createElement('span');
-                nameSpan.className = 'game-dropdown-item-name';
-                nameSpan.textContent = cand.displayName;
-                leftDiv.appendChild(nameSpan);
-                
-                if (isDownloadNode(cand.name)) {
-                    const badge = document.createElement('span');
-                    badge.textContent = '下载';
-                    badge.style.cssText = 'margin-left:6px;font-size:10px;background:rgba(0, 210, 255, 0.15);color:#00d2ff;border:1px solid rgba(0, 210, 255, 0.3);border-radius:3px;padding:0 4px;line-height:14px;font-weight:bold;display:inline-block;vertical-align:middle;';
-                    leftDiv.appendChild(badge);
-                }
-                itemDiv.appendChild(leftDiv);
-                
-                const rightDiv = document.createElement('span');
-                rightDiv.style.cssText = 'display:flex;align-items:center;gap:2px;flex-shrink:0;';
-                const hasLoss = cand.loss !== undefined && cand.loss >= 0;
-                if (hasLoss || cand.delay > 0) {
-                    const lNum = hasLoss ? cand.loss : -1;
-                    const lPct = lNum >= 0 ? (lNum > 0 ? (cand.loss * 100).toFixed(0) + '%' : '0%') : '--%';
-                    const lossColor = lNum === 0 ? 'text-green' : (lNum > 0 && lNum <= 0.2) ? 'text-orange' : (lNum > 0.2 ? 'text-red' : 'text-muted');
-                    
-                    const pctSpan = document.createElement('span');
-                    pctSpan.textContent = lPct; pctSpan.className = lossColor;
-                    
-                    const unitSpan = document.createElement('span');
-                    unitSpan.textContent = '丢包'; unitSpan.style.cssText = 'font-size:10px;color:var(--text-secondary);';
-                    
-                    const delaySpan = document.createElement('span');
-                    delaySpan.textContent = cand.delay > 0 ? cand.delay + 'ms' : '--';
-                    delaySpan.className = getDelayClass(cand.delay);
-                    
-                    rightDiv.appendChild(pctSpan); 
-                    rightDiv.appendChild(unitSpan); 
-                    rightDiv.appendChild(delaySpan);
-                } else {
-                    rightDiv.textContent = '--';
-                    rightDiv.className = 'text-muted flex-shrink-0';
-                }
-                itemDiv.appendChild(rightDiv);
-                
-                itemDiv.addEventListener('click', async (e) => {
-                    e.stopPropagation();
-                    if (cand.name === lastSelectedGameNode) { closeGameDropdown(); return; }
-                    await handleGameNodeSelect(cand.name);
-                });
-                
-                elGameDropdownListContainer.appendChild(itemDiv);
-            });
-
-            // 5. 动态渲染 AI 节点下拉菜单
+           // 5. 动态渲染 AI 节点下拉菜单
             elAiDropdownListContainer.innerHTML = '';
             let lastSelectedAiNode = ai.realNode || ai.now || '';
 
@@ -2082,7 +2130,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (node && node.name) {
                     const lower = node.name.toLowerCase();
                     const isGroup = groupKeywords.some(k => lower.includes(k.toLowerCase()));
-                    const isHK = hkKeywords.some(k => lower.includes(k));
                     if (!isGroup) {
                         aiCandidates.push({ name: node.name, delay: node.delay || 0, displayName: node.name });
                     }
@@ -2306,16 +2353,19 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // 核心切换请求逻辑
-     async function handleGameNodeSelect(newVal) {
+    async function handleGameNodeSelect(newVal) {
         // 关闭下拉框
         closeGameDropdown();
+        // 根据节点标签决定锁定到哪个代理组
+        const tag = getGameNodeTag(newVal);
+        const targetGroup = tag === '下载' ? '🎮 游戏下载' : '🎮 游戏加速';
         // 发送节点切换请求
-        showLoading('正在切换游戏节点...');
+        showLoading(`正在切换游戏${tag}节点...`);
         try {
             const res = await fetch('/api/select', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ group: '🎮 游戏加速', node: newVal })
+                body: JSON.stringify({ group: targetGroup, node: newVal })
             });
 
             if (!res.ok) throw new Error('接口响应错误');
@@ -2430,13 +2480,32 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // 绑定事件：展开/折叠游戏节点下拉选单触发区
-    if (elBtnToggleGameDropdown) {
-        elBtnToggleGameDropdown.addEventListener('click', (e) => {
-            e.stopPropagation();
-            toggleGameDropdown();
-        });
-    }
+  // 绑定事件：展开/折叠游戏节点下拉选单触发区
+  // 联机/下载行分别设置下拉模式后展开
+  if (elBtnToggleGameDropdown) {
+       elBtnToggleGameDropdown.addEventListener('click', (e) => {
+           e.stopPropagation();
+           if (elGameNodeDropdownMenu && elGameNodeDropdownMenu.style.display !== 'none' && gameDropdownMode === 'online') {
+               closeGameDropdown();
+          } else {
+              gameDropdownMode = 'online';
+              renderGameDropdown();
+              openGameDropdown();
+          }
+      });
+  }
+  if (elBtnToggleGameDownloadDropdown) {
+      elBtnToggleGameDownloadDropdown.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (elGameNodeDropdownMenu && elGameNodeDropdownMenu.style.display !== 'none' && gameDropdownMode === 'download') {
+              closeGameDropdown();
+          } else {
+              gameDropdownMode = 'download';
+              renderGameDropdown();
+              openGameDropdown();
+          }
+       });
+   }
 
     // 绑定事件：展开/折叠 AI 节点下拉选单触发区
     if (elBtnToggleAiDropdown) {
@@ -2455,8 +2524,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // 绑定事件：点击文档其它任意位置时自动折叠下拉框
-    document.addEventListener('click', (e) => {
-        if (!e.target.closest('#btn-toggle-game-dropdown') && !e.target.closest('#game-node-dropdown-menu')) {
+   document.addEventListener('click', (e) => {
+        if (!e.target.closest('#btn-toggle-game-dropdown') && !e.target.closest('#btn-toggle-game-download-dropdown') && !e.target.closest('#game-node-dropdown-menu')) {
             if (elGameNodeDropdownMenu && elGameNodeDropdownMenu.style.display !== 'none') {
                 closeGameDropdown();
             }

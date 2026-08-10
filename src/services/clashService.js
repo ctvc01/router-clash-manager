@@ -162,6 +162,20 @@ class ClashService {
         return false;
     }
 
+    // 获取 Clash 当前活跃连接列表（用于真实流量统计）
+    static async getConnections(timeoutMs = 3000) {
+        try {
+            const res = await this._request('GET', '/connections', null, timeoutMs);
+            if (res && res.status === 200 && res.data && Array.isArray(res.data.connections)) {
+                return res.data.connections;
+            }
+            return [];
+        } catch (error) {
+            Logger.debug('ClashAPI', `获取连接列表失败: ${error.message}`);
+            return [];
+        }
+    }
+
     // 通过 Clash HTTP API 平滑热重载配置 (Zero-Downtime Hot Reload)
     static async hotReloadConfig(configPath = '/data/ShellCrash/config.yaml', timeoutMs = 20000) {
         try {

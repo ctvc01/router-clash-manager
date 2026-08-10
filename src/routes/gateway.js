@@ -11,6 +11,7 @@ const ConfigVersionManager = require('../services/configVersionManager');
 const ChangelogManager = require('../services/changelogManager');
 const { ROUTER_PATHS } = require('../constants');
 const cache = require('../utils/cache');
+const { isGameRegionNode, getGameNodeTestUrl } = require('../utils/gameNodeFilter');
 
 const router = express.Router();
 
@@ -305,7 +306,7 @@ router.get('/nodes', async (req, res) => {
 
         const filterOutGroups = [
             '⚡ 游戏自动测速', '🚀 节点选择', '🚀 选择节点', '👑 高级节点',
-            'DIRECT', 'GLOBAL', 'AI自动测速', '🤖 AI强化', '🎮 游戏加速',
+            'DIRECT', 'GLOBAL', 'AI自动测速', '🤖 AI强化', '🎮 游戏加速', '🎮 游戏下载',
             'REJECT', 'REJECT-DROP', 'PASS', 'COMPATIBLE'
         ];
 
@@ -393,34 +394,30 @@ router.get('/nodes', async (req, res) => {
                    return (isIPLC && (!isHK || hasAILabel)) || (isGRPC && isGoodRegion);
               });
            } else if (mode === 'game') {
-               // 游戏模式过滤：仅保留带有专线/游戏特征，或者延迟低于 120ms 的节点
-               nodes = nodes.filter(node => {
-                   const lowerName = node.name.toLowerCase();
-                    const isGameKey = lowerName.includes('iplc') || 
-                                     lowerName.includes('iepl') || 
-                                     lowerName.includes('专线') || 
-                                     lowerName.includes('game') || 
-                                     lowerName.includes('游戏') ||
-                                     lowerName.includes('download') ||
-                                     lowerName.includes('下载') ||
-                                     lowerName.includes('grpc');
-                    return isGameKey || (node.delay > 0 && node.delay < 120);
-               });
+               // 游戏模式只保留香港/台湾/日本/韩国/新加坡节点
+               nodes = nodes.filter(node => isGameRegionNode(node.name));
            }
 
            // 分离存活节点和无测速死节点
            let aliveNodes = nodes.filter(n => n.delay > 0).sort((a, b) => a.delay - b.delay);
            let deadNodes = nodes.filter(n => n.delay === 0);
-           // In 游戏模式, prioritize download/GRPC dead nodes by treating them as alive
+           // 游戏模式下把 Reality/直连/专线/下载/GRPC 死节点都视为可展示，优先于普通死节点
            if (mode === 'game') {
-               const downloadDead = deadNodes.filter(node => {
+               const priorityDead = deadNodes.filter(node => {
                    const lower = node.name.toLowerCase();
-                   return lower.includes('download') || lower.includes('grpc') || lower.includes('下载');
+                   return lower.includes('reality') ||
+                          lower.includes('直連') ||
+                          lower.includes('直连') ||
+                          lower.includes('家寬') ||
+                          lower.includes('家宽') ||
+                          lower.includes('iplc') ||
+                          lower.includes('iepl') ||
+                          lower.includes('download') ||
+                          lower.includes('grpc') ||
+                          lower.includes('下载');
                });
-               // Remove from deadNodes
-               deadNodes = deadNodes.filter(d => !downloadDead.includes(d));
-               // Prepend to aliveNodes so they are considered before limiting
-               aliveNodes = downloadDead.concat(aliveNodes);
+               deadNodes = deadNodes.filter(d => !priorityDead.includes(d));
+               aliveNodes = priorityDead.concat(aliveNodes);
            }
 
            // 主代理组如果没有传递 all=true，或者不是 'proxy' 模式，我们就截断
@@ -452,17 +449,26 @@ router.get('/nodes', async (req, res) => {
                }
            }
 
-           // 如果活的节点数量太少，优先加入游戏模式的下载/GRPC 死节点，然后再补齐其他死节点，最多补到 limit 个
+           // 如果活的节点数量太少，优先加入游戏模式高优死节点，然后再补齐其他死节点，最多补到 limit 个
            if (shouldLimit && resultNodes.length < limit && deadNodes.length > 0) {
-               // 先加入下载/GRPC 类型的死节点
+               // 先加入 Reality/直连/专线/下载/GRPC 类型死节点
                if (mode === 'game') {
-                   const downloadDead = deadNodes.filter(node => {
+                   const priorityDead = deadNodes.filter(node => {
                        const lower = node.name.toLowerCase();
-                       return lower.includes('download') || lower.includes('grpc') || lower.includes('下载');
+                       return lower.includes('reality') ||
+                              lower.includes('直連') ||
+                              lower.includes('直连') ||
+                              lower.includes('家寬') ||
+                              lower.includes('家宽') ||
+                              lower.includes('iplc') ||
+                              lower.includes('iepl') ||
+                              lower.includes('download') ||
+                              lower.includes('grpc') ||
+                              lower.includes('下载');
                    });
-                   const neededForDownload = Math.min(limit - resultNodes.length, downloadDead.length);
-                   if (neededForDownload > 0) {
-                       resultNodes = resultNodes.concat(downloadDead.slice(0, neededForDownload));
+                   const neededForPriority = Math.min(limit - resultNodes.length, priorityDead.length);
+                   if (neededForPriority > 0) {
+                       resultNodes = resultNodes.concat(priorityDead.slice(0, neededForPriority));
                    }
                }
                // 再补齐其余死节点
@@ -486,6 +492,7 @@ router.get('/nodes', async (req, res) => {
                             const age = Date.now() - cached.timestamp;
                             if (age < 7200000) { // 2小时 (120 分钟)
                                 node.loss = cached.loss;
+                                node.downloadSpeed = cached.downloadSpeed || null;
                             }
                         }
                     });
@@ -511,13 +518,20 @@ router.get('/nodes', async (req, res) => {
                 all: getSortedAndFilteredNodes(proxies[mainGroupName]?.all, proxies[mainGroupName]?.now, 'proxy', 30, returnAll),
                 hasMore: hasMore
             },
-            game: {
-                name: '🎮 游戏加速',
-                now: proxies['🎮 游戏加速']?.now || 'DIRECT',
-                realNode: getNodeInfo(proxies, proxies['🎮 游戏加速']?.now || 'DIRECT').name,
-                delay: getNodeInfo(proxies, proxies['🎮 游戏加速']?.now || 'DIRECT').delay,
-                all: getSortedAndFilteredNodes(proxies['🎮 游戏加速']?.all, proxies['🎮 游戏加速']?.now, 'game', 20)
-            },
+           game: {
+               name: '🎮 游戏加速',
+               now: proxies['🎮 游戏加速']?.now || 'DIRECT',
+               realNode: getNodeInfo(proxies, proxies['🎮 游戏加速']?.now || 'DIRECT').name,
+               delay: getNodeInfo(proxies, proxies['🎮 游戏加速']?.now || 'DIRECT').delay,
+               all: getSortedAndFilteredNodes(proxies['🎮 游戏加速']?.all, proxies['🎮 游戏加速']?.now, 'game', 50)
+           },
+           gameDownload: {
+               name: '🎮 游戏下载',
+               now: proxies['🎮 游戏下载']?.now || 'DIRECT',
+               realNode: getNodeInfo(proxies, proxies['🎮 游戏下载']?.now || 'DIRECT').name,
+               delay: getNodeInfo(proxies, proxies['🎮 游戏下载']?.now || 'DIRECT').delay,
+               all: getSortedAndFilteredNodes(proxies['🎮 游戏下载']?.all, proxies['🎮 游戏下载']?.now, 'game', 50)
+           },
             ai: {
                 name: '🤖 AI强化',
                 now: proxies['🤖 AI强化']?.now || 'DIRECT',
@@ -560,15 +574,20 @@ router.post('/select', async (req, res) => {
             const isGame = group.includes('游戏') || group.toLowerCase().includes('game');
             const isAi = group.includes('AI');
             
-            const testUrl = isGame ? 'http://ctest.cdn.nintendo.net/' 
+            const testUrl = isGame ? getGameNodeTestUrl(node)
                                    : (isAi ? 'http://www.google.com/generate_204' : 'http://www.gstatic.com/generate_204');
 
-            // 自动将模式锁定到用户手动选定的物理节点，避免被后台轮询自动覆盖
-            const mode = isGame ? 'game' : (isAi ? 'ai' : 'proxy');
-            if (mode && node !== 'DIRECT' && !['⚡ AI自动测速', '⚡ 游戏自动测速', '🚀 节点选择', '♻️ 自动选择', '👑 高级节点'].includes(node)) {
-                try {
-                    const SpeedtestState = require('../services/speedtestState');
-                    SpeedtestState.setLockedNode(mode, node);
+           // 自动将模式锁定到用户手动选定的物理节点，避免被后台轮询自动覆盖
+           const mode = isGame ? 'game' : (isAi ? 'ai' : 'proxy');
+           const isGameDownload = group.includes('游戏下载');
+           if (mode && node !== 'DIRECT' && !['⚡ AI自动测速', '⚡ 游戏自动测速', '🚀 节点选择', '♻️ 自动选择', '👑 高级节点'].includes(node)) {
+               try {
+                   const SpeedtestState = require('../services/speedtestState');
+                    if (isGameDownload) {
+                        SpeedtestState.setLockedDownloadNode(node);
+                    } else {
+                        SpeedtestState.setLockedNode(mode, node);
+                    }
                     
                     // 获取当前已有的测速缓存状态，避免手动选择节点时覆盖真实的延迟和丢包数据
                     const currentStatus = SpeedtestState.getStatus();

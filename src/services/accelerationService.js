@@ -129,26 +129,25 @@ class AccelerationService {
         cache.clear('gatewayStatus');
     }
 
-    // 异步启动测速和守护
-    static _startAsyncSpeedtest(mac, type, typeLabel) {
-        const isGame = type === 'game';
-        const service = isGame ? GameAccService : AiBoostService;
-        const label = isGame ? 'GameAcc' : 'AiBoost';
-        const modeName = isGame ? '游戏节点' : 'AI 节点';
-        const findNodeMethod = isGame ? 'findFastestGameNode' : 'findFastestAiNode';
-        const lockNodeMethod = isGame ? 'lockGameNode' : 'lockAiNode';
-        const startMonitorMethod = isGame ? 'startGameAccMonitor' : 'startAiBoostMonitor';
+   // 异步启动测速和守护
+   static _startAsyncSpeedtest(mac, type, typeLabel) {
+       const isGame = type === 'game';
+       const label = isGame ? 'GameAcc' : 'AiBoost';
+       const modeName = isGame ? '游戏节点' : 'AI 节点';
 
         (async () => {
             try {
                 const isReady = await ClashService.waitClashReady(25);
                 if (isReady) {
                     Logger.info(label, `Clash 核心就绪成功，开始测速锁定最优${modeName}...`);
-                    const fastestNode = await service[findNodeMethod]();
-                    if (fastestNode) {
-                        await service[lockNodeMethod](fastestNode.name);
+                    if (isGame) {
+                        await GameAccService.findBestAndLock(true);
+                        GameAccService.startGameAccMonitor();
+                    } else {
+                        const fastestNode = await AiBoostService.findFastestAiNode();
+                        if (fastestNode) await AiBoostService.lockAiNode(fastestNode.name);
+                        AiBoostService.startAiBoostMonitor();
                     }
-                    service[startMonitorMethod]();
                 } else {
                     Logger.warn(label, `Clash 核心在 25 秒内未就绪，跳过自动测速锁定流程。`);
                 }

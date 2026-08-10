@@ -6,7 +6,7 @@ const Logger = require('../utils/logger');
 const STATE_FILE = path.join(config.paths.dataDir, 'speedtest_state.json');
 
 const DEFAULT_STATE = {
-    game: { lock: false, lockedNode: null, lastNode: null, lastDelay: -1, lastLoss: -1, lastSamples: '', perNodeResults: [], timestamp: 0 },
+    game: { lock: false, lockedNode: null, lockedDownloadNode: null, lastNode: null, lastDelay: -1, lastLoss: -1, lastDownloadNode: null, lastDownloadSpeed: null, lastSamples: '', perNodeResults: [], timestamp: 0 },
     ai:   { lock: false, lockedNode: null, lastNode: null, lastDelay: -1, lastSamples: '', timestamp: 0 },
     proxy: { lock: false, lockedNode: null, lastNode: null, lastDelay: -1, lastSamples: '', timestamp: 0 }
 };
@@ -19,9 +19,14 @@ class SpeedtestState {
         try {
             if (fs.existsSync(STATE_FILE)) {
                 this._state = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
-                for (const mode of ['game', 'ai', 'proxy']) {
-                    if (!this._state[mode]) this._state[mode] = DEFAULT_STATE[mode];
-                }
+               for (const mode of ['game', 'ai', 'proxy']) {
+                   if (!this._state[mode]) this._state[mode] = DEFAULT_STATE[mode];
+                    if (mode === 'game') {
+                        if (this._state[mode].lockedDownloadNode === undefined) this._state[mode].lockedDownloadNode = null;
+                        if (this._state[mode].lastDownloadNode === undefined) this._state[mode].lastDownloadNode = null;
+                        if (this._state[mode].lastDownloadSpeed === undefined) this._state[mode].lastDownloadSpeed = null;
+                    }
+               }
             } else {
                 this._state = JSON.parse(JSON.stringify(DEFAULT_STATE));
             }
@@ -60,21 +65,29 @@ class SpeedtestState {
         return state[mode];
     }
 
-    static updateResult(mode, result) {
+   static updateResult(mode, result) {
+       const state = this._load();
+       if (result) {
+           state[mode].lastNode = result.name;
+           state[mode].lastDelay = result.delay;
+           if (mode === 'game' && result.loss !== undefined) {
+               state[mode].lastLoss = result.loss;
+               state[mode].lastSamples = `${result.samples}/3`;
+           } else {
+               state[mode].lastSamples = '1/1';
+           }
+           state[mode].timestamp = Date.now();
+       }
+       this._save();
+       return state[mode];
+   }
+
+    static updateDownloadResult(nodeName, downloadSpeed) {
         const state = this._load();
-        if (result) {
-            state[mode].lastNode = result.name;
-            state[mode].lastDelay = result.delay;
-            if (mode === 'game' && result.loss !== undefined) {
-                state[mode].lastLoss = result.loss;
-                state[mode].lastSamples = `${result.samples}/3`;
-            } else {
-                state[mode].lastSamples = '1/1';
-            }
-            state[mode].timestamp = Date.now();
-        }
+        state.game.lastDownloadNode = nodeName;
+        state.game.lastDownloadSpeed = downloadSpeed || null;
         this._save();
-        return state[mode];
+        return state.game;
     }
 
     // 保存游戏模式完整 per-node 测速结果（用于前端下拉列表展示丢包率）
@@ -86,6 +99,9 @@ class SpeedtestState {
                 delay: r.rawDelay || r.delay,
                 loss: r.loss,
                 samples: r.samples,
+                downloadSpeed: r.downloadSpeed || null,
+                tag: r.tag,
+                testUrl: r.testUrl,
                 timestamp: r.timestamp || Date.now()
             }));
         }
@@ -96,8 +112,19 @@ class SpeedtestState {
         return this._load()[mode].lock;
     }
 
-    static getLockedNode(mode) {
-        return this._load()[mode].lockedNode;
+   static getLockedNode(mode) {
+       return this._load()[mode].lockedNode;
+   }
+
+    static setLockedDownloadNode(nodeName) {
+        const state = this._load();
+        state.game.lockedDownloadNode = nodeName;
+        this._save();
+        return state.game;
+    }
+
+    static getLockedDownloadNode() {
+        return this._load().game.lockedDownloadNode;
     }
 
     static getStatus() {

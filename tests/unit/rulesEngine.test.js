@@ -53,9 +53,9 @@ proxy-groups:
         expect(finalConfig).toContain('allow-lan: true');
     });
 
-    test('应该强制注入 60MB 的内存限制以降低路由器 OOM 风险', () => {
+    test('应该强制注入 150MB 的内存限制以降低路由器 OOM 风险', () => {
         const finalConfig = RulesEngine.modifyConfigText(baseConfig, [], []);
-        expect(finalConfig).toContain('memory-limit: 60MB');
+        expect(finalConfig).toContain('memory-limit: 150MB');
         expect(finalConfig).toContain('gc-interval: 20s');
     });
 
@@ -106,5 +106,8 @@ proxy-groups:
         
         // 验证 🎮 游戏加速 策略组被注入
         expect(finalConfig).toContain(`name: '${PROXY_GROUPS.GAME_ACC}'`);
+        expect(finalConfig).toContain('Japan|Korea|Taiwan|Singapore|Hongkong');
+        expect(finalConfig).toContain('- DOMAIN-SUFFIX,ec.nintendo.com,🎮 游戏加速');
+        expect(finalConfig).toContain('- DOMAIN-SUFFIX,nintendo.com.hk,🎮 游戏加速');
     });
 });

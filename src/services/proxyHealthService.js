@@ -228,6 +228,8 @@ class ProxyHealthService {
                     lastTier1FailAt = 0;
                     tier1Pending = false;
                 }
+            }
+
             if (tier1Ok) {
                 // 一旦健康检测通过立即重置连续重启计数器，避免死锁
                 // 原逻辑要求 30 分钟健康才能清零，但 consecutiveRestarts >= 3 时会跳过重启
@@ -238,7 +240,6 @@ class ProxyHealthService {
                 }
                 _networkFailures = 0;
                 return true;
-            }
             }
 
             // ⚡ Tier 2: 深度 SSH 诊断

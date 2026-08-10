@@ -1957,6 +1957,62 @@ body {
     white-space: nowrap;
 }
 
+.game-node-tag {
+    flex: 0 0 auto;
+    font-size: 10px;
+    line-height: 14px;
+    border-radius: 3px;
+    padding: 0 4px;
+    font-weight: bold;
+    display: inline-block;
+    vertical-align: middle;
+}
+
+.game-node-tag.is-download {
+    background: rgba(0, 210, 255, 0.15);
+    color: #00d2ff;
+    border: 1px solid rgba(0, 210, 255, 0.3);
+}
+
+.game-node-tag.is-match {
+    background: rgba(120, 90, 255, 0.15);
+    color: #b39dff;
+    border: 1px solid rgba(120, 90, 255, 0.3);
+}
+
+
+.game-group-tag {
+    flex: 0 0 auto;
+    font-size: 10px;
+    line-height: 16px;
+    border-radius: 3px;
+    padding: 0 6px;
+    font-weight: bold;
+    display: inline-block;
+    vertical-align: middle;
+    text-align: center;
+    min-width: 28px;
+}
+
+.game-group-tag.is-online {
+    background: rgba(120, 90, 255, 0.15);
+    color: #b39dff;
+    border: 1px solid rgba(120, 90, 255, 0.3);
+}
+
+.game-group-tag.is-download {
+    background: rgba(0, 210, 255, 0.15);
+    color: #00d2ff;
+    border: 1px solid rgba(0, 210, 255, 0.3);
+}
+
+.game-node-speed {
+    flex: 0 0 auto;
+    font-size: 10px;
+    color: #00d2ff;
+    margin-left: 4px;
+}
+
 .icon-selected-check {
     color: var(--primary);
     font-size: 14px !important;

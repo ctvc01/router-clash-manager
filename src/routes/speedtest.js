@@ -10,7 +10,27 @@ const router = express.Router();
 // GET /api/speedtest/status
 router.get('/status', (req, res) => {
     try {
-        res.json(SpeedtestState.getStatus());
+        const status = SpeedtestState.getStatus();
+        // 合并真实下载流量校准数据（Switch 实际下载链路统计）
+        try {
+            const RealTrafficMonitor = require('../services/realTrafficMonitor');
+            const realStats = RealTrafficMonitor.getStats();
+            if (status.game && Array.isArray(status.game.perNodeResults)) {
+                status.game.perNodeResults = status.game.perNodeResults.map(r => {
+                    const real = realStats[r.name];
+                    if (real && real.realDownloadMbps > 0) {
+                        r.realDownloadMbps = real.realDownloadMbps;
+                        r.realDownloadBytes = real.totalBytes;
+                        r.realTrafficSeen = true;
+                    }
+                    return r;
+                });
+            }
+            status.realTraffic = realStats;
+        } catch (e) {
+            Logger.debug('SpeedtestAPI', `合并真实流量数据失败: ${e.message}`);
+        }
+        res.json(status);
     } catch (err) {
         Logger.error('SpeedtestAPI', '获取状态失败', err);
         res.status(500).json({ error: err.message });
@@ -25,27 +45,36 @@ router.post('/lock', async (req, res) => {
             return res.status(400).json({ error: 'mode must be ai or game' });
         }
 
-        if (lock) {
-            let currentNode;
-            try {
-                const proxiesData = await ClashService.getProxies(5000);
-                const groupName = mode === 'ai' ? '🤖 AI强化' : '🎮 游戏加速';
-                const group = proxiesData.proxies[groupName];
-                currentNode = group ? group.now : null;
-            } catch (e) {
-                currentNode = SpeedtestState.get(mode).lastNode;
-            }
+       if (lock) {
+           let currentNode;
+           let currentDownloadNode;
+           try {
+               const proxiesData = await ClashService.getProxies(5000);
+               const groupName = mode === 'ai' ? '🤖 AI强化' : '🎮 游戏加速';
+               const group = proxiesData.proxies[groupName];
+               currentNode = group ? group.now : null;
+               if (mode === 'game') {
+                   const dlGroup = proxiesData.proxies['🎮 游戏下载'];
+                   currentDownloadNode = dlGroup ? dlGroup.now : null;
+               }
+           } catch (e) {
+               currentNode = SpeedtestState.get(mode).lastNode;
+           }
 
-            if (currentNode) {
-                SpeedtestState.setLockedNode(mode, currentNode);
-                Logger.info('SpeedtestAPI', `${mode} 已锁定: ${currentNode}`);
-            } else {
-                return res.status(500).json({ error: '无法获取当前节点' });
-            }
-        } else {
-            SpeedtestState.setLock(mode, false);
-            Logger.info('SpeedtestAPI', `${mode} 已解锁`);
-        }
+           if (currentNode) {
+               SpeedtestState.setLockedNode(mode, currentNode);
+               if (mode === 'game' && currentDownloadNode) {
+                   SpeedtestState.setLockedDownloadNode(currentDownloadNode);
+               }
+               Logger.info('SpeedtestAPI', `${mode} 已锁定: ${currentNode}`);
+           } else {
+               return res.status(500).json({ error: '无法获取当前节点' });
+           }
+       } else {
+           SpeedtestState.setLock(mode, false);
+           if (mode === 'game') SpeedtestState.setLockedDownloadNode(null);
+           Logger.info('SpeedtestAPI', `${mode} 已解锁`);
+       }
 
         res.json(SpeedtestState.get(mode));
     } catch (err) {
@@ -75,9 +104,9 @@ router.post('/trigger', async (req, res) => {
         (async () => {
             try {
                 if (mode === 'game') {
-                    const GameAccService = require('../services/gameAccService');
-                    await GameAccService.findFastestGameNode();
-                } else if (mode === 'ai') {
+                   const GameAccService = require('../services/gameAccService');
+                    await GameAccService.findBestAndLock(true);
+               } else if (mode === 'ai') {
                     const AiBoostService = require('../services/aiBoostService');
                     await AiBoostService.findFastestAiNode();
                 } else if (mode === 'proxy') {

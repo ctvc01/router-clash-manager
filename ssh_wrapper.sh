@@ -27,6 +27,8 @@ sshpass -e ssh \
     -o PubkeyAcceptedKeyTypes=+ssh-rsa \
     -o BatchMode=no \
     -o ConnectTimeout=5 \
+    -o ServerAliveInterval=5 \
+    -o ServerAliveCountMax=2 \
     -o StrictHostKeyChecking=no \
     "$USER@$IP" \
     "$CMD" 2>&1

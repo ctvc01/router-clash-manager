@@ -10,6 +10,16 @@ const { PROXY_GROUPS } = require('../constants');
 const fs = require('fs');
 
 let updatePromise = Promise.resolve(); // 串行注入锁
+let lastUpdateKey = '';               // 最近一次规则请求参数指纹
+let lastUpdateAt = 0;                 // 最近一次规则请求完成时间
+let updateInFlight = false;           // 最近一次规则更新是否仍在执行
+const RULES_MIN_INTERVAL_MS = 10000;  // 相同参数的重复请求合并窗口
+
+function _stableMacKey(gameMacs = [], aiMacs = [], proxyMacs = []) {
+    return [gameMacs, aiMacs, proxyMacs]
+        .map(arr => [...arr].sort().join(','))
+        .join('|');
+}
 
 // 通用 hard-timeout 包装：给规则注入串行队列强加 wall-clock 上限，
 // 避免任何一次 SSH/文件 IO hang 导致后续所有规则更新永久排队
@@ -79,23 +89,23 @@ class RulesEngine {
         // 2c. 强制重写或注入 max-connections 限制（限制并发以防路由器 OOM）
         let maxConnIdx = configLines.findIndex(line => line.trim().startsWith('max-connections:'));
         if (maxConnIdx !== -1) {
-            configLines[maxConnIdx] = 'max-connections: 256';
+            configLines[maxConnIdx] = 'max-connections: 512';
         } else {
             let insertAfter = configLines.findIndex(line => line.trim().startsWith('tproxy-port:'));
             if (insertAfter === -1) insertAfter = configLines.findIndex(line => line.trim().startsWith('allow-lan:'));
             if (insertAfter !== -1) {
-                configLines.splice(insertAfter + 1, 0, 'max-connections: 256');
+                configLines.splice(insertAfter + 1, 0, 'max-connections: 512');
             }
         }
 
         // 2d. 强制重写或注入 memory-limit、gc-interval 和 log-level（强制触发高频 GC，防止运存跑满）
         let memLimitIdx = configLines.findIndex(line => line.trim().startsWith('memory-limit:'));
         if (memLimitIdx !== -1) {
-            configLines[memLimitIdx] = 'memory-limit: 60MB';
+            configLines[memLimitIdx] = 'memory-limit: 150MB';
         } else {
             let insertAfter = configLines.findIndex(line => line.trim().startsWith('max-connections:'));
             if (insertAfter !== -1) {
-                configLines.splice(insertAfter + 1, 0, 'memory-limit: 60MB');
+                configLines.splice(insertAfter + 1, 0, 'memory-limit: 150MB');
             }
         }
 
@@ -120,6 +130,46 @@ class RulesEngine {
         }
  
        // 3. 强制将 external-controller 的端口设置为 config.ports.clash (默认 9999)
+        // 2e. 注入全局性能优化参数（tcp-concurrent 提升多连接下载、unified-delay 统一延迟计量、find-process-mode 关闭容器进程匹配、keep-alive-interval 防止长连接被 NAT 断开）
+        const globalOpts = [
+            ['tcp-concurrent', 'true'],
+            ['unified-delay', 'true'],
+            ['find-process-mode', 'off'],
+            ['keep-alive-interval', '30'],
+            ['global-client-fingerprint', 'chrome'],
+        ];
+        let globalInsertAfter = configLines.findIndex(line => line.trim().startsWith('log-level:'));
+        if (globalInsertAfter === -1) globalInsertAfter = configLines.findIndex(line => line.trim().startsWith('max-connections:'));
+        for (const [key, val] of globalOpts) {
+            const existingIdx = configLines.findIndex(line => line.trim().startsWith(`${key}:`));
+            if (existingIdx !== -1) {
+                configLines[existingIdx] = `${key}: ${val}`;
+            } else if (globalInsertAfter !== -1) {
+                configLines.splice(globalInsertAfter + 1, 0, `${key}: ${val}`);
+                globalInsertAfter++;
+            }
+        }
+
+        // 2f. 注入 profile（持久化节点选择，防 Clash 重启丢失）和 grpc-opts（gRPC 保活防 NAT 断连）
+        if (!currentConfig.includes('\nprofile:')) {
+            configLines.splice(globalInsertAfter + 1, 0, 'profile:', '  store-selected: true', '  store-fake-ip: true');
+            globalInsertAfter += 3;
+        } else {
+            let profIdx = configLines.findIndex(line => line.trim() === 'profile:');
+            if (profIdx !== -1) {
+                if (!configLines.slice(profIdx, profIdx + 5).some(l => l.includes('store-selected'))) {
+                    configLines.splice(profIdx + 1, 0, '  store-selected: true');
+                }
+                if (!configLines.slice(profIdx, profIdx + 5).some(l => l.includes('store-fake-ip'))) {
+                    configLines.splice(profIdx + 1, 0, '  store-fake-ip: true');
+                }
+            }
+        }
+        if (!currentConfig.includes('\ngrpc-opts:')) {
+            configLines.splice(globalInsertAfter + 1, 0, 'grpc-opts:', '  grpc-keepalive: 30s');
+            globalInsertAfter += 2;
+        }
+
         let controllerIdx = configLines.findIndex(line => line.trim().startsWith('external-controller:'));
         if (controllerIdx !== -1) {
             configLines[controllerIdx] = `external-controller: '0.0.0.0:${config.ports.clash}'`;
@@ -157,6 +207,15 @@ class RulesEngine {
                     '    - 114.114.114.114',
                     '    - 223.5.5.5',
                     '    - 119.29.29.29',
+                    '  nameserver-policy:',
+                    '    +.srv.nintendo.net: [8.8.8.8, 223.5.5.5]',
+                    '    +.download.nintendo.net: [8.8.8.8, 223.5.5.5]',
+                    '  fallback:',
+                    '    - 8.8.8.8',
+                    '    - 1.1.1.1',
+                    '  fallback-filter:',
+                    '    geoip: true',
+                    '    geoip-code: CN',
                     '  store-fake-ip: true',
                     // NAT/联机关键域名需要真实 IP（Switch P2P），CDN 用 Fake-IP 走直连
                     '  fake-ip-filter:',
@@ -172,6 +231,32 @@ class RulesEngine {
                     '    - +.tenpay.com',
                     '    - +.wechatos.net',
                     '  cache-size: 1000'
+                );
+            }
+        }
+
+        // 4.1b 如果已存在 sniffer，整体替换为增强配置（force-dns-mapping + skip-domain）
+        if (currentConfig.includes('\nsniffer:')) {
+            let snifferStart = -1, snifferEnd = -1, inSnifferBlock = false;
+            for (let i = 0; i < configLines.length; i++) {
+                const line = configLines[i].trim();
+                if (line.startsWith('sniffer:')) {
+                    inSnifferBlock = true; snifferStart = i; snifferEnd = i; continue;
+                }
+                if (inSnifferBlock && line.length > 0 && !configLines[i].startsWith(' ') && !configLines[i].startsWith('	') && !line.startsWith('#')) {
+                    break;
+                }
+                if (inSnifferBlock) snifferEnd = i;
+            }
+            if (snifferStart >= 0) {
+                configLines.splice(snifferStart, snifferEnd - snifferStart + 1,
+                    'sniffer:',
+                    '  enable: true',
+                    '  force-dns-mapping: true',
+                    '  parse-pure-ip-address: true',
+                    '  override-destination: false',
+                    '  skip-domain:',
+                    '    - +.nintendowifi.net'
                 );
             }
         }
@@ -196,6 +281,15 @@ class RulesEngine {
                     '    - 114.114.114.114',
                     '    - 223.5.5.5',
                     '    - 119.29.29.29',
+                    '  nameserver-policy:',
+                    '    +.srv.nintendo.net: [8.8.8.8, 223.5.5.5]',
+                    '    +.download.nintendo.net: [8.8.8.8, 223.5.5.5]',
+                    '  fallback:',
+                    '    - 8.8.8.8',
+                    '    - 1.1.1.1',
+                    '  fallback-filter:',
+                    '    geoip: true',
+                    '    geoip-code: CN',
                     '  store-fake-ip: true',
                 // NAT/联机关键域名需要真实 IP（Switch P2P），CDN 用 Fake-IP 走直连
                 '  fake-ip-filter:',
@@ -219,12 +313,15 @@ class RulesEngine {
             if (!hasSniffer) {
                 _logOnce("sniffer_inject", "info", "RulesEngine", "检测到 Clash 配置文件未开启 sniffer，正在内存中自动注入...");
 
-                const snifferLines = [
-                    'sniffer:',
-                    '  enable: true',
-                    '  force-dns-mapping: false',
-                    '  parse-pure-ip-address: true'
-                ];
+               const snifferLines = [
+                   'sniffer:',
+                   '  enable: true',
+                    '  force-dns-mapping: true',
+                    '  parse-pure-ip-address: true',
+                    '  override-destination: false',
+                    '  skip-domain:',
+                    '    - +.nintendowifi.net'
+               ];
                 configLines.splice(insertIdx + 1, 0, ...snifferLines);
             }
         }
@@ -241,14 +338,42 @@ class RulesEngine {
             return true;
         });
 
-        // 5b. 清理旧的游戏分流规则
-        configLines = configLines.filter(line => {
-            const trimmed = line.trim();
-            if (trimmed.includes('GAME RULES START')) return false;
-            if (trimmed.includes('GAME RULES END')) return false;
-            if (trimmed.includes('🎮 游戏加速') && !trimmed.includes('{name:')) return false;
+       // 5b. 清理旧的游戏分流规则
+       configLines = configLines.filter(line => {
+           const trimmed = line.trim();
+           if (trimmed.includes('GAME RULES START')) return false;
+           if (trimmed.includes('GAME RULES END')) return false;
+           if (trimmed.includes('🎮 游戏加速') && !trimmed.includes('{name:')) return false;
+            if (trimmed.includes('🎮 游戏下载') && !trimmed.includes('{name:')) return false;
             return true;
         });
+
+        // 5b-2. 去重：移除订阅模板中已存在的 Nintendo 游戏域名规则（防止重复匹配）
+        {
+            const nintendoDomains = [
+                'npln.srv.nintendo.net', 'ctest.cdn.nintendo.net',
+                'bugyo.hac.lp1.eshop.nintendo.net',
+                'api.accounts.nintendo.com', 'accounts.nintendo.com',
+                'ec.nintendo.net', 'ec.nintendo.com', 'nintendo.com.hk',
+                'atlas-content.nintendo.net',
+                'atum.download.nintendo.net', 'hac.lp1.d4c.nintendo.net',
+                'atum-ec.nintendo.net', 'd4c.srv.nintendo.net', 'penne.srv.nintendo.net',
+                'baas.nintendo.com', 'dg.srv.nintendo.net', 'er.srv.nintendo.net',
+                'dragons.nintendo.net', 'five.nintendo.net'
+            ];
+            // 只清理 rules: 段内的重复行（避免误删 dns.fake-ip-filter 等配置段的 Nintendo 域名）
+            let inRulesSection = false;
+            configLines = configLines.filter(line => {
+                const trimmed = line.trim();
+                if (trimmed === 'rules:') { inRulesSection = true; return true; }
+                if (!inRulesSection) return true;
+                if (trimmed.length > 0 && !trimmed.startsWith('-') && !trimmed.startsWith('#')) {
+                    if (line === trimmed) inRulesSection = false; // 进入下一个顶层段
+                    return true;
+                }
+                return !nintendoDomains.some(d => trimmed.includes(d));
+            });
+        }
 
         // 5c. 清理旧的国内直连规则
         let inCnDirect = false;
@@ -457,22 +582,32 @@ class RulesEngine {
                     if (line.trim() !== '' && !line.trim().startsWith('#')) break;
                 }
 
-                const gameRuleLines = [
-                    '# === GAME RULES START ===',
-                    // 联机匹配、商城与连通测速走游戏加速
-                    '- DOMAIN-SUFFIX,ctest.cdn.nintendo.net,🎮 游戏加速',
-                    '- DOMAIN-SUFFIX,bugyo.hac.lp1.eshop.nintendo.net,🎮 游戏加速',
-                    '- DOMAIN-SUFFIX,api.accounts.nintendo.com,🎮 游戏加速',
-                    '- DOMAIN-SUFFIX,accounts.nintendo.com,🎮 游戏加速',
-                    '- DOMAIN-SUFFIX,ec.nintendo.net,🎮 游戏加速',
-                    '- DOMAIN-SUFFIX,atlas-content.nintendo.net,🎮 游戏加速',
-                    '- DOMAIN-SUFFIX,receive-lp1.dg.srv.nintendo.net,🎮 游戏加速',
-                    // 大流量游戏/补丁下载走游戏加速（与主代理解耦）
-                    '- DOMAIN-SUFFIX,atum.download.nintendo.net,🎮 游戏加速',
-                    '- DOMAIN-SUFFIX,hac.lp1.d4c.nintendo.net,🎮 游戏加速',
-                    '- DOMAIN-SUFFIX,atum-ec.nintendo.net,🎮 游戏加速',
-                    '# === GAME RULES END ==='
-                ];
+               const gameRuleLines = [
+                   '# === GAME RULES START ===',
+                    // 联机匹配、商城与连通测速走游戏加速（低延迟专线）
+                   '- DOMAIN-SUFFIX,npln.srv.nintendo.net,🎮 游戏加速',
+                   '- DOMAIN-SUFFIX,ctest.cdn.nintendo.net,🎮 游戏加速',
+                   '- DOMAIN-SUFFIX,bugyo.hac.lp1.eshop.nintendo.net,🎮 游戏加速',
+                   '- DOMAIN-SUFFIX,api.accounts.nintendo.com,🎮 游戏加速',
+                   '- DOMAIN-SUFFIX,accounts.nintendo.com,🎮 游戏加速',
+                   '- DOMAIN-SUFFIX,ec.nintendo.net,🎮 游戏加速',
+                   '- DOMAIN-SUFFIX,ec.nintendo.com,🎮 游戏加速',
+                   '- DOMAIN-SUFFIX,nintendo.com.hk,🎮 游戏加速',
+                   '- DOMAIN-SUFFIX,atlas-content.nintendo.net,🎮 游戏加速',
+                   '- DOMAIN-SUFFIX,baas.nintendo.com,🎮 游戏加速',
+                    // 大流量游戏/补丁下载走游戏下载组（高带宽 Reality/直连节点）
+                    '- DOMAIN-SUFFIX,atum.download.nintendo.net,🎮 游戏下载',
+                    '- DOMAIN-SUFFIX,hac.lp1.d4c.nintendo.net,🎮 游戏下载',
+                    '- DOMAIN-SUFFIX,atum-ec.nintendo.net,🎮 游戏下载',
+                    '- DOMAIN-SUFFIX,d4c.srv.nintendo.net,🎮 游戏下载',
+                    '- DOMAIN-SUFFIX,penne.srv.nintendo.net,🎮 游戏下载',
+                    '- DOMAIN-SUFFIX,dg.srv.nintendo.net,🎮 游戏下载',
+                    '- DOMAIN-SUFFIX,er.srv.nintendo.net,🎮 游戏下载',
+                    '- DOMAIN-SUFFIX,dragons.nintendo.net,🎮 游戏下载',
+                    '- DOMAIN-SUFFIX,five.nintendo.net,🎮 游戏下载',
+                   '- DOMAIN-SUFFIX,speed.cloudflare.com,🎮 游戏下载',
+                   '# === GAME RULES END ==='
+               ];
 
                 const ruleLines = gameRuleLines.map(line => `${rulesIndent}${line}`);
                 configLines.splice(rulesIdx + 1, 0, ...ruleLines);
@@ -486,7 +621,7 @@ class RulesEngine {
             return true;
         });
 
-        // 6d. 注入游戏设备 SRC-IP-CIDR 规则（设备级全局拦截，解耦主代理）
+        // 6d. 注入游戏设备 SRC-IP-CIDR 规则（兜底走下载组：联机域名已由 DOMAIN-SUFFIX 精确匹配到游戏加速，未识别流量以下载为主）
         if (gameIps.length > 0) {
             const matchIdx = configLines.findIndex(line => line.trim().startsWith('- MATCH,'));
             if (matchIdx !== -1) {
@@ -497,7 +632,7 @@ class RulesEngine {
                 
                 const ipRules = [
                     `# === GAME SRC-IP RULES START ===`,
-                    ...gameIps.map(ip => `${rulesIndent}- SRC-IP-CIDR,${ip}/32,🎮 游戏加速`),
+                    ...gameIps.map(ip => `${rulesIndent}- SRC-IP-CIDR,${ip}/32,🎮 游戏下载`),
                     `# === GAME SRC-IP RULES END ===`,
                 ];
                 // 注入在 MATCH 之前（GEOIP,CN 之后），确保国内流量仍直连
@@ -505,16 +640,17 @@ class RulesEngine {
             }
         }
 
-        // 7. 清理旧的代理组行（防止乱码重复注入）
-        configLines = configLines.filter(line => {
-            const trimmed = line.trim();
-            if (trimmed.startsWith('-') && trimmed.includes('{name:')) {
-                if (trimmed.includes('流媒体加速') || trimmed.includes('流媒体自动测速')) return false;
-                if (trimmed.includes('AI强化') || trimmed.includes('AI自动测速')) return false;
-                if (trimmed.includes('游戏加速')) return false;
-            }
-            return true;
-        });
+       // 7. 清理旧的代理组行（防止乱码重复注入）
+       configLines = configLines.filter(line => {
+           const trimmed = line.trim();
+           if (trimmed.startsWith('-') && trimmed.includes('{name:')) {
+               if (trimmed.includes('流媒体加速') || trimmed.includes('流媒体自动测速')) return false;
+               if (trimmed.includes('AI强化') || trimmed.includes('AI自动测速')) return false;
+               if (trimmed.includes('游戏加速')) return false;
+                if (trimmed.includes('游戏下载')) return false;
+           }
+           return true;
+       });
 
         // 8. 寻找并注入 proxy-groups: 字段
         const groupsIdx = configLines.findIndex(line => line.trim() === 'proxy-groups:');
@@ -566,9 +702,10 @@ class RulesEngine {
                 providerName = providerMatch[1];
             }
 
-            if (gameMacs.length > 0) {
-                groupLines.push(`${indent}- {name: '${PROXY_GROUPS.GAME_ACC}', type: select, proxies: ['${actualNodeSelect}', 'DIRECT'], use: [${providerName}], filter: "(?i)(Japan|Korea|Taiwan|Singapore|Hongkong|USA|United States|日本|韩国|台灣|台湾|新加坡|香港|港|美国|美|IPLC|IEPL|gRPC|Download)"}`);
-            }
+           if (gameMacs.length > 0) {
+               groupLines.push(`${indent}- {name: '${PROXY_GROUPS.GAME_ACC}', type: select, proxies: ['${actualNodeSelect}', 'DIRECT'], use: [${providerName}], filter: "(?i)(Japan|Korea|Taiwan|Singapore|Hongkong|日本|韩国|韓國|台灣|台湾|香港|新加坡|JP|KR|TW|SG|HK)"}`);
+                groupLines.push(`${indent}- {name: '${PROXY_GROUPS.GAME_DOWNLOAD}', type: select, proxies: ['${actualNodeSelect}', 'DIRECT'], use: [${providerName}], filter: "(?i)(Japan|Korea|Taiwan|Singapore|Hongkong|日本|韩国|韓國|台灣|台湾|香港|新加坡|JP|KR|TW|SG|HK)"}`);
+           }
 
             if (aiMacs.length > 0) {
                 const aiGroupProxies = [actualNodeSelect];
@@ -617,9 +754,16 @@ class RulesEngine {
 
     // 核心逻辑：设备分流由全局 GEOIP 规则处理，RulesEngine 仅负责代理组管理
     static async updateClashRules(gameMacs, aiMacs, proxyMacs = []) {
+        const requestKey = _stableMacKey(gameMacs, aiMacs, proxyMacs);
+        if (lastUpdateKey === requestKey && Date.now() - lastUpdateAt < RULES_MIN_INTERVAL_MS) {
+            Logger.debug('RulesEngine', `相同规则参数在 ${RULES_MIN_INTERVAL_MS / 1000}s 内已更新，合并重复请求`);
+            return true;
+        }
+
         // 单次规则注入含多次 SSH + 热重载，5 分钟硬上限足够；到点熔断以避免链路死锁
         const RULES_HARD_TIMEOUT_MS = 300000;
         const chained = updatePromise.then(async () => {
+            updateInFlight = true;
             Logger.info('RulesEngine', `设备统计: 代理${proxyMacs.length}个, 游戏${gameMacs.length}个, AI${aiMacs.length}个 (排队执行中)`);
             Logger.info('RulesEngine', '分流策略：国内域名→DIRECT, GEOIP,CN→DIRECT, MATCH→代理');
 
@@ -761,6 +905,10 @@ class RulesEngine {
                 await SshService.runRemoteCommand('cp -f /tmp/config.yaml.bak /data/ShellCrash/config.yaml 2>/dev/null || true');
                 throw err;
             }
+        }).finally(() => {
+            updateInFlight = false;
+            lastUpdateKey = requestKey;
+            lastUpdateAt = Date.now();
         });
 
         // updatePromise 存储 hard-timeout 包装后的 promise，且必须最终 resolve（自复位），

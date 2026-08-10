@@ -18,6 +18,22 @@ if [ -f "${SCRIPT_DIR}/.env.deploy" ]; then
     set +a
 fi
 
+# 载入路由器 SSH 凭证；.env 中订阅链接可能带有 & 等字符，不能直接 source
+load_router_env() {
+    [ -f "${SCRIPT_DIR}/.env" ] || return 0
+    while IFS='=' read -r _key _value; do
+        _key=$(printf '%s' "$_key" | tr -d '[:space:]')
+        case "$_key" in
+            '') continue ;;
+            '#'*) continue ;;
+            ROUTER_IP|ROUTER_USER|ROUTER_PASSWORD)
+                export "$_key=$_value"
+                ;;
+        esac
+    done < "${SCRIPT_DIR}/.env"
+}
+load_router_env
+
 # ANSI 颜色定义
 C_RESET="\033[0m"
 C_BOLD="\033[1m"
@@ -40,11 +56,10 @@ print_banner() {
 run_remote_clean() {
     local cmd="$1"
     local raw_output
-    # 使用分号确保即使命令失败，结束标记也能打印出来
-    raw_output=$(expect "${SCRIPT_DIR}/run_remote.exp" "echo '===START===' ; $cmd ; echo '===END==='" 2>/dev/null)
-    
-    # 提取 ===START=== 和 ===END=== 之间的行，并清除 \r
-    echo "$raw_output" | awk '/===START===/{flag=1;next}/===END===/{flag=0}flag' | tr -d '\r'
+    raw_output=$("${SCRIPT_DIR}/ssh_wrapper.sh" "$cmd" 2>&1)
+
+    # 清除 OpenSSH 的 post-quantum 警告和 \r，避免污染命令输出
+    echo "$raw_output" | awk '/^\*\*/{next} /^WARNING:/{next} /^Warning:/{next} {print}' | tr -d '\r'
 }
 
 # 格式化输出状态
@@ -53,7 +68,7 @@ show_status() {
     
     # 1. 检查远程进程
     local remote_pid
-    remote_pid=$(run_remote_clean "pidof CrashCore")
+    remote_pid=$(run_remote_clean "pidof mihomo || pidof Clash || pidof CrashCore || echo ''")
     # 去除多余空格和换行
     local pid
     pid=$(echo "$remote_pid" | tr -d '[:space:]')
@@ -190,7 +205,20 @@ action_logs() {
 # 动作：进入交互式菜单
 action_menu() {
     echo -e "${C_CYAN}[->] 正在通过 SSH 连接并打开 ShellCrash 交互菜单...${C_RESET}"
-    expect "${SCRIPT_DIR}/run_interactive.exp"
+    export SSHPASS="${ROUTER_PASSWORD:-}"
+    if [ -z "$SSHPASS" ]; then
+        echo -e "${C_RED}❌ [ERROR] 缺少 ROUTER_PASSWORD，无法登录路由器打开交互菜单${C_RESET}"
+        return 1
+    fi
+    sshpass -e ssh -t \
+        -o StrictHostKeyChecking=no \
+        -o HostKeyAlgorithms=+ssh-rsa \
+        -o PubkeyAcceptedKeyTypes=+ssh-rsa \
+        -o ConnectTimeout=5 \
+        -o ServerAliveInterval=5 \
+        -o ServerAliveCountMax=2 \
+        "${ROUTER_USER:-root}@${ROUTER_IP:-192.168.31.1}" \
+        /data/ShellCrash/menu
 }
 
 # 动作：备份配置 (NAS 和 路由器)

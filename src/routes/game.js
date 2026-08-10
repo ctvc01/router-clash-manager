@@ -62,7 +62,7 @@ router.post('/disable', async (req, res) => {
             message: err.message
         });
     } finally {
-        inFlight.delete(`disable:${mac}`);
+        if (mac) inFlight.delete(`disable:${mac}`);
     }
 });
 

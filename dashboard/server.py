@@ -13,7 +13,26 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 # 基础目录配置
 DASHBOARD_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_DIR = os.path.dirname(DASHBOARD_DIR)
-RUN_REMOTE_EXP = os.path.join(PROJECT_DIR, 'run_remote.exp')
+SSH_WRAPPER = os.path.join(PROJECT_DIR, 'ssh_wrapper.sh')
+ENV_FILE = os.path.join(PROJECT_DIR, '.env')
+
+# 安全读取 .env 中的路由器 SSH 凭证，避免订阅链接含 & 等字符时 shell source 失败
+def _load_router_env():
+    env = {}
+    if not os.path.exists(ENV_FILE):
+        return env
+    with open(ENV_FILE, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            if key in ("ROUTER_IP", "ROUTER_USER", "ROUTER_PASSWORD"):
+                env[key] = value.strip()
+    return env
+
+_ROUTER_ENV = _load_router_env()
 
 # 获取本地网卡 IP 地址
 def get_local_ip():
@@ -26,35 +45,40 @@ def get_local_ip():
     except Exception:
         return '127.0.0.1'
 
-# 远程执行 SSH 命令包装器 (基于 expect)
+# 远程执行 SSH 命令包装器 (基于 ssh_wrapper.sh)
 def run_remote_command(cmd_str):
-    if not os.path.exists(RUN_REMOTE_EXP):
+    if not os.path.exists(SSH_WRAPPER):
         return ""
+    env = os.environ.copy()
+    env.update(_ROUTER_ENV)
     proc = subprocess.Popen(
-        [RUN_REMOTE_EXP, cmd_str],
+        [SSH_WRAPPER, cmd_str],
         stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE
+        stderr=subprocess.PIPE,
+        env=env
     )
-    stdout, _ = proc.communicate()
-    output = stdout.decode('latin-1', errors='ignore')
+    try:
+        stdout, _ = proc.communicate(timeout=25)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        stdout, _ = proc.communicate()
+    output = stdout.decode('utf-8', errors='ignore')
     
-    # 提取 ===START=== 和 ===END=== 之间的内容，过滤 SSH banner
+    # 过滤 OpenSSH 的 post-quantum 警告和 \r，避免污染命令输出
     clean_lines = []
-    capture = False
     for line in output.splitlines():
-        if "===START===" in line:
-            capture = True
+        if line.lstrip().startswith("**"):
             continue
-        if "===END===" in line:
-            capture = False
-            break
-        if capture:
-            clean_lines.append(line)
+        if line.startswith("WARNING:") or line.startswith("Warning:"):
+            continue
+        clean_lines.append(line.rstrip("\r"))
             
     return "\n".join(clean_lines)
 
 # Clash API 请求包装器 (远程 / 本地 Mock 回退)
-CLASH_API = "http://192.168.31.1:9999"
+_ROUTER_API_IP = os.environ.get('ROUTER_IP') or _ROUTER_ENV.get('ROUTER_IP') or '192.168.31.1'
+_ROUTER_API_PORT = os.environ.get('CLASH_PORT') or _ROUTER_ENV.get('CLASH_PORT') or '9999'
+CLASH_API = f"http://{_ROUTER_API_IP}:{_ROUTER_API_PORT}"
 
 def request_clash_api(path, method="GET", data=None):
     try:
@@ -277,7 +301,7 @@ class DashboardAPIHandler(BaseHTTPRequestHandler):
             "allow_lan": False
         }
         
-        remote_pid = run_remote_command("pidof CrashCore")
+        remote_pid = run_remote_command("pidof mihomo || pidof Clash || pidof CrashCore || echo ''")
         pid = remote_pid.strip()
         
         if pid.isdigit():

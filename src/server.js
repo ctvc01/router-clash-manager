@@ -32,10 +32,20 @@ process.on('uncaughtException', (err) => {
     } catch (_) { /* 静默处理 */ }
 });
 
+// HTTP 服务层硬超时：防止个别路由在 SSH/Clash API 异常时无限挂起拖死整个服务
+function _applyHttpTimeouts(srv) {
+    if (!srv) return;
+    srv.requestTimeout = 45000;   // 足够覆盖 30s scp 上传 + 余量
+    srv.headersTimeout = 15000;
+    srv.keepAliveTimeout = 5000;
+    srv.timeout = 45000;
+}
+
 const ClashService = require('./services/clashService');
 const ClashApiProxy = require('./utils/clashApiProxy');
 const ProxyHealthService = require('./services/proxyHealthService');
 const GameAccService = require('./services/gameAccService');
+const RealTrafficMonitor = require('./services/realTrafficMonitor');
 const AiBoostService = require('./services/aiBoostService');
 const RulesEngine = require('./services/rulesEngine');
 const StorageCleanupService = require('./services/storageCleanupService');
@@ -113,24 +123,31 @@ Logger.info('Server', '✅ 配置版本管理系统已初始化');
     // 启动时恢复游戏锁定状态（若 speedtest_state.json 中记录为 LOCKED）
     const SpeedtestState = require('./services/speedtestState');
     const gameState = SpeedtestState.get('game');
-    if (gameState.lock && gameState.lockedNode) {
-        Logger.info('Server', `🔄 恢复游戏锁定节点: ${gameState.lockedNode}`);
-        const locked = await GameAccService.lockGameNode(gameState.lockedNode);
-        if (!locked) {
-            Logger.warn('Server', `⚠️ 锁定节点 ${gameState.lockedNode} 失败，3秒后重试...`);
-            await new Promise(r => setTimeout(r, 3000));
-            const retry = await GameAccService.lockGameNode(gameState.lockedNode);
-            if (!retry) {
-                Logger.warn('Server', `⚠️ 重试仍失败，保持 LOCKED 状态不变。节点可能需要手动重新锁定。`);
-            }
+   if (gameState.lock && gameState.lockedNode) {
+       Logger.info('Server', `🔄 恢复游戏锁定节点: ${gameState.lockedNode}`);
+       const locked = await GameAccService.lockGameNode(gameState.lockedNode);
+       if (!locked) {
+           Logger.warn('Server', `⚠️ 锁定节点 ${gameState.lockedNode} 失败，3秒后重试...`);
+           await new Promise(r => setTimeout(r, 3000));
+           const retry = await GameAccService.lockGameNode(gameState.lockedNode);
+           if (!retry) {
+               Logger.warn('Server', `⚠️ 重试仍失败，保持 LOCKED 状态不变。节点可能需要手动重新锁定。`);
+           }
+       }
+        // 恢复下载组锁定
+        const dlLockedNode = SpeedtestState.getLockedDownloadNode();
+        if (dlLockedNode) {
+            Logger.info('Server', `🔄 恢复游戏下载锁定节点: ${dlLockedNode}`);
+            await GameAccService.lockGameNode(dlLockedNode, '🎮 游戏下载');
         }
-    }
+   }
 
     // 后续的守护进程启动代码...
 
     if (activeGameDevices.length > 0) {
         Logger.info('Daemon', `检测到当前有 ${activeGameDevices.length} 个加速设备，正在自动激活游戏加速守护进程...`);
         GameAccService.startGameAccMonitor();
+        RealTrafficMonitor.start();
     }
 
     // 初始化 AI 强化后台守护进程与定时监控任务
@@ -166,6 +183,7 @@ async function verifyConnectivity() {
 
 // 3. 开启网络服务器监听
 const server = app.listen(config.port, () => {
+    _applyHttpTimeouts(server);
     Logger.info('Server', `===================================================`);
     Logger.info('Server', `  Clash Meta Whitelist Manager Backend is running!`);
     Logger.info('Server', `  Listening on Port: ${config.port}`);
@@ -176,22 +194,12 @@ const server = app.listen(config.port, () => {
     verifyConnectivity();
 });
 server.on('error', (err) => {
-    // 捕获端口监听失败（如 macOS 沙箱 EPERM），不崩溃进程
+    // 端口冲突时直接退出，避免悄悄落到 3001 后出现多实例重复调度/重复注入
     try {
         const fs = require('fs');
         const t = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }).replace(' ', 'T') + '+08:00';
         const dir = process.env.LOG_DIR || '/data/logs';
         fs.appendFileSync(dir + '/app.log', `[${t}] ❌ [Server] 端口 ${config.port} 监听失败: ${err.code} - ${err.message}\n`, 'utf8');
-        // 尝试备选端口
-        const fallbackPort = config.port + 1;
-        fs.appendFileSync(dir + '/app.log', `[${t}] ℹ️  [Server] 尝试备选端口 ${fallbackPort}...\n`, 'utf8');
-        const fallbackServer = app.listen(fallbackPort, () => {
-            fs.appendFileSync(dir + '/app.log', `[${t}] ℹ️  [Server] ✅ 已在备选端口 ${fallbackPort} 上启动成功!\n`, 'utf8');
-            config.port = fallbackPort;
-            verifyConnectivity();
-        });
-        fallbackServer.on('error', (err2) => {
-            fs.appendFileSync(dir + '/app.log', `[${t}] ❌ [Server] 备选端口 ${fallbackPort} 也失败: ${err2.code} - ${err2.message}\n`, 'utf8');
-        });
     } catch (_) { /* 静默处理 */ }
+    process.exit(1);
 });
