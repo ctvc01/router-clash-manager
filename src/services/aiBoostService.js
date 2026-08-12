@@ -66,7 +66,7 @@ class AiBoostService {
 
             const leafNodes = getAllLeafNodes(group.all);
             
-            // 过滤：IPLC/IEPL 中继节点，同时纳入香港/新加坡/日本的直連 gRPC 节点（与前端 /api/nodes 一致）
+            // 过滤：IPLC/IEPL 中继节点，同时纳入香港/新加坡/日本/美国的直連 gRPC/Reality/家宽/原生节点
             const filteredNodes = leafNodes.filter(nodeName => {
                 const lowerName = nodeName.toLowerCase();
                 if (['direct', 'global'].includes(lowerName)) return false;
@@ -75,10 +75,14 @@ class AiBoostService {
                              lowerName.includes('香港') || lowerName.includes('港');
                 const hasAILabel = lowerName.includes('gemini') || lowerName.includes('gpt') || lowerName.includes('ai');
                 const isGRPC = lowerName.includes('grpc');
+                const isReality = lowerName.includes('reality');
+                const isHome = lowerName.includes('家寛') || lowerName.includes('家宽');
+                const isNative = lowerName.includes('原生');
                 const isGoodRegion = isHK || 
                     lowerName.includes('sg') || lowerName.includes('singapore') || lowerName.includes('新加坡') ||
-                    lowerName.includes('jp') || lowerName.includes('japan') || lowerName.includes('日本') || lowerName.includes('日');
-                return (isIPLC && (!isHK || hasAILabel)) || (isGRPC && isGoodRegion);
+                    lowerName.includes('jp') || lowerName.includes('japan') || lowerName.includes('日本') || lowerName.includes('日') ||
+                    lowerName.includes('us') || lowerName.includes('usa') || lowerName.includes('美国') || lowerName.includes('美國');
+                return (isIPLC && (!isHK || hasAILabel)) || ((isGRPC || isReality || isHome || isNative) && isGoodRegion);
             });
 
             if (filteredNodes.length === 0) {

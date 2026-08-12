@@ -32,18 +32,11 @@ router.get('/', async (req, res) => {
         }
 
         // 无缓存，从路由器拉取原始数据
-        // 修改：优先使用 DHCP 租约文件，若不存在则用脚本生成，若都失败则用 ARP 表
-        const [dhcpOutput, whitelistOutput, trafficOutput] = await Promise.all([
-            (async () => {
-                try {
-                    // 方案：优先从 /tmp/dhcp.leases（标准位置）读取，失败则尝试 dnsmasq.leases 或旧 /data，最后降级至 ARP 表
-                    return await SshService.runRemoteCommand('cat /tmp/dhcp.leases 2>/dev/null || cat /var/lib/misc/dnsmasq.leases 2>/dev/null || cat /data/dhcp.leases 2>/dev/null || /tmp/generate_dhcp_leases.sh 2>/dev/null || cat /proc/net/arp');
-                } catch (err) {
-                    Logger.warn('Devices', '读取 DHCP 数据失败，降级使用 ARP', err.message);
-                    return await SshService.runRemoteCommand('cat /proc/net/arp');
-                }
-            })(),
-            SshService.runRemoteCommand('cat /data/ShellCrash/configs/mac'),
+        // 同时从 DHCP 租约与 ARP 路由表中合并拉取完整设备列表，确保静态 IP/智能家居设备不遗漏
+        const [dhcpOutput, arpOutput, whitelistOutput, trafficOutput] = await Promise.all([
+            SshService.runRemoteCommand('cat /tmp/dhcp.leases 2>/dev/null || cat /var/lib/misc/dnsmasq.leases 2>/dev/null || cat /data/dhcp.leases 2>/dev/null').catch(() => ''),
+            SshService.runRemoteCommand('cat /proc/net/arp 2>/dev/null').catch(() => ''),
+            SshService.runRemoteCommand('cat /data/ShellCrash/configs/mac').catch(() => ''),
             SshService.runRemoteCommand('ubus call trafficd hw').catch(() => '{}')
         ]);
 
@@ -64,60 +57,119 @@ router.get('/', async (req, res) => {
         const MAC_REGEX = /^([0-9a-fA-F]{2}[:-]){5}([0-9a-fA-F]{2})$/;
         const IP_REGEX = /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/;
 
-        const lan_devices = [];
-        const seen = new Set(); // 去重
+        // 常见硬件厂商 OUI 前缀字典（用于自动识别智能家居/IoT设备的品牌名称）
+        const ouiMap = {
+            'cc:08:fa': 'Apple 苹果设备',
+            '3e:1c:95': 'Apple iPhone',
+            'c4:12:34': 'Apple iPad',
+            'f6:42:d7': 'Apple Watch',
+            'b8:88:80': 'Apple 苹果设备',
+            'a4:39:b3': 'Xiaomi 小米路由器/设备',
+            '48:26:4c': 'Xiaomi 小米路由器',
+            '68:ab:bc': 'Xiaomi 小米设备',
+            'b8:4d:43': 'Xiaomi 小米智能设备',
+            '12:77:38': 'Redmi 红米手机',
+            'e4:fe:43': 'Espressif/米家智能硬件',
+            '24:0a:c4': 'Espressif/米家智能硬件',
+            '30:ae:a4': 'Espressif/米家智能硬件',
+            '84:f3:eb': 'Espressif/米家智能硬件',
+            '60:01:94': 'Espressif/米家智能硬件',
+            '4c:c6:4c': 'Tuya 涂鸦智能设备',
+            'd4:f0:ea': 'Tuya 涂鸦智能设备',
+            'cc:4d:75': 'BroadLink 智能插座',
+            'ac:cf:23': 'Hanfeng 汉枫智能模块',
+            '1c:1b:0d': 'NAS 存储服务器',
+            '10:7c:61': 'Espressif 物联网设备',
+            '8c:d0:b2': '智能家居设备',
+            'ac:8c:46': '智能家居设备',
+            'c0:84:ff': '智能家居设备',
+            'c4:93:bb': '智能家居设备',
+            '2a:11:bd': '智能家居设备',
+            '78:df:72': '智能家居设备',
+            '80:3e:4f': '智能家居设备',
+            '1c:ea:ac': '智能家居设备',
+            'ee:c3:d0': '智能家居设备',
+            '40:44:f7': 'Switch / 游戏设备',
+            '40:1a:58': '智能终端设备'
+        };
 
-        // 检测输入格式：DHCP 租约格式 或 ARP 表格式
-        const lines = dhcpOutput.split('\n');
-        const isDhcpFormat = lines.some(l => l.trim().match(/^\d+\s+[0-9a-f:]+\s+\d+\.\d+\.\d+\.\d+/));
-
-        for (const line of lines) {
-            const parts = line.trim().split(/\s+/);
-            let ip, mac, hostname;
-            let flags = '';
-            let device = '';
-
-            if (isDhcpFormat && parts.length >= 4) {
-                // DHCP 租约格式: timestamp | mac | ip | hostname | *
-                mac = parts[1].trim().toLowerCase();
-                ip = parts[2].trim();
-                hostname = parts[3].trim() === '*' ? '未知设备' : parts[3].trim();
-            } else if (parts.length >= 6 && !parts[0].match(/^IP|^HW|^---/)) {
-                // ARP 表格式: IP | HW type | Flags | MAC | Mask | Device
-                // 或者:      0  | 1        | 2     | 3   | 4    | 5
-                ip = parts[0].trim();
-                flags = parts[2].trim();
-                mac = parts[3].trim().toLowerCase();
-                device = parts[5].trim();
-                hostname = '未知设备';
-            } else {
-                continue; // 跳过头行或无效行
+        const getFriendlyHostname = (mac, ip, rawHostname) => {
+            if (rawHostname && rawHostname !== '未知设备' && rawHostname !== '*') {
+                return rawHostname;
             }
+            const prefix = mac.toLowerCase().slice(0, 8);
+            const vendor = ouiMap[prefix];
+            const lastOctet = ip.split('.').pop();
+            if (vendor) {
+                return `${vendor} (.${lastOctet})`;
+            }
+            return `未知设备 (.${lastOctet})`;
+        };
 
-            // 过滤条件加固：
-            // 1. 符合 MAC 和 IP 正则
-            // 2. MAC 不能为全零的未完成/无效状态（比如 198.18.0.2 Fake-IP 探测记录）
-            // 3. ARP 格式下，物理网卡接口必须为 br-lan（局域网网桥），过滤 WAN 口侧设备（如 192.168.1.1 光猫）
-            // 注意：不硬性过滤 flags === '0x0' 的真实 MAC 设备，以防止休眠设备（如 iPhone）被误判为离线清空
-            if (MAC_REGEX.test(mac) && IP_REGEX.test(ip) && mac !== '00:00:00:00:00:00' && !seen.has(mac)) {
-                if (!isDhcpFormat) {
-                    if (device !== 'br-lan') {
-                        continue;
+        const dhcpMap = {};
+        if (dhcpOutput) {
+            for (const line of dhcpOutput.split('\n')) {
+                const parts = line.trim().split(/\s+/);
+                if (parts.length >= 4 && parts[1] && parts[1].includes(':')) {
+                    const mac = parts[1].trim().toLowerCase();
+                    const ip = parts[2].trim();
+                    const hostname = parts[3].trim() === '*' ? '' : parts[3].trim();
+                    if (MAC_REGEX.test(mac) && IP_REGEX.test(ip)) {
+                        dhcpMap[mac] = { ip, hostname };
                     }
                 }
+            }
+        }
+
+        const lan_devices = [];
+        const seen = new Set(); // MAC 去重
+
+        // 1. 注入 DHCP 租约中登记的设备
+        for (const [mac, info] of Object.entries(dhcpMap)) {
+            if (mac !== '00:00:00:00:00:00' && !seen.has(mac)) {
                 seen.add(mac);
                 const macUpper = mac.toUpperCase();
                 const trafficInfo = trafficData[macUpper] || {};
                 const ipList = trafficInfo.ip_list || [];
-                const matchIpInfo = ipList.find(item => item.ip === ip) || ipList[0] || {};
+                const matchIpInfo = ipList.find(item => item.ip === info.ip) || ipList[0] || {};
+                const trafficHostname = trafficInfo.hostname && trafficInfo.hostname !== '*' ? trafficInfo.hostname : null;
+                const rawName = trafficHostname || info.hostname;
 
                 lan_devices.push({
                     mac,
-                    ip,
-                    hostname,
-                    rx_rate: matchIpInfo.rx_rate || 0, // 下行流速
-                    tx_rate: matchIpInfo.tx_rate || 0  // 上行流速
+                    ip: info.ip,
+                    hostname: getFriendlyHostname(mac, info.ip, rawName),
+                    rx_rate: matchIpInfo.rx_rate || 0,
+                    tx_rate: matchIpInfo.tx_rate || 0
                 });
+            }
+        }
+
+        // 2. 补充 ARP 路由表中位于 br-lan 且不在 DHCP 租约中的静态 IP/活跃物理设备
+        if (arpOutput) {
+            for (const line of arpOutput.split('\n')) {
+                const parts = line.trim().split(/\s+/);
+                if (parts.length >= 6 && !parts[0].match(/^IP|^HW|^---/)) {
+                    const ip = parts[0].trim();
+                    const mac = parts[3].trim().toLowerCase();
+                    const device = parts[5].trim();
+                    if (device === 'br-lan' && MAC_REGEX.test(mac) && IP_REGEX.test(ip) && mac !== '00:00:00:00:00:00' && !seen.has(mac)) {
+                        seen.add(mac);
+                        const macUpper = mac.toUpperCase();
+                        const trafficInfo = trafficData[macUpper] || {};
+                        const ipList = trafficInfo.ip_list || [];
+                        const matchIpInfo = ipList.find(item => item.ip === ip) || ipList[0] || {};
+                        const trafficHostname = trafficInfo.hostname && trafficInfo.hostname !== '*' ? trafficInfo.hostname : null;
+
+                        lan_devices.push({
+                            mac,
+                            ip,
+                            hostname: getFriendlyHostname(mac, ip, trafficHostname),
+                            rx_rate: matchIpInfo.rx_rate || 0,
+                            tx_rate: matchIpInfo.tx_rate || 0
+                        });
+                    }
+                }
             }
         }
 

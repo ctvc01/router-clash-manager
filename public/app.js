@@ -64,70 +64,156 @@ document.addEventListener('DOMContentLoaded', () => {
     const elBtnToggleGameDropdown = document.getElementById('btn-toggle-game-dropdown');
     const elIconGameDropdownArrow = document.getElementById('icon-game-dropdown-arrow');
     const elGameNodeDropdownMenu = document.getElementById('game-node-dropdown-menu');
-   const elGameDropdownListContainer = document.getElementById('game-dropdown-list-container');
+    const elGameDropdownListContainer = document.getElementById('game-dropdown-list-container');
 
-  // 游戏下拉菜单当前模式：'online' = 联机节点列表，'download' = 下载节点列表
-  let gameDropdownMode = 'online';
-   let cachedGameData = null;
+    // 游戏下拉菜单当前模式：'online' = 联机节点列表，'download' = 下载节点列表
+    if (typeof window.gameDropdownMode === 'undefined') { window.gameDropdownMode = 'online'; }
+    var gameDropdownMode = window.gameDropdownMode;
+    let cachedGameData = null;
 
-   function renderGameDropdown() {
-       if (!cachedGameData || !elGameDropdownListContainer) return;
-       const game = cachedGameData;
-       const groupKeywords = ['选择', '自动', 'DIRECT', 'GLOBAL', '测速'];
-       const currentTag = gameDropdownMode === 'download' ? '下载' : '联机';
-       const currentSelectedNode = gameDropdownMode === 'download' ? lastSelectedGameDownloadNode : lastSelectedGameNode;
-       elGameDropdownListContainer.innerHTML = '';
-       let allCandidates = [];
-       (game.all || []).forEach(node => {
-           if (node && node.name) {
-               const isGroup = groupKeywords.some(k => node.name.includes(k));
-               if (!isGroup) {
-                   if (getGameNodeTag(node.name) !== currentTag) return;
-                   let nodeLoss = undefined, nodeDownloadSpeed = null, nodeRealMbps = null;
-                   const perNode = (state.speedtest.perNodeResults || []);
-                   const found = perNode.find(p => p.name === node.name);
-                   if (found) {
-                       if (found.loss !== undefined) nodeLoss = found.loss;
-                       if (found.realDownloadMbps) { nodeDownloadSpeed = found.realDownloadMbps; nodeRealMbps = found.realDownloadMbps; }
-                       else if (found.downloadSpeed) nodeDownloadSpeed = found.downloadSpeed;
-                   }
-                   allCandidates.push({ name: node.name, delay: node.delay || 0, displayName: node.name, loss: nodeLoss, downloadSpeed: nodeDownloadSpeed || node.downloadSpeed || null, realDownloadMbps: nodeRealMbps });
-               }
-           }
-       });
-       const existInCandidates = allCandidates.some(c => c.name === currentSelectedNode);
-       if (currentSelectedNode && currentSelectedNode !== 'DIRECT' && currentSelectedNode !== 'GLOBAL' && !existInCandidates) {
-           allCandidates.push({ name: currentSelectedNode, delay: game.delay || 0, displayName: currentSelectedNode });
-       }
-       allCandidates = sortGameNodeCandidates(allCandidates);
-       allCandidates.forEach(cand => {
-           const isSelected = cand.name === currentSelectedNode;
-           const itemDiv = document.createElement('div');
-           itemDiv.className = `game-dropdown-item${isSelected ? ' selected' : ''}`;
-           const leftDiv = document.createElement('div');
-           leftDiv.className = 'game-dropdown-item-left';
-           if (isSelected) {
-               leftDiv.innerHTML = `<svg class="icon-svg icon-selected-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px; color: var(--primary);"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>`;
-           } else {
-               leftDiv.innerHTML = `<span class="icon-placeholder"></span>`;
-           }
-           const nameSpan = document.createElement('span');
-          nameSpan.className = 'game-dropdown-item-name';
-           nameSpan.textContent = cand.displayName;
-           leftDiv.appendChild(nameSpan);
-           itemDiv.appendChild(leftDiv);
-           const rightDiv = document.createElement('span');
-           renderGameNodeMetrics(cand.name, rightDiv, cand.delay);
-           itemDiv.appendChild(rightDiv);
-           itemDiv.addEventListener('click', async (e) => {
-               e.stopPropagation();
-               const alreadySelected = cand.name === currentSelectedNode;
-               if (alreadySelected) { closeGameDropdown(); return; }
-               await handleGameNodeSelect(cand.name);
-           });
-           elGameDropdownListContainer.appendChild(itemDiv);
-       });
-   }
+    function renderGameDropdown() {
+        if (!cachedGameData || !elGameDropdownListContainer) return;
+        const game = cachedGameData;
+        const groupKeywords = ['选择', '自动', 'DIRECT', 'GLOBAL', '测速'];
+        const currentMode = (typeof window.gameDropdownMode !== 'undefined') ? window.gameDropdownMode : 'online';
+        const currentTag = currentMode === 'download' ? '下载' : '联机';
+        const currentSelectedNode = currentMode === 'download' ? lastSelectedGameDownloadNode : lastSelectedGameNode;
+        elGameDropdownListContainer.innerHTML = '';
+        let allCandidates = [];
+        (game.all || []).forEach(node => {
+            if (node && node.name) {
+                const isGroup = groupKeywords.some(k => node.name.includes(k));
+                if (!isGroup) {
+                    if (getGameNodeTag(node.name) !== currentTag) return;
+                    let nodeLoss = undefined, nodeDownloadSpeed = null, nodeRealMbps = null;
+                    let nodeDelay = node.delay || 0;
+                    const perNode = (state.speedtest.perNodeResults || []);
+                    const found = perNode.find(p => p.name === node.name);
+                    if (found) {
+                        if (found.delay > 0) nodeDelay = found.delay;
+                        if (found.loss !== undefined) nodeLoss = found.loss;
+                        if (found.realDownloadMbps && found.realDownloadMbps >= 1.0) {
+                            nodeDownloadSpeed = found.realDownloadMbps;
+                            nodeRealMbps = found.realDownloadMbps;
+                        } else if (found.downloadSpeed) {
+                            nodeDownloadSpeed = found.downloadSpeed;
+                        }
+                    }
+                    allCandidates.push({
+                        name: node.name,
+                        delay: nodeDelay,
+                        displayName: node.name,
+                        loss: nodeLoss,
+                        downloadSpeed: nodeDownloadSpeed || node.downloadSpeed || null,
+                        realDownloadMbps: nodeRealMbps
+                    });
+                }
+            }
+        });
+        const existInCandidates = allCandidates.some(c => c.name === currentSelectedNode);
+        if (currentSelectedNode && currentSelectedNode !== 'DIRECT' && currentSelectedNode !== 'GLOBAL' && !existInCandidates) {
+            allCandidates.push({ name: currentSelectedNode, delay: game.delay || 0, displayName: currentSelectedNode });
+        }
+        allCandidates = sortGameNodeCandidates(allCandidates);
+        allCandidates.forEach(cand => {
+            const isSelected = cand.name === currentSelectedNode;
+            const itemDiv = document.createElement('div');
+            itemDiv.className = `game-dropdown-item${isSelected ? ' selected' : ''}${speedtestInProgress ? ' speedtest-row-pulsing' : ''}`;
+            itemDiv.setAttribute('data-node-name', cand.name);
+            const leftDiv = document.createElement('div');
+            leftDiv.className = 'game-dropdown-item-left';
+            if (isSelected) {
+                leftDiv.innerHTML = `<svg class="icon-svg icon-selected-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px; color: var(--primary);"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>`;
+            } else {
+                leftDiv.innerHTML = `<span class="icon-placeholder"></span>`;
+            }
+            const nameSpan = document.createElement('span');
+            nameSpan.className = 'game-dropdown-item-name';
+            nameSpan.textContent = cand.displayName;
+            leftDiv.appendChild(nameSpan);
+            itemDiv.appendChild(leftDiv);
+            const rightDiv = document.createElement('span');
+            renderGameNodeMetrics(cand.name, rightDiv, cand.delay);
+            itemDiv.appendChild(rightDiv);
+            itemDiv.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                if (speedtestInProgress) { showToast('测速进行中，请等待完成后再选择节点'); return; }
+                const alreadySelected = cand.name === currentSelectedNode;
+                if (alreadySelected) { closeGameDropdown(); return; }
+                await handleGameNodeSelect(cand.name);
+            });
+            elGameDropdownListContainer.appendChild(itemDiv);
+        });
+    }
+
+    function sortGameNodeCandidates(candidates) {
+        const tagOrder = { '联机': 0, '下载': 1 };
+        return [...candidates].sort((a, b) => {
+            const ta = getGameNodeTag(a.name);
+            const tb = getGameNodeTag(b.name);
+            if (ta !== tb) return (tagOrder[ta] ?? 1) - (tagOrder[tb] ?? 1);
+            if (ta === '下载') {
+                const sa = typeof (a.realDownloadMbps || a.downloadSpeed) === 'number' && (a.realDownloadMbps || a.downloadSpeed) > 0 ? (a.realDownloadMbps || a.downloadSpeed) : -Infinity;
+                const sb = typeof (b.realDownloadMbps || b.downloadSpeed) === 'number' && (b.realDownloadMbps || b.downloadSpeed) > 0 ? (b.realDownloadMbps || b.downloadSpeed) : -Infinity;
+                return sb - sa;
+            }
+            // 联机节点排序：丢包率（低到高）-> 延迟（低到高）
+            const la = typeof a.loss === 'number' && a.loss >= 0 ? a.loss : Infinity;
+            const lb = typeof b.loss === 'number' && b.loss >= 0 ? b.loss : Infinity;
+            if (la !== lb) return la - lb;
+            const da = typeof a.delay === 'number' && a.delay > 0 ? a.delay : Infinity;
+            const db = typeof b.delay === 'number' && b.delay > 0 ? b.delay : Infinity;
+            return da - db;
+        });
+    }
+
+    // 辅助：渲染游戏节点右侧核心指标。联机节点展示丢包+延迟；下载节点优先展示下载带宽。
+    function renderGameNodeMetrics(nodeName, rightEl, fallbackDelay) {
+        if (!rightEl) return;
+        const ROW_SPINNER_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="animate-spin" style="width:11px;height:11px"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>`;
+        const perNode = state.speedtest.perNodeResults || [];
+        const found = perNode.find(p => p.name === nodeName);
+        const tag = getGameNodeTag(nodeName);
+        if (tag === '下载') {
+            const speed = found && ((found.realDownloadMbps >= 1.0 ? found.realDownloadMbps : null) || found.downloadSpeed);
+            if (speed) {
+                rightEl.style.cssText = 'display:flex;align-items:center;gap:4px;flex-shrink:0;';
+                rightEl.className = 'text-green flex-shrink-0';
+                const badge = found && found.realDownloadMbps >= 1.0 ? '<span style="font-size:10px;color:#fff;background:#16a34a;border-radius:3px;padding:0 4px;line-height:14px;">实测</span>' : '';
+                rightEl.innerHTML = `${badge}${speed} Mbps`;
+            } else {
+                rightEl.style.cssText = 'display:flex;align-items:center;gap:4px;flex-shrink:0;';
+                if (speedtestInProgress) {
+                    rightEl.className = 'node-delay-testing flex-shrink-0';
+                    rightEl.innerHTML = `${ROW_SPINNER_SVG}<span style="font-size:12px;">测速中</span>`;
+                } else {
+                    rightEl.className = 'text-muted flex-shrink-0';
+                    rightEl.textContent = '--';
+                }
+            }
+            return;
+        }
+        // 联机模式节点
+        const delayRaw = (found && found.delay) || fallbackDelay || 0;
+        const delay = (delayRaw === -1 || delayRaw >= 99999) ? 0 : delayRaw;
+        let lossNum = found && found.loss !== undefined ? found.loss : undefined;
+        
+        if (delay > 0) {
+            rightEl.style.cssText = 'display:flex;align-items:center;gap:6px;flex-shrink:0;';
+            const lossPct = lossNum !== undefined && lossNum >= 0 ? (lossNum > 0 ? (lossNum * 100).toFixed(0) + '%' : '0%') : '--%';
+            const lossColor = lossNum !== undefined ? (lossNum === 0 ? 'var(--text-secondary)' : lossNum <= 0.2 ? '#f59e0b' : '#ef4444') : 'var(--text-secondary)';
+            rightEl.innerHTML = `<span style="font-size:11px;color:${lossColor};font-variant-numeric:tabular-nums;">${lossPct}</span><span class="${getDelayClass(delay)} flex-shrink-0">${delay} ms</span>`;
+        } else {
+            rightEl.style.cssText = 'display:flex;align-items:center;gap:4px;flex-shrink:0;';
+            if (speedtestInProgress) {
+                rightEl.className = 'node-delay-testing flex-shrink-0';
+                rightEl.innerHTML = `${ROW_SPINNER_SVG}<span style="font-size:12px;">测速中</span>`;
+            } else {
+                rightEl.className = 'text-muted flex-shrink-0';
+                rightEl.textContent = '--';
+            }
+        }
+    }
 
     // AI模式下拉菜单相关 DOM
     const elBtnToggleAiDropdown = document.getElementById('btn-toggle-ai-dropdown');
@@ -300,9 +386,29 @@ document.addEventListener('DOMContentLoaded', () => {
         const tag = getGameNodeTag(nodeName);
         const perNode = state.speedtest.perNodeResults || [];
         const found = perNode.find(p => p.name === nodeName);
+
+        // 统一更新下载分组当前节点的 Mbps 流速显示 (排除“测速中”卡死，并过滤 < 1.0 Mbps 后台微小心跳)
+        if (elNodeGameDownloadSpeed) {
+            const gameDlNode = (state.dashboardData && state.dashboardData.proxies && state.dashboardData.proxies.gameDownload) ? (state.dashboardData.proxies.gameDownload.realNode || state.dashboardData.proxies.gameDownload.now) : null;
+            const dlFound = perNode.find(p => p.name === gameDlNode) || found;
+            const dlSpeed = state.speedtest.game?.lastDownloadSpeed;
+            
+            // 只有当 realDownloadMbps >= 1.0 时认为有效的真实大文件下载，排除 0.02 Mbps 等锁屏后台心跳
+            const isReal = dlFound && dlFound.realDownloadMbps && dlFound.realDownloadMbps >= 1.0;
+            const displayMbps = isReal ? dlFound.realDownloadMbps : (dlFound && dlFound.downloadSpeed ? dlFound.downloadSpeed : dlSpeed);
+
+            if (displayMbps) {
+                elNodeGameDownloadSpeed.textContent = `${displayMbps} Mbps`;
+                elNodeGameDownloadSpeed.className = 'text-green';
+            } else {
+                elNodeGameDownloadSpeed.textContent = '-- Mbps';
+                elNodeGameDownloadSpeed.className = 'text-muted';
+            }
+        }
+
         if (tag === '下载') {
-            const speed = found && (found.realDownloadMbps || found.downloadSpeed);
-            const isReal = !!(found && found.realTrafficSeen);
+            const speed = found && ((found.realDownloadMbps >= 1.0 ? found.realDownloadMbps : null) || found.downloadSpeed);
+            const isReal = !!(found && found.realDownloadMbps >= 1.0);
             elNodeGameDelay.textContent = speed ? `${speed} Mbps` : '--';
             elNodeGameDelay.className = speed ? 'text-green' : 'text-muted';
             if (elNodeGameLoss) elNodeGameLoss.innerHTML = isReal ? '<span style="font-size:10px;color:#fff;background:#16a34a;border-radius:3px;padding:0 4px;line-height:14px;">实测</span>' : '';
@@ -1334,8 +1440,9 @@ document.addEventListener('DOMContentLoaded', () => {
        closeAiDropdown();
        closeProxyDropdown();
        
-        const triggerEl = gameDropdownMode === 'download' ? elBtnToggleGameDownloadDropdown : elBtnToggleGameDropdown;
-        const arrowEl = gameDropdownMode === 'download' ? elIconGameDownloadDropdownArrow : elIconGameDropdownArrow;
+        const gMode = window.gameDropdownMode || 'online';
+        const triggerEl = gMode === 'download' ? elBtnToggleGameDownloadDropdown : elBtnToggleGameDropdown;
+        const arrowEl = gMode === 'download' ? elIconGameDownloadDropdownArrow : elIconGameDropdownArrow;
         const triggerRect = triggerEl.getBoundingClientRect();
        
        elGameNodeDropdownMenu.style.display = 'block';
@@ -1598,7 +1705,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // 获取当前已选中的节点以维持高亮和绿色勾号图标
           const currentSelectedNode = mode === 'proxy' ? elNodeProxyReal.textContent.trim()
                                       : (mode === 'ai' ? elNodeAiReal.textContent.trim()
-                                      : (gameDropdownMode === 'download' ? (elNodeGameDownloadReal ? elNodeGameDownloadReal.textContent.trim() : '') : elNodeGameReal.textContent.trim()));
+                                      : ((window.gameDropdownMode || 'online') === 'download' ? (elNodeGameDownloadReal ? elNodeGameDownloadReal.textContent.trim() : '') : elNodeGameReal.textContent.trim()));
 
            const orderedNodeNames = mode === 'game' ? sortGameNodeNames(nodeOrder) : nodeOrder;
            orderedNodeNames.forEach(nodeName => {
@@ -2485,10 +2592,11 @@ document.addEventListener('DOMContentLoaded', () => {
   if (elBtnToggleGameDropdown) {
        elBtnToggleGameDropdown.addEventListener('click', (e) => {
            e.stopPropagation();
-           if (elGameNodeDropdownMenu && elGameNodeDropdownMenu.style.display !== 'none' && gameDropdownMode === 'online') {
+           const curMode = window.gameDropdownMode || 'online';
+           if (elGameNodeDropdownMenu && elGameNodeDropdownMenu.style.display !== 'none' && curMode === 'online') {
                closeGameDropdown();
           } else {
-              gameDropdownMode = 'online';
+              window.gameDropdownMode = 'online';
               renderGameDropdown();
               openGameDropdown();
           }
@@ -2497,10 +2605,11 @@ document.addEventListener('DOMContentLoaded', () => {
   if (elBtnToggleGameDownloadDropdown) {
       elBtnToggleGameDownloadDropdown.addEventListener('click', (e) => {
           e.stopPropagation();
-          if (elGameNodeDropdownMenu && elGameNodeDropdownMenu.style.display !== 'none' && gameDropdownMode === 'download') {
+          const curMode = window.gameDropdownMode || 'online';
+          if (elGameNodeDropdownMenu && elGameNodeDropdownMenu.style.display !== 'none' && curMode === 'download') {
               closeGameDropdown();
           } else {
-              gameDropdownMode = 'download';
+              window.gameDropdownMode = 'download';
               renderGameDropdown();
               openGameDropdown();
           }
